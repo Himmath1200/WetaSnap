@@ -1,0 +1,60 @@
+Offline OCR - what we fixed (simple version)
+
+Your card photo is read on the phone itself, with no internet.
+The reader often misreads small text, so we added 12 small fixes.
+
+1. Make text bigger
+We enlarge the photo before reading. Small email lines become readable.
+
+2. Tell it: this is a card
+We set the reader to "one block of text" mode. It stops treating
+the card like a full book page.
+
+3. Remove junk words
+We drop words the reader itself says it is unsure about, like
+symbols, lines, and logo pieces.
+
+4. Fix common letter mistakes
+,com becomes .com, | inside a word becomes l, 0 inside a word
+becomes o. Phone numbers are never touched here.
+
+5. Split joined columns
+Your card has 2 columns. The reader joins them into one line:
+"email + company". We split them back into two.
+
+6. Throw away line junk
+We throw away rule lines like "EE ---- eeee ----", "Ld", "3 J".
+Real lines like "M: +91 ... Chennai" are kept.
+
+7. Fix broken emails
+"ay 2 kumar.p@..." becomes "ay2kumar.p@...".
+If we had to glue it, we mark it "check spelling".
+
+8. Fix phone numbers, never guess
+"T: 491 ..." becomes "+91 ...".
+"B" between digits becomes "8".
+"+9) ..." becomes "+91".
+If a number is too short, we do NOT save it. We show a warning.
+
+9. Pick mobile over office number
+"M:" wins over "T:". "A:" is read as "M:" because the reader
+often drops one stroke of M. Fax is never picked.
+
+10. Pick real company name
+"Ageas Federal Life Insurance Co. Ltd." wins over "LIFE INSURANCE"
+logo text, because "Co. Ltd." is a real legal ending.
+
+11. Find country from phone code
+Your card has no country printed. +91 means India, so we fill
+India and say "worked out from dialling code".
+
+12. Find name by score
+"Jayakumar P" wins because: 2 words + starts with capital +
+last part is one letter + matches the email jayakumar.p.
+"Dr." is removed. "de Vries" style names stay together.
+
+What we never do:
+- Never invent missing digits.
+- Never change the email domain.
+- Never guess a broken word.
+If unsure, we fill what we can and ask you to check.
