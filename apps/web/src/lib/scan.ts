@@ -34,7 +34,120 @@ export function flattenWeight(pixLum: number, bgLum: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** Downscale-only "warp": no corners to pull straight any more, just cap the long side. */
+/** Axis-aligned card bounds in mask pixels (half-open {x, y, w, h}). Pure: unit-tested.
+ * Majority vote per row/column (fill >= 0.3) so specks can't move an edge, then a 3%
+ * safety pad so print near the card edge is never clipped. Returns null when there is
+ * nothing worth cutting: empty, full-bleed, tiny (<15%) or the whole frame. */
+export interface CardRect { x: number; y: number; w: number; h: number }
+export function boundsOfMask(fg: Uint8Array, w: number, h: number): CardRect | null {
+  const FILL = 0.3;
+  let top = -1;
+  let bottom = -1;
+  for (let y = 0; y < h; y++) {
+    let n = 0;
+    for (let x = 0; x < w; x++) n += fg[y * w + x]!;
+    if (n / w >= FILL) { if (top < 0) top = y; bottom = y; }
+  }
+  let left = -1;
+  let right = -1;
+  for (let x = 0; x < w; x++) {
+    let n = 0;
+    for (let y = 0; y < h; y++) n += fg[y * w + x]!;
+    if (n / h >= FILL) { if (left < 0) left = x; right = x; }
+  }
+  if (top < 0 || left < 0) return null;
+  const area = ((right - left + 1) * (bottom - top + 1)) / (w * h);
+  if (area < 0.15 || area > 0.995) return null;
+  if (top <= 1 && left <= 1 && bottom >= h - 2 && right >= w - 2) return null;
+  const padX = Math.ceil(w * 0.03);
+  const padY = Math.ceil(h * 0.03);
+  const x0 = Math.max(0, left - padX);
+  const y0 = Math.max(0, top - padY);
+  const x1 = Math.min(w, right + 1 + padX);
+  const y1 = Math.min(h, bottom + 1 + padY);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** Background = whatever touches the photo border (flood fill on a thumbnail, so a
+ * multi-colour table still counts: each border colour seeds its own region). Anything the
+ * fill can't reach is the card. Stops at the card edge where neighbour colours jump. */
+function cardMask(data: Uint8ClampedArray, w: number, h: number): Uint8Array {
+  const bg = new Uint8Array(w * h);
+  const q = new Int32Array(w * h);
+  let qh = 0;
+  let qt = 0;
+  const seed = (x: number, y: number) => {
+    const i = y * w + x;
+    if (!bg[i]) { bg[i] = 1; q[qt++] = i; }
+  };
+  for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
+  for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
+  const T2 = 45 * 45;
+  while (qh < qt) {
+    const i = q[qh++]!;
+    const ix = i % w;
+    const iy = (i / w) | 0;
+    const r = data[i * 4]!;
+    const g = data[i * 4 + 1]!;
+    const b = data[i * 4 + 2]!;
+    const visit = (j: number) => {
+      if (bg[j]) return;
+      const dr = data[j * 4]! - r;
+      const dg = data[j * 4 + 1]! - g;
+      const db = data[j * 4 + 2]! - b;
+      if (dr * dr + dg * dg + db * db < T2) { bg[j] = 1; q[qt++] = j; }
+    };
+    if (ix > 0) visit(i - 1);
+    if (ix < w - 1) visit(i + 1);
+    if (iy > 0) visit(i - w);
+    if (iy < h - 1) visit(i + w);
+  }
+  const fg = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) fg[i] = bg[i] ? 0 : 1;
+  return fg;
+}
+
+/** Card rectangle in full-resolution pixels, or null when no safe cut exists (card already
+ * fills the frame, or the background is indistinguishable — then the whole photo is kept
+ * rather than risking a side). */
+function detectCardRect(src: HTMLCanvasElement): CardRect | null {
+  const sw = src.width;
+  const sh = src.height;
+  if (sw < 40 || sh < 40) return null;
+  const W = 160;
+  const H = clamp(Math.round((160 * sh) / sw), 60, 160);
+  const t = document.createElement('canvas');
+  t.width = W;
+  t.height = H;
+  t.getContext('2d')!.drawImage(src, 0, 0, W, H);
+  const data = t.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, W, H).data;
+  const found = boundsOfMask(cardMask(data, W, H), W, H);
+  if (!found) return null;
+  // Thumb pad (3%) plus one more percent at full resolution: detection error must eat
+  // margin, never card edge.
+  const padX = Math.round(sw * 0.01);
+  const padY = Math.round(sh * 0.01);
+  const x0 = Math.max(0, Math.round((found.x / W) * sw) - padX);
+  const y0 = Math.max(0, Math.round((found.y / H) * sh) - padY);
+  const x1 = Math.min(sw, Math.round(((found.x + found.w) / W) * sw) + padX);
+  const y1 = Math.min(sh, Math.round(((found.y / H) * sh + found.h / H) * sh) + padY);
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (w <= 0 || h <= 0) return null;
+  if ((w * h) / (sw * sh) > 0.98) return null; // trivial shave — keep the original pixels
+  if ((w * h) / (sw * sh) < 0.12) return null; // implausibly small — a false positive
+  return { x: x0, y: y0, w, h };
+}
+
+function cropCanvas(src: HTMLCanvasElement, r: CardRect): HTMLCanvasElement {
+  const out = document.createElement('canvas');
+  out.width = Math.max(2, r.w);
+  out.height = Math.max(2, r.h);
+  out.getContext('2d')!.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, out.width, out.height);
+  return out;
+}
+
+/** Cap the long side. */
 function fitCanvas(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
   const k = Math.min(1, maxSide / Math.max(1, Math.max(src.width, src.height)));
   if (k >= 1) return src;
@@ -242,9 +355,12 @@ function sharpen(c: HTMLCanvasElement, a = 0.12) {
 
 // ---------------------------------------------------------------- public pipeline
 
-/** Auto colour clean-up: flatten → level → gentle punch. Always the colour look. */
+/** Auto colour clean-up: detect the card (tables/desks cut away, padded so no side is
+ * lost) → flatten → level → gentle punch. Always the colour look. A missed detection
+ * keeps the whole photo — never a wrong cut. */
 function develop(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
-  const c = fitCanvas(src, maxSide);
+  const found = detectCardRect(src);
+  const c = fitCanvas(found ? cropCanvas(src, found) : src, maxSide);
   flatten(c);
   stretch(c);
   saturate(c, 1.08);

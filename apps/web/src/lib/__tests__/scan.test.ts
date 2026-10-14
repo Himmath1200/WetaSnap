@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoLevels, enhanceCurve, flattenWeight, inkBlack, paperWhite, sauvolaBinarize } from '../scan';
+import { autoLevels, boundsOfMask, enhanceCurve, flattenWeight, inkBlack, paperWhite, sauvolaBinarize } from '../scan';
 
 /** SCAN-02: the auto colour clean-up levels must hold exactly — these run in Node, no canvas. */
 describe('clean-scan levels', () => {
@@ -61,5 +61,37 @@ describe('clean-scan levels', () => {
     expect(black).toBeLessThanOrEqual(40);
     expect(black).toBeGreaterThanOrEqual(0);
     expect(inkBlack([])).toBe(25);
+  });
+});
+
+/** SCAN-02 auto-crop: find the card rect from a mask, padded, or decline to cut. */
+describe('card bounds from a mask', () => {
+  /** A card rectangle inside a table: foreground 1 inside, 0 outside. */
+  const card = (w: number, h: number, x0: number, y0: number, x1: number, y1: number, specks = 0) => {
+    const fg = new Uint8Array(w * h);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) fg[y * w + x] = 1;
+    for (let i = 0; i < specks; i++) fg[(i * 7919) % (w * h)] = 1; // deterministic table specks
+    return fg;
+  };
+
+  it('finds a centred card and pads it so no side is lost', () => {
+    const r = boundsOfMask(card(100, 60, 10, 8, 89, 51), 100, 60)!;
+    expect(r).not.toBeNull();
+    expect(r.x).toBeLessThanOrEqual(10); // pad reaches past the true edge…
+    expect(r.y).toBeLessThanOrEqual(8);
+    expect(r.x + r.w).toBeGreaterThanOrEqual(90); // …on every side
+    expect(r.y + r.h).toBeGreaterThanOrEqual(52);
+  });
+
+  it('ignores specks on the table', () => {
+    const r = boundsOfMask(card(100, 60, 12, 10, 87, 49, 40), 100, 60)!;
+    expect(r.x).toBeLessThanOrEqual(12);
+    expect(r.x + r.w).toBeGreaterThanOrEqual(88);
+  });
+
+  it('declines an empty frame, a full-bleed card, and a tiny false positive', () => {
+    expect(boundsOfMask(new Uint8Array(100 * 60), 100, 60)).toBeNull();
+    expect(boundsOfMask(new Uint8Array(100 * 60).fill(1), 100, 60)).toBeNull();
+    expect(boundsOfMask(card(100, 60, 45, 25, 55, 35), 100, 60)).toBeNull();
   });
 });
