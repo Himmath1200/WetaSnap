@@ -27,7 +27,7 @@ describe('parseCardText', () => {
     expect(r.country?.value).toBe('Germany');
   });
 
-  it('takes the mobile over the fax, and says when there was a choice', () => {
+  it('takes the mobile over the desk number, and says when there was a choice', () => {
     const r = parseCardText([
       'Harvest Analytics Ltd',
       'James Robinson',
@@ -38,7 +38,7 @@ describe('parseCardText', () => {
       'james.robinson@harvestanalytics.co.uk',
     ].join('\n'));
 
-    expect(r.phone?.value).toBe('+44 20 7946 0101');
+    expect(r.phone?.value).toBe('+44 7700 900 461');
     expect(r.phone?.reason).toMatch(/more than one number/i);
     expect(r.phone?.value).not.toMatch(/0199/); // never the fax
     expect(r.company?.value).toBe('Harvest Analytics Ltd');
