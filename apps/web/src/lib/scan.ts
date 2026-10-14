@@ -59,8 +59,8 @@ export function solveH(dst: Pt[], src: Pt[]): H {
     const yd = dst[i]!.y;
     const xs = src[i]!.x;
     const ys = src[i]!.y;
-    a.push([-xd, -yd, -1, 0, 0, 0, xs * xd, xs * yd, xs]);
-    a.push([0, 0, 0, -xd, -yd, -1, ys * xd, ys * yd, ys]);
+    a.push([xd, yd, 1, 0, 0, 0, -xs * xd, -xs * yd, xs]);
+    a.push([0, 0, 0, xd, yd, 1, -ys * xd, -ys * yd, ys]);
   }
   // Gaussian elimination with partial pivoting, h[8] = 1.
   for (let col = 0; col < 8; col++) {
