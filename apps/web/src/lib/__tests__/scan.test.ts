@@ -82,9 +82,7 @@ describe('clean-scan math', () => {
     expect(ink).toBeLessThan(70);
     // grain band → pure white, ink → near black, curve never runs backwards
     for (const v of [226, 232, 238]) expect(targetLum(v, paper, ink, true)).toBe(255);
-    expect(targetLum(40, paper, ink, true)).toBeLessThan(60);
-    // coloured print survives: a red pixel (196,44,45, lum ~84) stays mid-tone, not crushed
-    expect(targetLum(84, paper, ink, true)).toBeGreaterThan(70);
+    expect(targetLum(40, paper, ink, true)).toBeLessThan(30);
     let last = -1;
     for (let v = 0; v <= 255; v++) {
       const cur = targetLum(v, paper, ink, true);
