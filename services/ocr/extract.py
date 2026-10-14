@@ -103,6 +103,83 @@ def _clean(s: str) -> str:
 
 
 # --------------------------------------------------------------------------
+# BCR-inspired text repairs (idea after syneo-tools-gmbh/Javascript-BCR-Library,
+# Apache-2.0): Tesseract's usual letter slips, one OCR line holding two labelled
+# facts, and bigram matching so a one-letter slip does not break the email link.
+# --------------------------------------------------------------------------
+
+
+def _bigram_sim(a: str, b: str) -> float:
+    """Dice over letter-pair sets: "nordsaat" vs "nordsaot" still scores high."""
+    def pairs(s: str) -> set[str]:
+        t = _squash(s)
+        return {t[i : i + 2] for i in range(len(t) - 1)} if len(t) >= 2 else set()
+    A, B = pairs(a), pairs(b)
+    if not A or not B:
+        return 0.0
+    return 2.0 * len(A & B) / (len(A) + len(B))
+
+
+TYPO_FIXES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"([A-Za-z0-9])[©®]([A-Za-z0-9])"), r"\1@\2"),
+    (re.compile(r",com\b", re.IGNORECASE), ".com"),
+    (re.compile(r"\.oom\b", re.IGNORECASE), ".com"),
+    (re.compile(r"\.eh(?=\s|$)", re.IGNORECASE), ".ch"),
+    (re.compile(r"([A-Za-z])\|([A-Za-z])"), r"\1l\2"),
+    (re.compile(r"([A-Za-z])0([A-Za-z])"), r"\1o\2"),
+)
+
+
+def fix_typos(text: str) -> str:
+    for pattern, replacement in TYPO_FIXES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+# Label words that start a new fact mid-line; "Mobile Solutions GmbH" must not split.
+_MIXED_LABEL = re.compile(
+    r"(?=\s*\b(?:tel|t[eé]l[eé]phone|telefon|phone|mobile|mob|handy|cell|fax"
+    r"|e-?mail|mail|web)\b(?=\s*[:.]|\s*[+(\d@]))"
+    r"|(?=\s*\b[TMFtmf]\s*:\s*(?=[+(\d]))",
+    re.IGNORECASE,
+)
+
+
+def split_mixed(line: str) -> list[str]:
+    parts = [p for p in _MIXED_LABEL.split(line) if p]
+    return parts if len(parts) > 1 else [line]
+
+
+def expand_lines(lines: Sequence[Line]) -> list[Line]:
+    """Repair typos and split one OCR line holding two facts, before any matching.
+
+    Idempotent: safe to call on already-expanded lines. A split half keeps the
+    confidence and a proportional slice of the box, so size/position scoring
+    still works.
+    """
+    out: list[Line] = []
+    for line in lines:
+        fixed = fix_typos(line.text)
+        parts = split_mixed(fixed)
+        if len(parts) == 1:
+            out.append(Line(fixed, line.bbox, line.confidence))
+            continue
+        x0, y0, x1, y1 = line.bbox
+        total = sum(len(p) for p in parts) or 1
+        cursor = 0.0
+        for part in parts:
+            frac0 = cursor / total
+            cursor += len(part)
+            frac1 = cursor / total
+            out.append(Line(
+                part,
+                (x0 + frac0 * (x1 - x0), y0, x0 + frac1 * (x1 - x0), y1),
+                line.confidence,
+            ))
+    return out
+
+
+# --------------------------------------------------------------------------
 # Patterns
 # --------------------------------------------------------------------------
 
@@ -402,6 +479,20 @@ def find_company(
             squashed = _squash(line.text)
             if squashed and (squashed == base or (len(squashed) >= 4 and (squashed in base or base in squashed))):
                 return _clean(line.text), 0.85, i, "domain-match"
+        # One letter misread ("nordsaot" for "nordsaat") breaks the exact test above.
+        fuzzy: Optional[tuple[int, float]] = None
+        for i, line in enumerate(lines):
+            if i in skip or EMAIL_RE.search(line.text) or URL_RE.search(line.text):
+                continue
+            squashed = _squash(line.text)
+            if len(squashed) < 4:
+                continue
+            sim = _bigram_sim(squashed, base)
+            if sim > 0.55 and (fuzzy is None or sim > fuzzy[1]):
+                fuzzy = (i, sim)
+        if fuzzy is not None:
+            i, _sim = fuzzy
+            return _clean(lines[i].text), 0.7, i, "domain-match"
 
     # Fall back to the biggest line that is not the person.
     ranked = _by_prominence(lines, skip)
@@ -473,7 +564,10 @@ def find_name(
         for i, line in candidates:
             words = [w for w in _clean(line.text).split() if _norm(w.rstrip(".")) not in HONORIFICS]
             squashed = [_squash(w) for w in words]
-            matches = sum(1 for p in squashed if len(p) >= 3 and p in local)
+            matches = sum(
+                1 for p in squashed
+                if len(p) >= 3 and (p in local or _bigram_sim(p, local) > 0.6)
+            )
             if matches and (best is None or matches > best[0]):
                 best = (matches, i, line)
         if best is not None:
