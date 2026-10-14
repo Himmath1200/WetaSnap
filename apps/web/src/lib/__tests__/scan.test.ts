@@ -39,17 +39,16 @@ describe('clean-scan levels', () => {
     expect(flattenWeight(228, 230)).toBe(1); // paper: full correction
   });
 
-  it('enhance curve keeps faint print mid-grey and snaps only near-paper white', () => {
+  it('enhance curve passes print through untouched, snaps only paper white', () => {
     const black = 25;
     const white = 225;
     expect(enhanceCurve(225, black, white)).toBe(255);
     expect(enhanceCurve(245, black, white)).toBe(255);
-    expect(enhanceCurve(25, black, white)).toBe(0);
-    expect(enhanceCurve(10, black, white)).toBe(0);
-    const faint = enhanceCurve(165, black, white); // thin grey small print
-    expect(faint).toBeGreaterThan(150);
-    expect(faint).toBeLessThan(190); // stays put — neither bleached nor crushed
-    expect(enhanceCurve(210, black, white)).toBeLessThan(255); // off-paper stays off-white
+    expect(enhanceCurve(223, black, white)).toBe(255); // paper tolerance: ±2 sensor noise
+    expect(enhanceCurve(165, black, white)).toBe(165); // faint grey: byte-identical
+    expect(enhanceCurve(115, black, white)).toBe(115); // coloured print: byte-identical
+    expect(enhanceCurve(25, black, white)).toBe(31); // crushed blacks open a whisper
+    expect(enhanceCurve(10, black, white)).toBe(31);
   });
 
   it('white point lands on paper even with faint text on the page', () => {

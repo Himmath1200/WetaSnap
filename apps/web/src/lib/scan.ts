@@ -203,7 +203,8 @@ function flatten(c: HTMLCanvasElement) {
   const mg = med(pg);
   const mb = med(pb);
   const paperLum = 0.299 * mr + 0.587 * mg + 0.114 * mb;
-  const bal = [mr, mg, mb].map((ch) => (ch > 0 && paperLum > 0 ? clamp(paperLum / ch, 0.92, 1.08) : 1));
+  // Very gentle: ±4% max — just takes the lamp tint off, never repaints the card.
+  const bal = [mr, mg, mb].map((ch) => (ch > 0 && paperLum > 0 ? clamp(paperLum / ch, 0.96, 1.04) : 1));
   for (let y = 0; y < h; y++) {
     const fy = ((y + 0.5) / h) * th - 0.5;
     for (let x = 0; x < w; x++) {
@@ -216,7 +217,8 @@ function flatten(c: HTMLCanvasElement) {
       const bgLum = atLum(fx, fy);
       const wgt = flattenWeight(lum, bgLum); // 0 on print → untouched
       if (wgt <= 0) continue;
-      const gain = 1 + (Math.min(1.25, 255 / Math.max(1, bgLum)) - 1) * wgt;
+      // Gentle: paper lifts at most 12% — shadows soften, print never moves.
+      const gain = 1 + (Math.min(1.12, 255 / Math.max(1, bgLum)) - 1) * wgt;
       d[i] = Math.min(255, d[i]! * gain);
       d[i + 1] = Math.min(255, d[i + 1]! * gain);
       d[i + 2] = Math.min(255, d[i + 2]! * gain);
@@ -248,13 +250,13 @@ export function autoLevels(samples: number[]): [number, number] {
   return hi - lo < 12 ? [Math.max(0, lo - 6), Math.min(255, hi + 6)] : [lo, hi];
 }
 
-/** Scanner tonal curve: linear black→white with a hard paper snap only in the top 4%.
- * Faint grey at 70% of paper keeps ~63% output — never bleached, never posterised. Pure. */
+/** Near-identity tonal touch: paper snaps white, crushed blacks open a whisper, every
+ * other pixel passes through byte-identical. Max shift 6 — the curve cannot ruin anything.
+ * All real work (shadow lift, lamp tint) already happened in flatten. Pure. */
 export function enhanceCurve(v: number, black: number, white: number): number {
-  const snap = white - Math.max(4, (white - black) * 0.04);
-  if (v >= snap) return 255;
-  if (v <= black) return 0;
-  return clamp(((v - black) / Math.max(1, snap - black)) * 255, 0, 255);
+  if (v >= white - 2) return 255;
+  if (v <= black) return Math.min(255, black + 6);
+  return clamp(v, 0, 255);
 }
 
 function stretch(c: HTMLCanvasElement) {
@@ -356,15 +358,15 @@ function sharpen(c: HTMLCanvasElement, a = 0.12) {
 // ---------------------------------------------------------------- public pipeline
 
 /** Auto colour clean-up: detect the card (tables/desks cut away, padded so no side is
- * lost) → flatten → level → gentle punch. Always the colour look. A missed detection
- * keeps the whole photo — never a wrong cut. */
+ * lost) → flatten → barely-there level → whisper of punch. A missed detection keeps the
+ * whole photo — never a wrong cut. */
 function develop(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
   const found = detectCardRect(src);
   const c = fitCanvas(found ? cropCanvas(src, found) : src, maxSide);
   flatten(c);
   stretch(c);
-  saturate(c, 1.08);
-  sharpen(c, 0.12);
+  saturate(c, 1.03);
+  sharpen(c, 0.08);
   return c;
 }
 
