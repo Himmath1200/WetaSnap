@@ -171,86 +171,6 @@ const PARTICLES = new Set([
 ]);
 
 /**
- * BCR-inspired repairs (idea after syneo-tools-gmbh/Javascript-BCR-Library, Apache-2.0):
- * a typo table for Tesseract's usual slips, splitting one OCR line that holds two labelled
- * facts, and bigram Dice matching so a one-letter slip does not break the email/domain link.
- */
-const squash = (s: string) =>
-  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-function bigramSim(a: string, b: string): number {
-  const pairs = (s: string) => {
-    const t = squash(s);
-    const out = new Set<string>();
-    for (let i = 0; i + 1 < t.length; i++) out.add(t.slice(i, i + 2));
-    return out;
-  };
-  const A = pairs(a), B = pairs(b);
-  if (!A.size || !B.size) return 0;
-  let hit = 0;
-  for (const p of A) if (B.has(p)) hit++;
-  return (2 * hit) / (A.size + B.size);
-}
-
-/** Applied to the whole text before parsing; every value is still shown for checking. */
-function fixTypos(text: string): string {
-  return text
-    .replace(/([A-Za-z0-9])[©®]([A-Za-z0-9])/g, '$1@$2') // "lena©fischer.de"
-    .replace(/,com\b/gi, '.com') // ",com" for ".com"
-    .replace(/\.oom\b/gi, '.com') // ".oom" for ".com"
-    .replace(/\.eh(?=\s|$)/gi, '.ch') // ".eh" for ".ch"
-    .replace(/([A-Za-z])\|([A-Za-z])/g, '$1l$2') // pipe read for l
-    .replace(/([A-Za-z])0([A-Za-z])/g, '$1o$2') // 0 read for o inside a word
-    .replace(/(?<=[A-Za-z]{2})1(?=[A-Za-z]{2})/g, 'i'); // 1 read for i inside a word
-}
-
-/**
- * One OCR line often holds two facts ("Tel +49 … Mobile +49 …"): split on label boundaries
- * so each fact is scored on its own. A label only splits when a colon or a number follows,
- * so "Mobile Solutions GmbH" stays one line; single letters only with a colon plus digits
- * ahead, so "M. Smith" is never torn apart.
- */
-function splitMixed(line: string): string[] {
-  const parts = line
-    .split(
-      /(?=\s*\b(?:tel|t[eé]l[eé]phone|telefon|phone|mobile|mob|handy|cell|fax|e-?mail|mail|web)\b(?=\s*[:.]|\s*[+(\d@]))|(?=\s*\b[TMFtmf]\s*:\s*(?=[+(\d]))/i,
-    )
-    .filter((p) => p.trim());
-  return parts.length > 1 ? parts : [line];
-}
-
-/** Best bigram score of the whole line or any single token — a long line must not dilute one good word. */
-function lineSim(line: string, base: string): number {
-  let best = bigramSim(squash(line), base);
-  for (const tok of squash(line).split(/[^a-z0-9]+/).filter((t) => t.length >= 4)) {
-    const s = bigramSim(tok, base);
-    if (s > best) best = s;
-  }
-  return best;
-}
-
-/**
- * The company the email domain points at: exact first, then the best bigram match, so an
- * early generic line never shadows the real name ("Blauwasser" for n.roth@blauwasser.de).
- */
-function matchDomain(lines: string[], used: Set<string>, email: string | null): string | null {
-  const base = squash(email?.split('@')[1]?.split('.')[0] ?? '');
-  if (!email || base.length < 4) return null;
-  const cands = lines.filter((l) =>
-    !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l) && squash(l).length >= 4);
-  for (const l of cands) {
-    const sq = squash(l);
-    if (sq === base || sq.includes(base) || base.includes(sq)) return l;
-  }
-  let best: { line: string; sim: number } | null = null;
-  for (const l of cands) {
-    const sim = lineSim(l, base);
-    if (sim > 0.55 && (!best || sim > best.sim)) best = { line: l, sim };
-  }
-  return best?.line ?? null;
-}
-
-/**
  * Collapses whitespace, then strips Tesseract's edge debris: leading rule fragments
  * ("~~ M:…", "| Jayakumar P", "1 M:…") and trailing label punctuation. The trailing
  * dot is kept — it belongs to "B.V." and "S.r.l.".
@@ -360,12 +280,9 @@ function pickName(lines: string[], used: Set<string>, emailLocal: string): strin
     else if (words.length === 3) s += 1;
     if (/^[A-Z]\.?$/.test(words[words.length - 1]!)) s += 2; // a lone initial: "Jayakumar P"
     if (emailLocal) {
-      const el = squash(emailLocal);
+      const el = emailLocal.toLowerCase();
       let m = 0;
-      for (const w of words) {
-        const sw = squash(w);
-        if (sw.length >= 3 && (el.includes(sw) || bigramSim(sw, el) > 0.6)) m++;
-      }
+      for (const w of words) if (w.length >= 3 && el.includes(w.toLowerCase())) m++;
       s += Math.min(m, 2) * 2;
     }
     if (idx <= 2) s += 1; // the name sits near the top, under the logo
@@ -398,13 +315,10 @@ function splitName(full: string): [string, string] {
  */
 export function parseCardText(text: string): ReadResult {
   // Two-column cards arrive as merged "email   Company" lines (the gutter survives as extra
-  // spaces via preserve_interword_spaces). Split them back into one fact per line first,
-  // and repair Tesseract's usual letter slips before anything matches on the text.
-  text = fixTypos(text);
+  // spaces via preserve_interword_spaces). Split them back into one fact per line first.
   const lines = text
     .split('\n')
     .flatMap((l) => l.split(/\t| {2,}/))
-    .flatMap((l) => splitMixed(l))
     .map((l) => clean(l))
     .filter((l) => l.length > 1 && !LABEL.test(l) && !isDebris(l) && looksLikeText(l));
   const out: ReadResult = {};
@@ -513,9 +427,7 @@ export function parseCardText(text: string): ReadResult {
   }
   hard.sort((a, b) => b.length - a.length);
   soft.sort((a, b) => b.length - a.length);
-  const domainMatch = !hard[0] && !soft[0] ? matchDomain(lines, used, email) : null;
   let company = hard[0] ?? soft[0]
-    ?? domainMatch
     ?? lines.find((l) => !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l));
   if (company && lines.includes(company)) {
     // A letterhead often splits the name over two lines: “NORDSAAT” above “Saatgut GmbH”.
@@ -528,9 +440,8 @@ export function parseCardText(text: string): ReadResult {
   }
   if (company) {
     const hardWon = hard.includes(company) || (company.includes(' ') && hard.some((h) => company!.includes(h)));
-    const viaDomain = !hardWon && company === domainMatch;
-    out.company = mark(company, hard[0] !== undefined || soft.length ? (hardWon ? 0.8 : 0.5) : viaDomain ? 0.7 : 0.5,
-      hardWon ? undefined : viaDomain ? 'Taken from the web address' : 'Taken from the top of the card');
+    out.company = mark(company, hard[0] !== undefined || soft.length ? (hardWon ? 0.8 : 0.5) : 0.5,
+      hardWon ? undefined : 'Taken from the top of the card');
     used.add(company);
   }
 
