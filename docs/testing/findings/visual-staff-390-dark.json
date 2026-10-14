@@ -1,0 +1,132 @@
+[
+  {
+    "screen": "scan",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/scan-phone-dark.png"
+  },
+  {
+    "screen": "scan-crop",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/scan-crop-phone-dark.png"
+  },
+  {
+    "screen": "scan-review",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/scan-review-phone-dark.png"
+  },
+  {
+    "screen": "my-leads",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/my-leads-phone-dark.png"
+  },
+  {
+    "screen": "my-leads-filters",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/my-leads-filters-phone-dark.png"
+  },
+  {
+    "screen": "lead-preview",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/lead-preview-phone-dark.png"
+  },
+  {
+    "screen": "lead-edit",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/lead-edit-phone-dark.png"
+  },
+  {
+    "screen": "security",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/security-phone-dark.png"
+  },
+  {
+    "screen": "security-devices",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/security-devices-phone-dark.png"
+  },
+  {
+    "screen": "profile",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/profile-phone-dark.png"
+  },
+  {
+    "screen": "menu",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/menu-phone-dark.png"
+  },
+  {
+    "screen": "notifications",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/notifications-phone-dark.png"
+  },
+  {
+    "screen": "signout-dialog",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/signout-dialog-phone-dark.png"
+  }
+]

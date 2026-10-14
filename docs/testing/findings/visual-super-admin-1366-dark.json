@@ -1,0 +1,202 @@
+[
+  {
+    "screen": "companies",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/companies-laptop-dark.png"
+  },
+  {
+    "screen": "new-company",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/new-company-laptop-dark.png"
+  },
+  {
+    "screen": "company-detail",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/company-detail-laptop-dark.png"
+  },
+  {
+    "screen": "subscriptions-plans",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/subscriptions-plans-laptop-dark.png"
+  },
+  {
+    "screen": "subscriptions-subs",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/subscriptions-subs-laptop-dark.png"
+  },
+  {
+    "screen": "subscriptions-invoices",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/subscriptions-invoices-laptop-dark.png"
+  },
+  {
+    "screen": "invoice-sheet",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/invoice-sheet-laptop-dark.png"
+  },
+  {
+    "screen": "new-invoice",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/new-invoice-laptop-dark.png"
+  },
+  {
+    "screen": "usage",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/usage-laptop-dark.png"
+  },
+  {
+    "screen": "usage-alerts",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/usage-alerts-laptop-dark.png"
+  },
+  {
+    "screen": "audit",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/audit-laptop-dark.png"
+  },
+  {
+    "screen": "audit-detail",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/audit-detail-laptop-dark.png"
+  },
+  {
+    "screen": "security-policy",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/security-policy-laptop-dark.png"
+  },
+  {
+    "screen": "security-account",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/security-account-laptop-dark.png"
+  },
+  {
+    "screen": "security-devices",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/security-devices-laptop-dark.png"
+  },
+  {
+    "screen": "security-history",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/security-history-laptop-dark.png"
+  },
+  {
+    "screen": "support",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/support-laptop-dark.png"
+  },
+  {
+    "screen": "profile",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/profile-laptop-dark.png"
+  },
+  {
+    "screen": "notifications",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/notifications-laptop-dark.png"
+  },
+  {
+    "screen": "menu",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/super-admin/menu-laptop-dark.png"
+  }
+]

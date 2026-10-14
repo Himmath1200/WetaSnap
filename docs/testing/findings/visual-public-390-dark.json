@@ -1,0 +1,52 @@
+[
+  {
+    "screen": "signin",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-phone-dark.png"
+  },
+  {
+    "screen": "signin-emailed-code",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-emailed-code-phone-dark.png"
+  },
+  {
+    "screen": "signin-setup",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-setup-phone-dark.png"
+  },
+  {
+    "screen": "signin-forgot",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-forgot-phone-dark.png"
+  },
+  {
+    "screen": "signin-reset",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-reset-phone-dark.png"
+  }
+]

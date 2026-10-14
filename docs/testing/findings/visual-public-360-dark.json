@@ -1,0 +1,52 @@
+[
+  {
+    "screen": "signin",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": null
+  },
+  {
+    "screen": "signin-emailed-code",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": null
+  },
+  {
+    "screen": "signin-setup",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": null
+  },
+  {
+    "screen": "signin-forgot",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": null
+  },
+  {
+    "screen": "signin-reset",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": null
+  }
+]

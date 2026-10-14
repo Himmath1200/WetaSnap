@@ -1,0 +1,52 @@
+[
+  {
+    "screen": "signin",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-laptop-dark.png"
+  },
+  {
+    "screen": "signin-emailed-code",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-emailed-code-laptop-dark.png"
+  },
+  {
+    "screen": "signin-setup",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-setup-laptop-dark.png"
+  },
+  {
+    "screen": "signin-forgot",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-forgot-laptop-dark.png"
+  },
+  {
+    "screen": "signin-reset",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/public/signin-reset-laptop-dark.png"
+  }
+]

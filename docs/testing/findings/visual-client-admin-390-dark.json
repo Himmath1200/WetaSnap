@@ -1,0 +1,232 @@
+[
+  {
+    "screen": "leads",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/leads-phone-dark.png"
+  },
+  {
+    "screen": "leads-filters",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/leads-filters-phone-dark.png"
+  },
+  {
+    "screen": "lead-preview",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/lead-preview-phone-dark.png"
+  },
+  {
+    "screen": "lead-edit",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/lead-edit-phone-dark.png"
+  },
+  {
+    "screen": "import",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/import-phone-dark.png"
+  },
+  {
+    "screen": "import-history",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/import-history-phone-dark.png"
+  },
+  {
+    "screen": "scan",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/scan-phone-dark.png"
+  },
+  {
+    "screen": "my-leads",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/my-leads-phone-dark.png"
+  },
+  {
+    "screen": "team",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/team-phone-dark.png"
+  },
+  {
+    "screen": "invite-dialog",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/invite-dialog-phone-dark.png"
+  },
+  {
+    "screen": "invite-sent",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/invite-sent-phone-dark.png"
+  },
+  {
+    "screen": "settings-events",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/settings-events-phone-dark.png"
+  },
+  {
+    "screen": "settings-fields",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/settings-fields-phone-dark.png"
+  },
+  {
+    "screen": "settings-tags",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/settings-tags-phone-dark.png"
+  },
+  {
+    "screen": "settings-crm",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/settings-crm-phone-dark.png"
+  },
+  {
+    "screen": "settings-company",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/settings-company-phone-dark.png"
+  },
+  {
+    "screen": "settings-billing",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/settings-billing-phone-dark.png"
+  },
+  {
+    "screen": "support",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/support-phone-dark.png"
+  },
+  {
+    "screen": "support-new-request",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/support-new-request-phone-dark.png"
+  },
+  {
+    "screen": "security",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/security-phone-dark.png"
+  },
+  {
+    "screen": "profile",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/profile-phone-dark.png"
+  },
+  {
+    "screen": "notifications",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/notifications-phone-dark.png"
+  },
+  {
+    "screen": "menu",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/client-admin/menu-phone-dark.png"
+  }
+]

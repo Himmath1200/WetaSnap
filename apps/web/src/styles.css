@@ -1,0 +1,260 @@
+@import "tailwindcss";
+
+/* Display face for the WeTa Snap wordmark and screen titles (Outfit, latin subset only:
+   two weights, ~28 KB, swapped in after the system font so nothing waits on it). */
+@import "@fontsource/outfit/latin-600.css";
+@import "@fontsource/outfit/latin-700.css";
+
+/* WeTa Snap theme — green primary with blue accents (client brief), light and dark.
+ *
+ * How dark mode works: every colour below is a CSS variable, so the dark blocks at the
+ * bottom simply re-point the same names (brand-50 becomes a deep green instead of a pale
+ * one, slate-600 becomes light, and so on). Screens therefore need no dark: variants —
+ * they use the semantic classes bg-surface / bg-subtle / text-ink / text-muted / border-line
+ * and the brand-*, ocean-*, amber-*, red-* scales, and both themes come out right.
+ *
+ * The theme follows the phone or laptop setting unless the person picks one:
+ * <html data-theme="light"> or <html data-theme="dark"> (see main.tsx / lib/theme.ts).
+ */
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* green — main buttons, active navigation, success */
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+
+  /* blue — links, secondary actions, filters, focus */
+  --color-ocean-50: #eff6ff;
+  --color-ocean-100: #dbeafe;
+  --color-ocean-200: #bfdbfe;
+  --color-ocean-500: #3b82f6;
+  --color-ocean-600: #2563eb;
+  --color-ocean-700: #1d4ed8;
+  --color-ocean-800: #1e40af;
+
+  /* surfaces and text */
+  --color-canvas: #f6faf9;
+  --color-surface: #ffffff;
+  --color-subtle: #f8fafc;
+  --color-ink: #0f172a;
+  --color-muted: #64748b;
+  --color-line: #e2e8f0;
+
+  /* main (green) button — its own pair so the label stays readable in both themes */
+  --color-btn: #047857;
+  --color-btn-ink: #ffffff;
+}
+
+/* ---------------------------------------------------------------- dark theme */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@layer theme {
+  .dark-tokens,
+  :root[data-theme="dark"] {
+    --color-canvas: #0a0a0b;
+    --color-surface: #141416;
+    --color-subtle: #1c1c1f;
+    --color-ink: #f2f2f3;
+    --color-muted: #a0a0a6;
+    --color-line: #2b2b2f;
+    --color-btn: #10b981;
+    --color-btn-ink: #04241a;
+
+    /* tinted backgrounds become deep tints; the 700–900 text steps become light */
+    --color-brand-50: #0c1e17;
+    --color-brand-100: #123027;
+    --color-brand-200: #18503c;
+    --color-brand-500: #10b981;
+    --color-brand-600: #10b981;
+    --color-brand-700: #34d399;
+    --color-brand-800: #6ee7b7;
+    --color-brand-900: #a7f3d0;
+
+    --color-ocean-50: #0e1c26;
+    --color-ocean-100: #14293a;
+    --color-ocean-200: #1d3b52;
+    --color-ocean-500: #60a5fa;
+    --color-ocean-600: #3b82f6;
+    --color-ocean-700: #93c5fd;
+    --color-ocean-800: #bfdbfe;
+
+    --color-slate-50: #1c1c1f;
+    --color-slate-100: #232327;
+    --color-slate-200: #2c2c31;
+    --color-slate-300: #3d3d43;
+    --color-slate-400: #86868c;
+    --color-slate-500: #a0a0a6;
+    --color-slate-600: #c2c2c7;
+    --color-slate-700: #e3e3e6;
+
+    --color-amber-50: #261d07;
+    --color-amber-100: #332709;
+    --color-amber-200: #4c3a10;
+    --color-amber-400: #fbbf24;
+    --color-amber-800: #fcd34d;
+    --color-amber-900: #fde68a;
+
+    --color-red-50: #2b1111;
+    --color-red-100: #3a1817;
+    --color-red-200: #5c2220;
+    --color-red-700: #fca5a5;
+    --color-red-800: #fecaca;
+
+    --color-orange-100: #3a2009;
+    --color-orange-800: #fdba74;
+
+    --color-purple-50: #1f1430;
+    --color-purple-100: #291a3e;
+    --color-purple-700: #d8b4fe;
+    --color-purple-800: #e9d5ff;
+  }
+}
+
+/* Follow the device setting when no theme was chosen. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-canvas: #0a0a0b;
+    --color-surface: #141416;
+    --color-subtle: #1c1c1f;
+    --color-ink: #f2f2f3;
+    --color-muted: #a0a0a6;
+    --color-line: #2b2b2f;
+    --color-btn: #10b981;
+    --color-btn-ink: #04241a;
+
+    --color-brand-50: #0c1e17;
+    --color-brand-100: #123027;
+    --color-brand-200: #18503c;
+    --color-brand-500: #10b981;
+    --color-brand-600: #10b981;
+    --color-brand-700: #34d399;
+    --color-brand-800: #6ee7b7;
+    --color-brand-900: #a7f3d0;
+
+    --color-ocean-50: #0e1c26;
+    --color-ocean-100: #14293a;
+    --color-ocean-200: #1d3b52;
+    --color-ocean-500: #60a5fa;
+    --color-ocean-600: #3b82f6;
+    --color-ocean-700: #93c5fd;
+    --color-ocean-800: #bfdbfe;
+
+    --color-slate-50: #1c1c1f;
+    --color-slate-100: #232327;
+    --color-slate-200: #2c2c31;
+    --color-slate-300: #3d3d43;
+    --color-slate-400: #86868c;
+    --color-slate-500: #a0a0a6;
+    --color-slate-600: #c2c2c7;
+    --color-slate-700: #e3e3e6;
+
+    --color-amber-50: #261d07;
+    --color-amber-100: #332709;
+    --color-amber-200: #4c3a10;
+    --color-amber-400: #fbbf24;
+    --color-amber-800: #fcd34d;
+    --color-amber-900: #fde68a;
+
+    --color-red-50: #2b1111;
+    --color-red-100: #3a1817;
+    --color-red-200: #5c2220;
+    --color-red-700: #fca5a5;
+    --color-red-800: #fecaca;
+
+    --color-orange-100: #3a2009;
+    --color-orange-800: #fdba74;
+
+    --color-purple-50: #1f1430;
+    --color-purple-100: #291a3e;
+    --color-purple-700: #d8b4fe;
+    --color-purple-800: #e9d5ff;
+  }
+}
+
+/* Horizontal scrollers (tabs, chip rows) scroll by swipe without a visible bar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 min-h-11 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+@layer base {
+  /* The page grows with its content: a fixed viewport height left the area below one screen
+     unpainted, which showed as white (or black) bands while scrolling. */
+  html, body, #app { min-height: 100%; }
+  /* Phones report the visible height with dvh; sheets and the scanner use it. */
+  @supports (height: 100dvh) { html, body, #app { min-height: 100dvh; } }
+  html { background: var(--color-canvas); }
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    /* Phone safe areas (notch, home indicator) are handled per component with env(). */
+    overscroll-behavior-y: none;
+  }
+  :focus-visible { outline: 2px solid var(--color-ocean-600); outline-offset: 2px; }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  /* Native controls follow the theme (date pickers, checkboxes, scrollbars). */
+  :root[data-theme="dark"] { color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+}
+
+@layer components {
+  .accent-bar { background: linear-gradient(90deg, var(--color-brand-500), var(--color-ocean-600)); height: 3px; }
+  .brand-gradient { background: linear-gradient(135deg, var(--color-brand-600), var(--color-ocean-600)); }
+  .brand-text { background: linear-gradient(90deg, var(--color-brand-600), var(--color-ocean-600)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* The wordmark: display face, tight tracking, “WeTa” in the logo gradient. */
+  .wordmark { font-family: var(--font-display); font-weight: 700; letter-spacing: -0.02em; }
+  h1, h2, .title { font-family: var(--font-display); letter-spacing: -0.015em; }
+
+  .btn-primary {
+    @apply btn shadow-sm;
+    background: var(--color-btn);
+    color: var(--color-btn-ink);
+  }
+  .btn-primary:hover:not(:disabled) { background: color-mix(in oklab, var(--color-btn) 88%, black); }
+  .btn-primary:active:not(:disabled) { background: color-mix(in oklab, var(--color-btn) 78%, black); }
+  /* Same pair for small solid-green surfaces (selected tab, “current” pill). */
+  .on-brand { background: var(--color-btn); color: var(--color-btn-ink); }
+  .btn-secondary { @apply btn bg-surface text-ocean-700 border border-ocean-100 hover:bg-ocean-50; }
+  .btn-ghost { @apply btn text-muted hover:bg-subtle; }
+  .btn-danger { @apply btn bg-surface text-red-700 border border-red-200 hover:bg-red-50; }
+  .link { @apply text-ocean-700 font-medium hover:underline; }
+  /* A 44 px tap area for small inline text buttons (Clear, Rename, Retake…) without moving the text:
+     the negative margin gives back the extra height to the line it sits in. */
+  .tap { display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; min-width: 2.75rem; margin-block: calc((1lh - 2.75rem) / 2); }
+
+  .input { @apply w-full rounded-xl border border-line bg-surface px-3 min-h-11 text-base sm:text-sm text-ink placeholder:text-slate-400 focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100 outline-none transition; }
+  textarea.input { @apply py-2.5; }
+  .input-warn { @apply border-amber-400 bg-amber-50 focus:border-amber-400 focus:ring-amber-100; }
+  .label { @apply block text-xs font-semibold text-slate-600 mb-1; }
+
+  .card { @apply bg-surface rounded-2xl border border-line shadow-[0_1px_2px_rgba(15,23,42,0.04)]; }
+  /* Raised surfaces: menus, popovers, the notification panel. */
+  .pop { @apply bg-surface rounded-2xl border border-line shadow-[0_12px_32px_-8px_rgba(15,23,42,0.22)]; }
+  :root[data-theme="dark"] .pop { box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7); }
+  .pill { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap; }
+  .chip { @apply inline-flex items-center gap-1.5 rounded-full border px-3 min-h-11 text-sm font-medium transition; }
+}
+
+/* A card photo keeps its white paper in dark mode, just a touch softer. */
+.card-photo { @apply bg-white; }
+:root[data-theme="dark"] .card-photo { filter: brightness(0.92); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .card-photo { filter: brightness(0.92); }
+}

@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules
+dist
+dev-dist
+*.tsbuildinfo
+
+# Secrets and local settings — never committed
+.env
+.env.local
+services/api/.env
+
+# What the API writes at run time
+services/api/storage/
+
+# Test and tool artefacts
+apps/web/e2e/.results/
+apps/web/e2e/.report/
+apps/web/*.traineddata
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log

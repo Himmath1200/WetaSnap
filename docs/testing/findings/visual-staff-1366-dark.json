@@ -1,0 +1,122 @@
+[
+  {
+    "screen": "scan",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/scan-laptop-dark.png"
+  },
+  {
+    "screen": "scan-review",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/scan-review-laptop-dark.png"
+  },
+  {
+    "screen": "my-leads",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/my-leads-laptop-dark.png"
+  },
+  {
+    "screen": "my-leads-filters",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/my-leads-filters-laptop-dark.png"
+  },
+  {
+    "screen": "lead-preview",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/lead-preview-laptop-dark.png"
+  },
+  {
+    "screen": "lead-edit",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/lead-edit-laptop-dark.png"
+  },
+  {
+    "screen": "security",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/security-laptop-dark.png"
+  },
+  {
+    "screen": "security-devices",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/security-devices-laptop-dark.png"
+  },
+  {
+    "screen": "profile",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/profile-laptop-dark.png"
+  },
+  {
+    "screen": "menu",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/menu-laptop-dark.png"
+  },
+  {
+    "screen": "notifications",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/notifications-laptop-dark.png"
+  },
+  {
+    "screen": "signout-dialog",
+    "overflow": null,
+    "navOverlap": [],
+    "smallTargets": [],
+    "consoleErrors": [],
+    "contrast": [],
+    "otherA11y": [],
+    "screenshot": "screens/staff/signout-dialog-laptop-dark.png"
+  }
+]

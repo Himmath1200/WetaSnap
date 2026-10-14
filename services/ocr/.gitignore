@@ -1,0 +1,8 @@
+# Python bits that should never be committed.
+# (.env is already ignored by the repo root.)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/

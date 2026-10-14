@@ -1,0 +1,4 @@
+[
+  { "name": "App code on first open (JS+CSS, gzip)", "path": ["dist/assets/index-*.js", "dist/assets/index-*.css"], "limit": "250 KB" },
+  { "name": "Installed app (all cached files)", "path": ["dist/**/*.{js,css,html,svg}"], "limit": "2 MB", "gzip": false }
+]

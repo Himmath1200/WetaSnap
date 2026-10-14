@@ -1,0 +1,40 @@
+# WeTa Snap local card reader — the service itself.
+#   pip install -r requirements.txt
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pillow>=10.0
+numpy>=1.24
+pytesseract>=0.3.10
+python-multipart>=0.0.9
+
+# Tests only (the extraction tests need nothing else):
+pytest>=7.4
+
+# ---------------------------------------------------------------------------
+# Optional — install these yourself, they are large and machine-specific.
+# ---------------------------------------------------------------------------
+#
+# Surya: the better reader, and the default when it is present. It pulls in
+# torch (~2 GB) and downloads its models on first use, so it is deliberately
+# NOT installed by this file. Install it into the same interpreter:
+#
+#   pip install surya-ocr
+#
+# surya-ocr>=0.6
+#
+# QR codes (vCard or URL on the card). Either one is enough; the service uses
+# pyzbar first and falls back to OpenCV.
+#   - pyzbar also needs the ZBar DLL on Windows (pip install pyzbar
+#     ships it; if not, install the "Visual C++ Redistributable 2013").
+#   - opencv-python is bigger but has no system dependency.
+#
+# pyzbar>=0.1.9
+# opencv-python>=4.9
+#
+# ---------------------------------------------------------------------------
+# Tesseract is a program, not a package. pytesseract above is only the wrapper.
+# Install the binary from https://github.com/UB-Mannheim/tesseract/wiki and put
+# its path in TESSERACT_CMD (see .env.example), plus the language packs you
+# need: deu, fra, spa, ita, nld, por.
+# ---------------------------------------------------------------------------

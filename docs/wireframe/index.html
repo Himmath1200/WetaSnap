@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WeTa Snap Wireframe</title>
+<style>
+:root{--bg:#f6f8f7;--surface:#fff;--ink:#11201a;--muted:#5b6b64;--line:#dfe6e2;--brand:#16a34a;--brand-ink:#0f7a37;--ocean:#0369a1;--ocean-bg:#e0f2fe;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0d1512;--surface:#15201b;--ink:#e6efe9;--muted:#9fb0a8;--line:#26332d;--brand:#22c55e;--brand-ink:#4ade80;--ocean:#7dd3fc;--ocean-bg:#0c2a3a;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#0d1512;--surface:#15201b;--ink:#e6efe9;--muted:#9fb0a8;--line:#26332d;--brand:#22c55e;--brand-ink:#4ade80;--ocean:#7dd3fc;--ocean-bg:#0c2a3a;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:28px;margin:0 0 4px;letter-spacing:-.01em}h1 span{color:var(--brand)}
+.lead{color:var(--muted);max-width:70ch;margin:0 0 20px}
+.bar{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin:0 -16px 24px;padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;color:var(--ink);font:inherit;padding:0 14px;min-height:44px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ocean-bg);color:var(--ocean);font-weight:600}
+.jump{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
+.jump a{color:var(--brand-ink);text-decoration:none;font-weight:600;padding:10px;border-radius:8px}.jump a:hover{background:var(--surface)}
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:32px;overflow-x:auto}
+.flow svg{width:100%;min-width:640px;height:auto;color:var(--muted);font-size:13px}
+.flow text{text-anchor:middle;fill:var(--ink);font-weight:600}.flow text.sub{font-weight:400;fill:var(--muted);font-size:11px}
+.flow .node rect{fill:var(--surface);stroke:var(--line)}
+.flow .step rect{fill:var(--ocean-bg)}.flow .step text{fill:var(--ocean);font-weight:500}
+.flow .home rect{fill:color-mix(in srgb,var(--brand) 14%,var(--surface));stroke:var(--brand)}
+.flow .edge{fill:none;stroke:currentColor;stroke-width:1.5}
+.portal{margin-top:40px}.portal-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.portal-head h2{margin:0;font-size:22px}
+code{font:12px ui-monospace,Consolas,monospace;color:var(--muted)}
+.intro{color:var(--muted);max-width:75ch}
+.toc{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 20px}
+.toc a{font-size:13px;color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 10px}
+.screen{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;scroll-margin-top:72px}
+.screen header{display:flex;gap:12px;align-items:flex-start}.num{font-weight:700;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+.screen h3{margin:0;font-size:16px}.screen p{margin:6px 0 12px;color:var(--muted)}
+.frames{display:flex;gap:16px;align-items:flex-start}figure{margin:0}
+.frames .phone{flex:0 0 240px}.frames .laptop{flex:1;min-width:0}
+.shot{display:none;width:100%;height:auto;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+body[data-shots=light] .shot.light,body[data-shots=dark] .shot.dark{display:block}
+body[data-dev=phone] .frames .laptop,body[data-dev=laptop] .frames .phone{display:none}
+body[data-dev=phone] .frames .phone{flex-basis:320px}
+@media (max-width:720px){.frames{flex-direction:column}.frames .phone{flex:none;width:min(100%,300px)}.jump{display:none}.seg button{padding:0 10px}}
+</style></head>
+<body data-shots="light" data-dev="both"><div class="wrap">
+<h1>WeTa <span>Snap</span> wireframe</h1>
+<p class="lead">Every screen of the three portals on a phone (390 px) and a laptop (1366 px), in the light and dark themes: 67 screens in all. They were captured from the running demo build, so this is exactly what the app shows today.</p>
+<div class="bar">
+  <div class="seg" role="group" aria-label="Screenshot theme"><button data-shots="light" aria-pressed="true">Light</button><button data-shots="dark" aria-pressed="false">Dark</button></div>
+  <div class="seg" role="group" aria-label="Device"><button data-dev="both" aria-pressed="true">Both</button><button data-dev="phone" aria-pressed="false">Phone</button><button data-dev="laptop" aria-pressed="false">Laptop</button></div>
+  <nav class="jump" aria-label="Portals"><a href="#public">Before sign-in</a><a href="#super-admin">Super Admin</a><a href="#client-admin">Client Admin</a><a href="#staff">Staff</a></nav>
+</div>
+<h2 style="font-size:18px;margin:0 0 10px">How people get in</h2>
+<div class="flow"><svg viewBox="0 0 880 250" role="img" aria-label="Sign-in flow: portal chooser, then each portal's sign-in steps, then its home screen">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="currentColor"/></marker></defs>
+<g class="node"><rect x="10" y="100" width="130" height="50" rx="10"/><text x="75" y="130">Portal chooser</text></g>
+<path class="edge" d="M140 125 C170 125 170 45 200 45" marker-end="url(#arrow)"/>
+<g class="node"><rect x="200" y="20" width="150" height="50" rx="10"/><text x="275" y="43">Super Admin</text><text class="sub" x="275" y="59">sign-in</text></g>
+<path class="edge" d="M350 45 H400" marker-end="url(#arrow)"/>
+<g class="step"><rect x="400" y="20" width="250" height="50" rx="10"/><text x="525" y="50">password → emailed code → authenticator</text></g>
+<path class="edge" d="M650 45 H700" marker-end="url(#arrow)"/>
+<g class="home"><rect x="700" y="20" width="170" height="50" rx="10"/><text x="785" y="43">Companies</text><text class="sub" x="785" y="59">home screen</text></g>
+<path class="edge" d="M140 125 C170 125 170 125 200 125" marker-end="url(#arrow)"/>
+<g class="node"><rect x="200" y="100" width="150" height="50" rx="10"/><text x="275" y="123">Client Admin</text><text class="sub" x="275" y="139">sign-in</text></g>
+<path class="edge" d="M350 125 H400" marker-end="url(#arrow)"/>
+<g class="step"><rect x="400" y="100" width="250" height="50" rx="10"/><text x="525" y="130">password → emailed code → (authenticator)</text></g>
+<path class="edge" d="M650 125 H700" marker-end="url(#arrow)"/>
+<g class="home"><rect x="700" y="100" width="170" height="50" rx="10"/><text x="785" y="123">Leads</text><text class="sub" x="785" y="139">home screen</text></g>
+<path class="edge" d="M140 125 C170 125 170 205 200 205" marker-end="url(#arrow)"/>
+<g class="node"><rect x="200" y="180" width="150" height="50" rx="10"/><text x="275" y="203">Staff</text><text class="sub" x="275" y="219">sign-in</text></g>
+<path class="edge" d="M350 205 H400" marker-end="url(#arrow)"/>
+<g class="step"><rect x="400" y="180" width="250" height="50" rx="10"/><text x="525" y="210">password</text></g>
+<path class="edge" d="M650 205 H700" marker-end="url(#arrow)"/>
+<g class="home"><rect x="700" y="180" width="170" height="50" rx="10"/><text x="785" y="203">Scan</text><text class="sub" x="785" y="219">home screen</text></g>
+</svg></div>
+<section class="portal" id="public"><div class="portal-head"><h2>Before sign-in</h2><code>/signin</code></div>
+<p class="intro">Two doors: the WeTano Console has its own address, client admins and staff share the main one. The password comes first; admins then get a 6-digit emailed code. An authenticator is never required — only accounts that turn one on in Security are asked for it. Where a person lands afterwards comes from their account, not from the page they signed in on.</p><nav class="toc" aria-label="Before sign-in screens"><a href="#public-signin">Sign in</a><a href="#public-signin-emailed-code">Emailed 6-digit code</a><a href="#public-signin-setup">First-time setup</a><a href="#public-signin-forgot">Forgot password</a><a href="#public-signin-reset">Reset password</a><a href="#public-portal-chooser">Portal chooser</a><a href="#public-signin-admin-emailed-code">Signin admin emailed code</a><a href="#public-signin-admin-password">Signin admin password</a><a href="#public-signin-staff">Signin staff</a><a href="#public-signin-super-authenticator">Signin super authenticator</a><a href="#public-signin-super-password">Signin super password</a><a href="#public-signin-wrong-portal">Signin wrong portal</a></nav>
+<article class="screen" id="public-signin">
+  <header><span class="num">01</span><div><h3>Sign in</h3><code>/signin  ·  /super-admin/signin</code></div></header>
+  <p>The shared page for companies, and the Console’s own. The password comes first; what follows depends on the account.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-phone-light.png" alt="Sign in, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-phone-dark.png" alt="Sign in, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-laptop-light.png" alt="Sign in, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-laptop-dark.png" alt="Sign in, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-emailed-code">
+  <header><span class="num">02</span><div><h3>Emailed 6-digit code</h3><code>/signin</code></div></header>
+  <p>Step 2 for admins: the code sent to their email. Can be resent after 30 seconds.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-emailed-code-phone-light.png" alt="Emailed 6-digit code, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-emailed-code-phone-dark.png" alt="Emailed 6-digit code, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-emailed-code-laptop-light.png" alt="Emailed 6-digit code, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-emailed-code-laptop-dark.png" alt="Emailed 6-digit code, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-setup">
+  <header><span class="num">03</span><div><h3>First-time setup</h3><code>/signin#setup=&lt;email&gt;</code></div></header>
+  <p>Where the invitation email leads: the 6-digit code from it, a new password and the same password again, then Go to sign in.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-setup-phone-light.png" alt="First-time setup, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-setup-phone-dark.png" alt="First-time setup, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-setup-laptop-light.png" alt="First-time setup, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-setup-laptop-dark.png" alt="First-time setup, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-forgot">
+  <header><span class="num">04</span><div><h3>Forgot password</h3><code>/signin</code></div></header>
+  <p>Enter the email and a reset code is sent.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-forgot-phone-light.png" alt="Forgot password, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-forgot-phone-dark.png" alt="Forgot password, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-forgot-laptop-light.png" alt="Forgot password, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-forgot-laptop-dark.png" alt="Forgot password, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-reset">
+  <header><span class="num">05</span><div><h3>Reset password</h3><code>/signin</code></div></header>
+  <p>Code and new password, checked live against the password policy.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-reset-phone-light.png" alt="Reset password, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-reset-phone-dark.png" alt="Reset password, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-reset-laptop-light.png" alt="Reset password, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-reset-laptop-dark.png" alt="Reset password, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-portal-chooser">
+  <header><span class="num">06</span><div><h3>Portal chooser</h3></div></header>
+  
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/portal-chooser-phone-light.png" alt="Portal chooser, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/portal-chooser-phone-dark.png" alt="Portal chooser, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/portal-chooser-laptop-light.png" alt="Portal chooser, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/portal-chooser-laptop-dark.png" alt="Portal chooser, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-admin-emailed-code">
+  <header><span class="num">07</span><div><h3>Signin admin emailed code</h3></div></header>
+  
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-admin-emailed-code-phone-light.png" alt="Signin admin emailed code, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-admin-emailed-code-phone-dark.png" alt="Signin admin emailed code, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-admin-emailed-code-laptop-light.png" alt="Signin admin emailed code, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-admin-emailed-code-laptop-dark.png" alt="Signin admin emailed code, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-admin-password">
+  <header><span class="num">08</span><div><h3>Signin admin password</h3></div></header>
+  
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-admin-password-phone-light.png" alt="Signin admin password, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-admin-password-phone-dark.png" alt="Signin admin password, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-admin-password-laptop-light.png" alt="Signin admin password, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-admin-password-laptop-dark.png" alt="Signin admin password, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-staff">
+  <header><span class="num">09</span><div><h3>Signin staff</h3></div></header>
+  
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-staff-phone-light.png" alt="Signin staff, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-staff-phone-dark.png" alt="Signin staff, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-staff-laptop-light.png" alt="Signin staff, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-staff-laptop-dark.png" alt="Signin staff, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-super-authenticator">
+  <header><span class="num">10</span><div><h3>Signin super authenticator</h3></div></header>
+  
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-super-authenticator-phone-light.png" alt="Signin super authenticator, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-super-authenticator-phone-dark.png" alt="Signin super authenticator, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-super-authenticator-laptop-light.png" alt="Signin super authenticator, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-super-authenticator-laptop-dark.png" alt="Signin super authenticator, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-super-password">
+  <header><span class="num">11</span><div><h3>Signin super password</h3></div></header>
+  
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-super-password-phone-light.png" alt="Signin super password, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-super-password-phone-dark.png" alt="Signin super password, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-super-password-laptop-light.png" alt="Signin super password, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-super-password-laptop-dark.png" alt="Signin super password, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="public-signin-wrong-portal">
+  <header><span class="num">12</span><div><h3>Signin wrong portal</h3></div></header>
+  
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-wrong-portal-phone-light.png" alt="Signin wrong portal, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-wrong-portal-phone-dark.png" alt="Signin wrong portal, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/public/signin-wrong-portal-laptop-light.png" alt="Signin wrong portal, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/public/signin-wrong-portal-laptop-dark.png" alt="Signin wrong portal, laptop, dark theme"></figure></div>
+</article></section>
+<section class="portal" id="super-admin"><div class="portal-head"><h2>Super Admin portal</h2><code>/super-admin/companies, /super-admin/usage, …</code></div>
+<p class="intro">WeTano staff only. Runs every customer company: licences, plans and invoices, usage limits, the audit log, support, and the security policy that applies across the whole app.</p><nav class="toc" aria-label="Super Admin portal screens"><a href="#super-admin-companies">Companies</a><a href="#super-admin-new-company">New company</a><a href="#super-admin-company-detail">Company detail</a><a href="#super-admin-subscriptions-subs">Subscriptions</a><a href="#super-admin-subscriptions-plans">Plans</a><a href="#super-admin-subscriptions-invoices">Invoices</a><a href="#super-admin-new-invoice">New invoice</a><a href="#super-admin-invoice-sheet">Invoice</a><a href="#super-admin-usage">Usage</a><a href="#super-admin-usage-alerts">Usage alerts</a><a href="#super-admin-audit">Audit log</a><a href="#super-admin-audit-detail">Audit entry</a><a href="#super-admin-support">Support</a><a href="#super-admin-security-policy">Security: policy</a><a href="#super-admin-security-account">Security: my account</a><a href="#super-admin-security-devices">Security: active sessions</a><a href="#super-admin-security-history">Security: sign-in history</a><a href="#super-admin-notifications">Notifications</a><a href="#super-admin-profile">My profile</a><a href="#super-admin-menu">Account menu</a></nav>
+<article class="screen" id="super-admin-companies">
+  <header><span class="num">01</span><div><h3>Companies</h3><code>/super-admin/companies</code></div></header>
+  <p>Home. Search with a filter button (status incl. Suspended, plan). The licence column shows plan · Monthly/Annual.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/companies-phone-light.png" alt="Companies, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/companies-phone-dark.png" alt="Companies, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/companies-laptop-light.png" alt="Companies, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/companies-laptop-dark.png" alt="Companies, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-new-company">
+  <header><span class="num">02</span><div><h3>New company</h3><code>sheet</code></div></header>
+  <p>Name, country, admin, plan and licence type.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/new-company-phone-light.png" alt="New company, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/new-company-phone-dark.png" alt="New company, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/new-company-laptop-light.png" alt="New company, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/new-company-laptop-dark.png" alt="New company, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-company-detail">
+  <header><span class="num">03</span><div><h3>Company detail</h3><code>sheet</code></div></header>
+  <p>Admin names and emails, plan above licence type, seats, scan-limit action (block / overage / notify), suspend.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/company-detail-phone-light.png" alt="Company detail, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/company-detail-phone-dark.png" alt="Company detail, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/company-detail-laptop-light.png" alt="Company detail, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/company-detail-laptop-dark.png" alt="Company detail, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-subscriptions-subs">
+  <header><span class="num">04</span><div><h3>Subscriptions</h3><code>/super-admin/subscriptions · Subscriptions tab</code></div></header>
+  <p>Search with a filter button, tick boxes for bulk actions, Excel export.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/subscriptions-subs-phone-light.png" alt="Subscriptions, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/subscriptions-subs-phone-dark.png" alt="Subscriptions, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/subscriptions-subs-laptop-light.png" alt="Subscriptions, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/subscriptions-subs-laptop-dark.png" alt="Subscriptions, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-subscriptions-plans">
+  <header><span class="num">05</span><div><h3>Plans</h3><code>/super-admin/subscriptions · Plans tab</code></div></header>
+  <p>The plan catalogue: price, seats, scans per month, connectors.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/subscriptions-plans-phone-light.png" alt="Plans, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/subscriptions-plans-phone-dark.png" alt="Plans, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/subscriptions-plans-laptop-light.png" alt="Plans, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/subscriptions-plans-laptop-dark.png" alt="Plans, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-subscriptions-invoices">
+  <header><span class="num">06</span><div><h3>Invoices</h3><code>/super-admin/subscriptions · Invoices tab</code></div></header>
+  <p>Search with a filter button, multi-select, Excel export, download each invoice as a PDF.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/subscriptions-invoices-phone-light.png" alt="Invoices, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/subscriptions-invoices-phone-dark.png" alt="Invoices, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/subscriptions-invoices-laptop-light.png" alt="Invoices, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/subscriptions-invoices-laptop-dark.png" alt="Invoices, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-new-invoice">
+  <header><span class="num">07</span><div><h3>New invoice</h3><code>sheet</code></div></header>
+  <p>Numbered automatically; final once issued.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/new-invoice-phone-light.png" alt="New invoice, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/new-invoice-phone-dark.png" alt="New invoice, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/new-invoice-laptop-light.png" alt="New invoice, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/new-invoice-laptop-dark.png" alt="New invoice, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-invoice-sheet">
+  <header><span class="num">08</span><div><h3>Invoice</h3><code>sheet</code></div></header>
+  <p>Mark paid, void, download.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/invoice-sheet-phone-light.png" alt="Invoice, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/invoice-sheet-phone-dark.png" alt="Invoice, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/invoice-sheet-laptop-light.png" alt="Invoice, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/invoice-sheet-laptop-dark.png" alt="Invoice, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-usage">
+  <header><span class="num">09</span><div><h3>Usage</h3><code>/super-admin/usage</code></div></header>
+  <p>Scans, AI reads and seats per company, against the plan.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/usage-phone-light.png" alt="Usage, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/usage-phone-dark.png" alt="Usage, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/usage-laptop-light.png" alt="Usage, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/usage-laptop-dark.png" alt="Usage, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-usage-alerts">
+  <header><span class="num">10</span><div><h3>Usage alerts</h3><code>/super-admin/usage · Usage alerts tab</code></div></header>
+  <p>Thresholds that raise a notification once per period.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/usage-alerts-phone-light.png" alt="Usage alerts, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/usage-alerts-phone-dark.png" alt="Usage alerts, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/usage-alerts-laptop-light.png" alt="Usage alerts, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/usage-alerts-laptop-dark.png" alt="Usage alerts, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-audit">
+  <header><span class="num">11</span><div><h3>Audit log</h3><code>/super-admin/audit</code></div></header>
+  <p>Every change and every error: the action, the error name, the root cause and where it happened. Has an “Errors only” filter.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/audit-phone-light.png" alt="Audit log, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/audit-phone-dark.png" alt="Audit log, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/audit-laptop-light.png" alt="Audit log, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/audit-laptop-dark.png" alt="Audit log, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-audit-detail">
+  <header><span class="num">12</span><div><h3>Audit entry</h3><code>sheet</code></div></header>
+  <p>The full detail of one entry.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/audit-detail-phone-light.png" alt="Audit entry, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/audit-detail-phone-dark.png" alt="Audit entry, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/audit-detail-laptop-light.png" alt="Audit entry, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/audit-detail-laptop-dark.png" alt="Audit entry, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-support">
+  <header><span class="num">13</span><div><h3>Support</h3><code>/super-admin/support</code></div></header>
+  <p>Tickets from every company; assign and close.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/support-phone-light.png" alt="Support, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/support-phone-dark.png" alt="Support, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/support-laptop-light.png" alt="Support, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/support-laptop-dark.png" alt="Support, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-security-policy">
+  <header><span class="num">14</span><div><h3>Security: policy</h3><code>/super-admin/security</code></div></header>
+  <p>Password rules, lockout, idle timeout and device-session length for the whole app.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-policy-phone-light.png" alt="Security: policy, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-policy-phone-dark.png" alt="Security: policy, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-policy-laptop-light.png" alt="Security: policy, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-policy-laptop-dark.png" alt="Security: policy, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-security-account">
+  <header><span class="num">15</span><div><h3>Security: my account</h3><code>/super-admin/security?tab=account</code></div></header>
+  <p>Password change (verified by email), authenticator, recovery codes.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-account-phone-light.png" alt="Security: my account, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-account-phone-dark.png" alt="Security: my account, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-account-laptop-light.png" alt="Security: my account, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-account-laptop-dark.png" alt="Security: my account, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-security-devices">
+  <header><span class="num">16</span><div><h3>Security: active sessions</h3><code>/super-admin/security?tab=devices</code></div></header>
+  <p>Every signed-in device with its IP address; revoke.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-devices-phone-light.png" alt="Security: active sessions, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-devices-phone-dark.png" alt="Security: active sessions, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-devices-laptop-light.png" alt="Security: active sessions, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-devices-laptop-dark.png" alt="Security: active sessions, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-security-history">
+  <header><span class="num">17</span><div><h3>Security: sign-in history</h3><code>/super-admin/security?tab=history</code></div></header>
+  <p>Successful and failed sign-ins, with IP address and device.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-history-phone-light.png" alt="Security: sign-in history, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-history-phone-dark.png" alt="Security: sign-in history, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/security-history-laptop-light.png" alt="Security: sign-in history, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/security-history-laptop-dark.png" alt="Security: sign-in history, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-notifications">
+  <header><span class="num">18</span><div><h3>Notifications</h3><code>dropdown</code></div></header>
+  <p>The bell in the header, with tabs for All, Unread and Reminders. Each item opens its screen.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/notifications-phone-light.png" alt="Notifications, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/notifications-phone-dark.png" alt="Notifications, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/notifications-laptop-light.png" alt="Notifications, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/notifications-laptop-dark.png" alt="Notifications, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-profile">
+  <header><span class="num">19</span><div><h3>My profile</h3><code>/super-admin/profile</code></div></header>
+  <p>Picture, name, phone, theme, language, app version.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/profile-phone-light.png" alt="My profile, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/profile-phone-dark.png" alt="My profile, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/profile-laptop-light.png" alt="My profile, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/profile-laptop-dark.png" alt="My profile, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="super-admin-menu">
+  <header><span class="num">20</span><div><h3>Account menu</h3><code>dropdown</code></div></header>
+  <p>Profile, security, theme and sign-out (always asks yes/no).</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/menu-phone-light.png" alt="Account menu, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/menu-phone-dark.png" alt="Account menu, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/super-admin/menu-laptop-light.png" alt="Account menu, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/super-admin/menu-laptop-dark.png" alt="Account menu, laptop, dark theme"></figure></div>
+</article></section>
+<section class="portal" id="client-admin"><div class="portal-head"><h2>Client Admin portal</h2><code>/leads, /team, /settings, …</code></div>
+<p class="intro">A customer company’s admin. Sees all the company’s leads, manages the team and events, sets up fields, tags, CRM and billing, and can scan like staff.</p><nav class="toc" aria-label="Client Admin portal screens"><a href="#client-admin-leads">Leads</a><a href="#client-admin-leads-filters">Lead filters</a><a href="#client-admin-lead-preview">Lead preview</a><a href="#client-admin-lead-edit">Lead edit</a><a href="#client-admin-import">Import leads</a><a href="#client-admin-import-history">Import history</a><a href="#client-admin-scan">Scan</a><a href="#client-admin-my-leads">My leads</a><a href="#client-admin-team">Team</a><a href="#client-admin-invite-dialog">Invite a person</a><a href="#client-admin-invite-sent">Invitation sent</a><a href="#client-admin-settings-company">Settings: company</a><a href="#client-admin-settings-events">Settings: events</a><a href="#client-admin-settings-fields">Settings: card fields</a><a href="#client-admin-settings-tags">Settings: tags</a><a href="#client-admin-settings-crm">Settings: CRM</a><a href="#client-admin-settings-billing">Settings: billing &amp; plan</a><a href="#client-admin-security">Security</a><a href="#client-admin-support">Support</a><a href="#client-admin-support-new-request">New support request</a><a href="#client-admin-notifications">Notifications</a><a href="#client-admin-profile">My profile</a><a href="#client-admin-menu">Account menu</a></nav>
+<article class="screen" id="client-admin-leads">
+  <header><span class="num">01</span><div><h3>Leads</h3><code>/leads</code></div></header>
+  <p>Home. Search with the filter button beside it, sorting, and tick boxes for bulk tag, resend, export and delete.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/leads-phone-light.png" alt="Leads, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/leads-phone-dark.png" alt="Leads, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/leads-laptop-light.png" alt="Leads, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/leads-laptop-dark.png" alt="Leads, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-leads-filters">
+  <header><span class="num">02</span><div><h3>Lead filters</h3><code>sheet</code></div></header>
+  <p>Events and captured-by (multi-select), tags, status, interest, and dates including Last 30 days.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/leads-filters-phone-light.png" alt="Lead filters, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/leads-filters-phone-dark.png" alt="Lead filters, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/leads-filters-laptop-light.png" alt="Lead filters, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/leads-filters-laptop-dark.png" alt="Lead filters, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-lead-preview">
+  <header><span class="num">03</span><div><h3>Lead preview</h3><code>sheet</code></div></header>
+  <p>Read-only until Edit is tapped. Tap to call, mail, open the website or the map. Save to device, share.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/lead-preview-phone-light.png" alt="Lead preview, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/lead-preview-phone-dark.png" alt="Lead preview, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/lead-preview-laptop-light.png" alt="Lead preview, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/lead-preview-laptop-dark.png" alt="Lead preview, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-lead-edit">
+  <header><span class="num">04</span><div><h3>Lead edit</h3><code>sheet</code></div></header>
+  <p>After Edit: every field, tags, notes (voice too), interest.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/lead-edit-phone-light.png" alt="Lead edit, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/lead-edit-phone-dark.png" alt="Lead edit, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/lead-edit-laptop-light.png" alt="Lead edit, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/lead-edit-laptop-dark.png" alt="Lead edit, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-import">
+  <header><span class="num">05</span><div><h3>Import leads</h3><code>sheet</code></div></header>
+  <p>Excel or CSV. Map the columns and pick the event and tags; duplicates are flagged.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/import-phone-light.png" alt="Import leads, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/import-phone-dark.png" alt="Import leads, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/import-laptop-light.png" alt="Import leads, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/import-laptop-dark.png" alt="Import leads, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-import-history">
+  <header><span class="num">06</span><div><h3>Import history</h3><code>sheet</code></div></header>
+  <p>Past imports. “View imported leads” filters the list to one file.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/import-history-phone-light.png" alt="Import history, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/import-history-phone-dark.png" alt="Import history, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/import-history-laptop-light.png" alt="Import history, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/import-history-laptop-dark.png" alt="Import history, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-scan">
+  <header><span class="num">07</span><div><h3>Scan</h3><code>/scan</code></div></header>
+  <p>The same capture screen staff use.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/scan-phone-light.png" alt="Scan, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/scan-phone-dark.png" alt="Scan, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/scan-laptop-light.png" alt="Scan, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/scan-laptop-dark.png" alt="Scan, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-my-leads">
+  <header><span class="num">08</span><div><h3>My leads</h3><code>/my-leads</code></div></header>
+  <p>The admin’s own captures.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/my-leads-phone-light.png" alt="My leads, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/my-leads-phone-dark.png" alt="My leads, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/my-leads-laptop-light.png" alt="My leads, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/my-leads-laptop-dark.png" alt="My leads, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-team">
+  <header><span class="num">09</span><div><h3>Team</h3><code>/team</code></div></header>
+  <p>Filters for role, status and events; seats used.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/team-phone-light.png" alt="Team, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/team-phone-dark.png" alt="Team, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/team-laptop-light.png" alt="Team, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/team-laptop-dark.png" alt="Team, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-invite-dialog">
+  <header><span class="num">10</span><div><h3>Invite a person</h3><code>sheet</code></div></header>
+  <p>Name, email, phone, role, events (multi-select).</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/invite-dialog-phone-light.png" alt="Invite a person, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/invite-dialog-phone-dark.png" alt="Invite a person, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/invite-dialog-laptop-light.png" alt="Invite a person, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/invite-dialog-laptop-dark.png" alt="Invite a person, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-invite-sent">
+  <header><span class="num">11</span><div><h3>Invitation sent</h3><code>sheet</code></div></header>
+  <p>What they were emailed: a 6-digit code and a Set up password button, plus the setup link to pass on by hand.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/invite-sent-phone-light.png" alt="Invitation sent, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/invite-sent-phone-dark.png" alt="Invitation sent, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/invite-sent-laptop-light.png" alt="Invitation sent, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/invite-sent-laptop-dark.png" alt="Invitation sent, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-settings-company">
+  <header><span class="num">12</span><div><h3>Settings: company</h3><code>/settings?tab=company</code></div></header>
+  <p>Headquarters, default language, time zone, consent text, retention.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-company-phone-light.png" alt="Settings: company, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-company-phone-dark.png" alt="Settings: company, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-company-laptop-light.png" alt="Settings: company, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-company-laptop-dark.png" alt="Settings: company, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-settings-events">
+  <header><span class="num">13</span><div><h3>Settings: events</h3><code>/settings</code></div></header>
+  <p>Dates, description, time zone, template, attachments.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-events-phone-light.png" alt="Settings: events, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-events-phone-dark.png" alt="Settings: events, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-events-laptop-light.png" alt="Settings: events, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-events-laptop-dark.png" alt="Settings: events, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-settings-fields">
+  <header><span class="num">14</span><div><h3>Settings: card fields</h3><code>/settings?tab=fields</code></div></header>
+  <p>The default template plus the company’s own templates.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-fields-phone-light.png" alt="Settings: card fields, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-fields-phone-dark.png" alt="Settings: card fields, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-fields-laptop-light.png" alt="Settings: card fields, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-fields-laptop-dark.png" alt="Settings: card fields, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-settings-tags">
+  <header><span class="num">15</span><div><h3>Settings: tags</h3><code>/settings?tab=tags</code></div></header>
+  <p>Tag names and colours.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-tags-phone-light.png" alt="Settings: tags, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-tags-phone-dark.png" alt="Settings: tags, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-tags-laptop-light.png" alt="Settings: tags, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-tags-laptop-dark.png" alt="Settings: tags, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-settings-crm">
+  <header><span class="num">16</span><div><h3>Settings: CRM</h3><code>/settings?tab=crm</code></div></header>
+  <p>The connectors the plan allows.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-crm-phone-light.png" alt="Settings: CRM, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-crm-phone-dark.png" alt="Settings: CRM, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-crm-laptop-light.png" alt="Settings: CRM, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-crm-laptop-dark.png" alt="Settings: CRM, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-settings-billing">
+  <header><span class="num">17</span><div><h3>Settings: billing &amp; plan</h3><code>/settings?tab=billing</code></div></header>
+  <p>Plan, seats, scans this month, invoices.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-billing-phone-light.png" alt="Settings: billing &amp; plan, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-billing-phone-dark.png" alt="Settings: billing &amp; plan, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/settings-billing-laptop-light.png" alt="Settings: billing &amp; plan, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/settings-billing-laptop-dark.png" alt="Settings: billing &amp; plan, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-security">
+  <header><span class="num">18</span><div><h3>Security</h3><code>/security</code></div></header>
+  <p>Password, optional authenticator, recovery codes, sessions, history.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/security-phone-light.png" alt="Security, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/security-phone-dark.png" alt="Security, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/security-laptop-light.png" alt="Security, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/security-laptop-dark.png" alt="Security, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-support">
+  <header><span class="num">19</span><div><h3>Support</h3><code>/support</code></div></header>
+  <p>The company’s requests to WeTano.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/support-phone-light.png" alt="Support, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/support-phone-dark.png" alt="Support, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/support-laptop-light.png" alt="Support, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/support-laptop-dark.png" alt="Support, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-support-new-request">
+  <header><span class="num">20</span><div><h3>New support request</h3><code>sheet</code></div></header>
+  <p>Subject, category, message.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/support-new-request-phone-light.png" alt="New support request, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/support-new-request-phone-dark.png" alt="New support request, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/support-new-request-laptop-light.png" alt="New support request, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/support-new-request-laptop-dark.png" alt="New support request, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-notifications">
+  <header><span class="num">21</span><div><h3>Notifications</h3><code>dropdown</code></div></header>
+  <p>The bell, with reminders.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/notifications-phone-light.png" alt="Notifications, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/notifications-phone-dark.png" alt="Notifications, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/notifications-laptop-light.png" alt="Notifications, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/notifications-laptop-dark.png" alt="Notifications, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-profile">
+  <header><span class="num">22</span><div><h3>My profile</h3><code>/profile</code></div></header>
+  <p>Picture, details, theme, app version.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/profile-phone-light.png" alt="My profile, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/profile-phone-dark.png" alt="My profile, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/profile-laptop-light.png" alt="My profile, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/profile-laptop-dark.png" alt="My profile, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="client-admin-menu">
+  <header><span class="num">23</span><div><h3>Account menu</h3><code>dropdown</code></div></header>
+  <p>Profile, security, theme, sign-out.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/menu-phone-light.png" alt="Account menu, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/menu-phone-dark.png" alt="Account menu, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/client-admin/menu-laptop-light.png" alt="Account menu, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/client-admin/menu-laptop-dark.png" alt="Account menu, laptop, dark theme"></figure></div>
+</article></section>
+<section class="portal" id="staff"><div class="portal-head"><h2>Staff portal</h2><code>/scan, /my-leads</code></div>
+<p class="intro">The people at the booth. Scan a card, check the reading, add notes by voice and save. It works offline and sends when there is a connection. Staff only ever see their own leads.</p><nav class="toc" aria-label="Staff portal screens"><a href="#staff-scan">Scan</a><a href="#staff-scan-review">Check and save</a><a href="#staff-my-leads">My leads</a><a href="#staff-my-leads-filters">My leads: filters</a><a href="#staff-lead-preview">Lead preview</a><a href="#staff-lead-edit">Lead edit</a><a href="#staff-security">Security</a><a href="#staff-security-devices">Security: devices</a><a href="#staff-notifications">Notifications</a><a href="#staff-profile">My profile</a><a href="#staff-menu">Account menu</a><a href="#staff-signout-dialog">Sign out?</a></nav>
+<article class="screen" id="staff-scan">
+  <header><span class="num">01</span><div><h3>Scan</h3><code>/scan</code></div></header>
+  <p>Home. Photograph the front and back of the card; the reading appears for checking.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/scan-phone-light.png" alt="Scan, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/scan-phone-dark.png" alt="Scan, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/scan-laptop-light.png" alt="Scan, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/scan-laptop-dark.png" alt="Scan, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-scan-review">
+  <header><span class="num">02</span><div><h3>Check and save</h3><code>/scan</code></div></header>
+  <p>Fields read from the card, tags, voice notes, interest, consent. Save to device, share.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/scan-review-phone-light.png" alt="Check and save, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/scan-review-phone-dark.png" alt="Check and save, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/scan-review-laptop-light.png" alt="Check and save, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/scan-review-laptop-dark.png" alt="Check and save, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-my-leads">
+  <header><span class="num">03</span><div><h3>My leads</h3><code>/my-leads</code></div></header>
+  <p>Only the person’s own leads, showing what is still waiting to send.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/my-leads-phone-light.png" alt="My leads, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/my-leads-phone-dark.png" alt="My leads, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/my-leads-laptop-light.png" alt="My leads, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/my-leads-laptop-dark.png" alt="My leads, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-my-leads-filters">
+  <header><span class="num">04</span><div><h3>My leads: filters</h3><code>sheet</code></div></header>
+  <p>Event, tags, status, date.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/my-leads-filters-phone-light.png" alt="My leads: filters, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/my-leads-filters-phone-dark.png" alt="My leads: filters, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/my-leads-filters-laptop-light.png" alt="My leads: filters, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/my-leads-filters-laptop-dark.png" alt="My leads: filters, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-lead-preview">
+  <header><span class="num">05</span><div><h3>Lead preview</h3><code>sheet</code></div></header>
+  <p>Read-only until Edit is tapped; tap to call, mail or open the map.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/lead-preview-phone-light.png" alt="Lead preview, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/lead-preview-phone-dark.png" alt="Lead preview, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/lead-preview-laptop-light.png" alt="Lead preview, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/lead-preview-laptop-dark.png" alt="Lead preview, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-lead-edit">
+  <header><span class="num">06</span><div><h3>Lead edit</h3><code>sheet</code></div></header>
+  <p>Edit, or delete (restorable for 30 days).</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/lead-edit-phone-light.png" alt="Lead edit, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/lead-edit-phone-dark.png" alt="Lead edit, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/lead-edit-laptop-light.png" alt="Lead edit, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/lead-edit-laptop-dark.png" alt="Lead edit, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-security">
+  <header><span class="num">07</span><div><h3>Security</h3><code>/security</code></div></header>
+  <p>Password change, sign-in history.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/security-phone-light.png" alt="Security, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/security-phone-dark.png" alt="Security, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/security-laptop-light.png" alt="Security, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/security-laptop-dark.png" alt="Security, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-security-devices">
+  <header><span class="num">08</span><div><h3>Security: devices</h3><code>/security?tab=devices</code></div></header>
+  <p>Signed-in devices; revoke.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/security-devices-phone-light.png" alt="Security: devices, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/security-devices-phone-dark.png" alt="Security: devices, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/security-devices-laptop-light.png" alt="Security: devices, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/security-devices-laptop-dark.png" alt="Security: devices, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-notifications">
+  <header><span class="num">09</span><div><h3>Notifications</h3><code>dropdown</code></div></header>
+  <p>Reminders and messages from the admin.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/notifications-phone-light.png" alt="Notifications, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/notifications-phone-dark.png" alt="Notifications, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/notifications-laptop-light.png" alt="Notifications, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/notifications-laptop-dark.png" alt="Notifications, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-profile">
+  <header><span class="num">10</span><div><h3>My profile</h3><code>/profile</code></div></header>
+  <p>Picture, details, theme, app version.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/profile-phone-light.png" alt="My profile, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/profile-phone-dark.png" alt="My profile, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/profile-laptop-light.png" alt="My profile, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/profile-laptop-dark.png" alt="My profile, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-menu">
+  <header><span class="num">11</span><div><h3>Account menu</h3><code>dropdown</code></div></header>
+  <p>Profile, security, theme, sign-out.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/menu-phone-light.png" alt="Account menu, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/menu-phone-dark.png" alt="Account menu, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/menu-laptop-light.png" alt="Account menu, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/menu-laptop-dark.png" alt="Account menu, laptop, dark theme"></figure></div>
+</article>
+<article class="screen" id="staff-signout-dialog">
+  <header><span class="num">12</span><div><h3>Sign out?</h3><code>dialog</code></div></header>
+  <p>Always asks yes/no, and warns if anything has not been sent yet.</p>
+  <div class="frames"><figure class="phone"><img loading="lazy" class="shot light" src="../testing/screens/staff/signout-dialog-phone-light.png" alt="Sign out?, phone, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/signout-dialog-phone-dark.png" alt="Sign out?, phone, dark theme"></figure><figure class="laptop"><img loading="lazy" class="shot light" src="../testing/screens/staff/signout-dialog-laptop-light.png" alt="Sign out?, laptop, light theme"><img loading="lazy" class="shot dark" src="../testing/screens/staff/signout-dialog-laptop-dark.png" alt="Sign out?, laptop, dark theme"></figure></div>
+</article></section>
+<p style="color:var(--muted);margin-top:40px">© 2026 WeTano Solutions · generated by docs/wireframe/build.mjs</p>
+</div>
+<script>
+for (const b of document.querySelectorAll('.seg button')) b.addEventListener('click', () => {
+  const key = b.dataset.shots ? 'shots' : 'dev';
+  document.body.dataset[key] = b.dataset[key];
+  for (const x of b.parentElement.children) x.setAttribute('aria-pressed', String(x === b));
+});
+</script></body></html>
