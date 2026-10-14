@@ -44,7 +44,7 @@ const SCREENS: Record<Portal, State[]> = {
     { name: 'scan', path: '/scan' },
     { name: 'scan-crop', path: '/scan', open: async (p) => {
       await p.locator('input[type=file]').first().setInputFiles(await printedCardFile(p));
-      await p.getByRole('button', { name: 'Use photo' }).waitFor({ timeout: 15_000 });
+      await p.getByRole('button', { name: 'Use scan' }).waitFor({ timeout: 15_000 });
     }, dialog: true },
     { name: 'scan-review', path: '/scan', open: btn('Type') },
     { name: 'my-leads', path: '/my-leads' },

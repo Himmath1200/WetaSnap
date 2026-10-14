@@ -9,6 +9,7 @@ import { useStore, toast } from '../lib/store';
 import { config, session } from '../lib/session';
 import { saveLocal } from '../lib/sync';
 import { compressCard } from '../lib/image';
+import { autoEnhance } from '../lib/scan';
 import { backend } from '../lib/backend';
 import { isOnline } from '../lib/net';
 import { db } from '../lib/db';
@@ -138,11 +139,11 @@ export default function Scan() {
   async function onCapture(video: HTMLVideoElement, crop: { x: number; y: number; w: number; h: number }) {
     const blob = await compressCard(video, crop);
     if (mode === 'review' && !capturingBack && window.innerWidth < 768) return;
-    // SCAN-02: the photo is shown for a crop before anything is read from it.
+    // SCAN-02: the photo is shown for scan / adjust before anything is read from it.
     setCropping({ blob, source: 'camera', back: capturingBack });
   }
 
-  /** What the Crop / adjust screen hands back: the card alone, ready to read. */
+  /** What the Scan / adjust screen hands back: the clean scan, ready to read. */
   async function onCropped(blob: Blob) {
     const step = cropping;
     setCropping(null);
@@ -163,14 +164,20 @@ export default function Scan() {
     const list = [...files].filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
     if (list.length === 1) {
-      setCropping({ blob: await compressCard(list[0]!), source: 'upload', back: capturingBack });
+      // Single upload still goes through scan / adjust — raw gallery pixels, full-frame quad.
+      setCropping({ blob: list[0]!, source: 'upload', back: capturingBack });
       return;
     }
-    // Many photos → one lead each; AI fills them after sync (SCAN-03).
+    // Many photos → one lead each, clean-scanned first; AI fills them after sync (SCAN-03).
     if (!s.event_id) { toast(t('Choose an event first.'), 'error'); return; }
     setBatch({ done: 0, total: list.length });
     for (const [i, f] of list.entries()) {
-      const blob = await compressCard(f);
+      let blob: Blob;
+      try {
+        blob = await autoEnhance(f);
+      } catch {
+        blob = await compressCard(f);
+      }
       await saveLocal(newLead(emptyDraft(), 'upload'), blob);
       setBatch({ done: i + 1, total: list.length });
     }

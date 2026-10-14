@@ -56,11 +56,11 @@ export async function demoCode(page: Page): Promise<string> {
 
 /**
  * Uploads one card and comes back with the review open. A single photo goes through the
- * Crop / adjust screen first (SCAN-02), which is one tap when the crop is already right.
+ * Scan / adjust screen first (SCAN-02), which is one tap when the corners are already right.
  */
 export async function uploadCard(page: Page, files: Parameters<Locator['setInputFiles']>[0]) {
   await page.locator('input[type=file]').first().setInputFiles(files);
-  const use = page.getByRole('button', { name: 'Use photo' });
+  const use = page.getByRole('button', { name: 'Use scan' });
   await use.waitFor({ state: 'visible', timeout: 15_000 });
   await use.click();
   await use.waitFor({ state: 'detached', timeout: 15_000 });
