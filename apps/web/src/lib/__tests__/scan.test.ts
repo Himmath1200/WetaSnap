@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyH, autoLevels, rectToQuad, rotFwd, rotInv, rotInvDelta, sauvolaBinarize, solveH } from '../scan';
+import { applyH, autoLevels, estimatePaperInk, rectToQuad, rotFwd, rotInv, rotInvDelta, sauvolaBinarize, solveH, targetLum } from '../scan';
 
 /** SCAN-02: the clean-scan geometry and levels must hold exactly — these run in Node, no canvas. */
 describe('clean-scan math', () => {
@@ -69,5 +69,25 @@ describe('clean-scan math', () => {
     expect(lo).toBeGreaterThanOrEqual(190);
     expect(hi).toBeLessThanOrEqual(210);
     expect(autoLevels([])).toEqual([0, 255]);
+  });
+
+  it('melts paper grain to white while ink stays bold (your Ageas sample)', () => {
+    // 80% card stock ~232 ± grain, 12% mid grey, 8% ink ~40.
+    const samples: number[] = [];
+    for (let i = 0; i < 800; i++) samples.push(232 + ((i * 37) % 13) - 6);
+    for (let i = 0; i < 120; i++) samples.push(120 + ((i * 53) % 40));
+    for (let i = 0; i < 80; i++) samples.push(30 + ((i * 29) % 25));
+    const { paper, ink } = estimatePaperInk(samples);
+    expect(paper).toBeGreaterThan(225);
+    expect(ink).toBeLessThan(70);
+    // grain band → pure white, ink → near black, curve never runs backwards
+    for (const v of [226, 232, 238]) expect(targetLum(v, paper, ink, true)).toBe(255);
+    expect(targetLum(40, paper, ink, true)).toBeLessThan(30);
+    let last = -1;
+    for (let v = 0; v <= 255; v++) {
+      const cur = targetLum(v, paper, ink, true);
+      expect(cur).toBeGreaterThanOrEqual(last);
+      last = cur;
+    }
   });
 });

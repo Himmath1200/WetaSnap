@@ -206,6 +206,64 @@ export function autoLevels(samples: number[]): [number, number] {
   return hi - lo < 12 ? [Math.max(0, lo - 6), Math.min(255, hi + 6)] : [lo, hi];
 }
 
+const quantile = (sorted: number[], q: number) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * q)))] ?? 0;
+
+/** Paper white vs ink black from luminance samples — bright/dark percentiles, ignoring specks.
+ * On a light card `paper` is the card stock; on a dark card it is the light print. Either way
+ * the curve below does the right thing: near-white goes pure white, dark stays dark. */
+export function estimatePaperInk(samples: number[]): { paper: number; ink: number } {
+  if (!samples.length) return { paper: 255, ink: 0 };
+  const s = [...samples].sort((a, b) => a - b);
+  let ink = quantile(s, 0.06);
+  let paper = quantile(s, 0.92);
+  if (paper - ink < 25) {
+    ink = Math.max(0, ink - 12);
+    paper = Math.min(255, paper + 12);
+  }
+  return { paper, ink };
+}
+
+/** Target luminance for one pixel: ink → black, paper → white, mid-tones bowed slightly dark
+ * so print reads bold, with a smooth knee that melts paper grain into pure white. Pure. */
+export function targetLum(l: number, paper: number, ink: number, whiten = true): number {
+  const span = Math.max(1, paper - ink);
+  const norm = clamp((l - ink) / span, 0, 1);
+  if (whiten) {
+    if (norm >= 0.93) return 255;
+    if (norm > 0.78) {
+      const t = (norm - 0.78) / 0.15;
+      const e = t * t * (3 - 2 * t);
+      const base = Math.pow(norm, 1.12) * 255;
+      return base + (255 - base) * e;
+    }
+  }
+  return Math.pow(norm, whiten ? 1.12 : 1.0) * 255;
+}
+
+/** One-pass levels that preserve hue: every channel rides the luminance curve, so the paper
+ * goes white without shifting the logo colours, and print goes bold without clipping. */
+function cleanPage(c: HTMLCanvasElement, whiten: boolean) {
+  const w = c.width;
+  const h = c.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const step = Math.max(1, Math.floor((w * h) / 20000));
+  const lum: number[] = [];
+  for (let i = 0; i < w * h; i += step) lum.push(0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!);
+  const { paper, ink } = estimatePaperInk(lum);
+  for (let i = 0; i < w * h; i++) {
+    const o = i * 4;
+    const l = 0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!;
+    const t = targetLum(l, paper, ink, whiten);
+    const ratio = t / Math.max(1, l);
+    d[o] = clamp(d[o]! * ratio, 0, 255);
+    d[o + 1] = clamp(d[o + 1]! * ratio, 0, 255);
+    d[o + 2] = clamp(d[o + 2]! * ratio, 0, 255);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 function stretch(c: HTMLCanvasElement, gray: boolean) {
   const w = c.width;
   const h = c.height;
@@ -282,6 +340,8 @@ function saturate(c: HTMLCanvasElement, amount: number) {
   const img = ctx.getImageData(0, 0, c.width, c.height);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
+    const l = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
+    if (l > 225) continue; // near-white paper: keep it white, don't wake the grain
     const avg = (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
     d[i] = clamp(avg + (d[i]! - avg) * amount, 0, 255);
     d[i + 1] = clamp(avg + (d[i + 1]! - avg) * amount, 0, 255);
@@ -290,8 +350,43 @@ function saturate(c: HTMLCanvasElement, amount: number) {
   ctx.putImageData(img, 0, 0);
 }
 
-/** Mild 3×3 sharpen — thin print crisps up without haloing at this amount. */
-function sharpen(c: HTMLCanvasElement, a = 0.18) {
+/** 3×3 median on near-white pixels only: melts paper grain and JPEG speckle into pure
+ * white while every dark pixel of print passes through untouched. Pure-adjacent, canvas I/O only. */
+function despeckleWhite(c: HTMLCanvasElement) {
+  const w = c.width;
+  const h = c.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const src = ctx.getImageData(0, 0, w, h);
+  const out = ctx.createImageData(w, h);
+  const s = src.data;
+  const o = out.data;
+  const win = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      o[i + 3] = 255;
+      const l = 0.299 * s[i]! + 0.587 * s[i + 1]! + 0.114 * s[i + 2]!;
+      if (l < 208) {
+        o[i] = s[i]!; o[i + 1] = s[i + 1]!; o[i + 2] = s[i + 2]!;
+        continue;
+      }
+      for (let ch = 0; ch < 3; ch++) {
+        for (let k = 0; k < 9; k++) {
+          const nx = clamp(x + (k % 3) - 1, 0, w - 1);
+          const ny = clamp(y + Math.floor(k / 3) - 1, 0, h - 1);
+          win[k] = s[(ny * w + nx) * 4 + ch]!;
+        }
+        win.sort((a, b) => a - b);
+        o[i + ch] = win[4]!;
+      }
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+/** Print-safe unsharp mask: crisps edges but skips near-white pixels, so paper grain is
+ * never sharpened into speckle. Mild amount — no haloing at thin print sizes. */
+function sharpen(c: HTMLCanvasElement, a = 0.22) {
   const w = c.width;
   const h = c.height;
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
@@ -306,11 +401,16 @@ function sharpen(c: HTMLCanvasElement, a = 0.18) {
       const xl = x > 0 ? x - 1 : x;
       const xr = x < w - 1 ? x + 1 : x;
       const i = (y * w + x) * 4;
+      o[i + 3] = 255;
+      const l = 0.299 * s[i]! + 0.587 * s[i + 1]! + 0.114 * s[i + 2]!;
+      if (l > 225) {
+        o[i] = s[i]!; o[i + 1] = s[i + 1]!; o[i + 2] = s[i + 2]!;
+        continue;
+      }
       for (let ch = 0; ch < 3; ch++) {
         const nb = s[(yu * w + x) * 4 + ch]! + s[(yd * w + x) * 4 + ch]! + s[(y * w + xl) * 4 + ch]! + s[(y * w + xr) * 4 + ch]!;
         o[i + ch] = clamp(s[i + ch]! * (1 + 4 * a) - nb * a, 0, 255);
       }
-      o[i + 3] = 255;
     }
   }
   ctx.putImageData(out, 0, 0);
@@ -333,7 +433,7 @@ function rotate(c: HTMLCanvasElement, r: number): HTMLCanvasElement {
 // ---------------------------------------------------------------- public pipeline
 
 function develop(src: HTMLCanvasElement, quad: Quad | null, filter: ScanFilter, maxSide: number): HTMLCanvasElement {
-  let c = warpCanvas(src, quad, maxSide);
+  const c = warpCanvas(src, quad, maxSide);
   if (filter === 'color') {
     stretch(c, false); // straightened, lightly levelled — colours as printed
     return c;
@@ -344,12 +444,14 @@ function develop(src: HTMLCanvasElement, quad: Quad | null, filter: ScanFilter, 
     return c;
   }
   if (filter === 'gray') {
-    stretch(c, true);
-    sharpen(c);
+    despeckleWhite(c);
+    cleanPage(c, false); // even levels, no whitening knee — grey stays photographic
     return c;
   }
-  stretch(c, false); // enhance: the CamScanner look — flat white page, punchy print
-  saturate(c, 1.18);
+  // enhance: the CamScanner look — flat white page, bold print, quiet grain.
+  despeckleWhite(c);
+  cleanPage(c, true); // hue-preserving paper→white curve (ageas red stays red)
+  saturate(c, 1.12);
   sharpen(c);
   return c;
 }
