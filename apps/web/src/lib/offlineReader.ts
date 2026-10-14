@@ -14,6 +14,9 @@ import { pushOcrText } from './ocrLog';
  * dropped before the text reaches parseCardText. parseCardText then repairs Tesseract's usual
  * small-print slips (a + read as 4, B for 8, spaces inside an email, M: read as A:) from the
  * dialling-code table and the card's own sibling numbers — digits only, never invented.
+ *
+ * Three small ideas (typo table, mixed-line split, bigram similarity) are adapted from
+ * syneo-tools-gmbh/Javascript-BCR-Library (Apache-2.0).
  */
 const TESS_LANG: Record<string, string> = {
   en: 'eng', de: 'deu', fr: 'fra', es: 'spa', it: 'ita', nl: 'nld', pt: 'por',
@@ -171,6 +174,75 @@ const PARTICLES = new Set([
 ]);
 
 /**
+ * Tesseract's single-character slips, repaired before parsing (typo table adapted from
+ * syneo-tools-gmbh/Javascript-BCR-Library, Apache-2.0). Every rule needs letter neighbours,
+ * so phone digit runs are never touched.
+ */
+function repairTypos(text: string): string {
+  return text
+    .replace(/([A-Za-z0-9])\s*[©®]\s*([A-Za-z0-9])/g, '$1@$2') // "info©firma.de"
+    .replace(/,com\b/gi, '.com') // ",com" for ".com"
+    .replace(/\.oom\b/gi, '.com') // ".oom" for ".com"
+    .replace(/\.eh\b/gi, '.ch') // ".eh" for ".ch"
+    .replace(/—/g, '-') // never a long dash
+    .replace(/([A-Za-z])\|([A-Za-z])/g, '$1l$2') // pipe for l
+    .replace(/([A-Za-z])0([A-Za-z])/g, '$1o$2') // 0 for o inside a word
+    .replace(/([A-Za-z]{2})1([A-Za-z]{2})/g, '$1i$2'); // 1 for i inside a word
+}
+
+/** Lowercase letters and digits only — the shape of a word without its misreads. */
+function squashForSim(s: string) {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Bigram (Dice) similarity, adapted from sSimilarity in
+ * syneo-tools-gmbh/Javascript-BCR-Library (Apache-2.0): "nordsaat" still matches "nordsat",
+ * so one OCR slip doesn't lose the company/domain or name/email link.
+ */
+function bigramSim(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const pairs = (s: string) => {
+    const out: string[] = [];
+    for (let i = 0; i < s.length - 1; i++) out.push(s.slice(i, i + 2));
+    return out;
+  };
+  const left = pairs(a);
+  const right = pairs(b);
+  const taken = new Set<number>();
+  let hit = 0;
+  for (const p of left) {
+    const idx = right.findIndex((q, i) => !taken.has(i) && q === p);
+    if (idx >= 0) { taken.add(idx); hit++; }
+  }
+  return (2 * hit) / (left.length + right.length);
+}
+
+/**
+ * The domain is usually the company ("nordsaat.de" → "NORDSAAT"). Exact containment first,
+ * then a bigram similarity so one misread letter still matches. Only used when no legal
+ * suffix or company-like line won, so it can only refine the fallback guess, never overrule one.
+ */
+function matchDomain(lines: string[], used: Set<string>, email: string | null, website: string | null): { line: string; confidence: number; reason?: string } | null {
+  const host = (email?.split('@')[1] ?? website?.replace(/^https?:\/\/(www\.)?/i, '').split('/')[0] ?? '').toLowerCase();
+  const parts = host.split('.').filter(Boolean);
+  if (parts.length < 2) return null;
+  const base = squashForSim(parts.length > 2 ? parts.slice(0, -1).join(' ') : parts[0]!);
+  if (base.length < 4) return null;
+  let fuzzy: { line: string; sim: number } | null = null;
+  for (const l of lines) {
+    if (used.has(l) || /[@\d]/.test(l) || TITLE.test(l)) continue;
+    const sq = squashForSim(l);
+    if (sq.length < 4) continue;
+    if (sq === base || sq.includes(base) || base.includes(sq)) return { line: l, confidence: 0.75 };
+    const sim = bigramSim(sq, base);
+    if (sim >= 0.55 && (!fuzzy || sim > fuzzy.sim)) fuzzy = { line: l, sim };
+  }
+  return fuzzy ? { line: fuzzy.line, confidence: 0.6, reason: 'Taken from the web address' } : null;
+}
+
+/**
  * Collapses whitespace, then strips Tesseract's edge debris: leading rule fragments
  * ("~~ M:…", "| Jayakumar P", "1 M:…") and trailing label punctuation. The trailing
  * dot is kept — it belongs to "B.V." and "S.r.l.".
@@ -280,9 +352,12 @@ function pickName(lines: string[], used: Set<string>, emailLocal: string): strin
     else if (words.length === 3) s += 1;
     if (/^[A-Z]\.?$/.test(words[words.length - 1]!)) s += 2; // a lone initial: "Jayakumar P"
     if (emailLocal) {
-      const el = emailLocal.toLowerCase();
+      const el = squashForSim(emailLocal);
       let m = 0;
-      for (const w of words) if (w.length >= 3 && el.includes(w.toLowerCase())) m++;
+      for (const w of words) {
+        const sq = squashForSim(w);
+        if (sq.length >= 3 && (el.includes(sq) || bigramSim(sq, el) >= 0.7)) m++;
+      }
       s += Math.min(m, 2) * 2;
     }
     if (idx <= 2) s += 1; // the name sits near the top, under the logo
@@ -314,11 +389,15 @@ function splitName(full: string): [string, string] {
  * form for the person to check — which is why each carries a confidence (SCAN-04).
  */
 export function parseCardText(text: string): ReadResult {
+  // Tesseract's single-character slips first (see repairTypos), then split merged facts.
   // Two-column cards arrive as merged "email   Company" lines (the gutter survives as extra
-  // spaces via preserve_interword_spaces). Split them back into one fact per line first.
-  const lines = text
+  // spaces via preserve_interword_spaces); one OCR line also merges labelled facts
+  // ("Tel: … Mobile: …"), split on the label boundary the same way.
+  const fixed = repairTypos(text);
+  const lines = fixed
     .split('\n')
     .flatMap((l) => l.split(/\t| {2,}/))
+    .flatMap((l) => l.split(/\s+(?=(?:tel|telephone|telefon|phone|mobile|mob\.?|handy|cell|fax|e-?mail|mail|web|www)\b\s*[:.])/i))
     .map((l) => clean(l))
     .filter((l) => l.length > 1 && !LABEL.test(l) && !isDebris(l) && looksLikeText(l));
   const out: ReadResult = {};
@@ -326,7 +405,7 @@ export function parseCardText(text: string): ReadResult {
   const used = new Set<string>();
 
   // Email — the most reliable thing on a card.
-  const found = extractEmail(text);
+  const found = extractEmail(fixed);
   const email = found?.email.toLowerCase().replace(/^[.,;:]+|[.,;:]+$/g, '') ?? null;
   if (email) {
     const repaired = found!.repaired;
