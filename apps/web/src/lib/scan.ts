@@ -153,8 +153,25 @@ function warpCanvas(src: HTMLCanvasElement, quad: Quad | null, maxSide: number):
   return out;
 }
 
+/** How much of the background correction a pixel gets: paper (≈bg) full, solid print none.
+ * Without this, faint grey small print is boosted along with the paper and washes out. Pure. */
+export function flattenWeight(pixLum: number, bgLum: number): number {
+  const bg = Math.max(1, bgLum);
+  return clamp((pixLum - 0.35 * bg) / (0.65 * bg), 0, 1);
+}
+
+/** White-balance gain for one channel, pulled halfway toward the luminance gain so coloured
+ * print (red names, blue rules) keeps its hue while grey paper still lands white. Pure. */
+export function channelGain(bgCh: number, bgLum: number): number {
+  const gLum = Math.min(1.35, 255 / Math.max(1, bgLum));
+  const gCh = Math.min(1.35, 255 / Math.max(1, bgCh));
+  return gLum + 0.5 * (gCh - gLum);
+}
+
 /** Flatten uneven light: each pixel is divided by its blurred neighbourhood, so a shadowed
- * corner and a yellow lamp both land on white again. The thumbnail *is* the blur. */
+ * corner and a yellow lamp both land on white again. The thumbnail *is* the blur.
+ * Gains are text-protected (dark print is left alone) and hue-preserving (coloured print
+ * keeps its colour) — an earlier version boosted faint grey emails into the paper. */
 function flatten(c: HTMLCanvasElement) {
   const w = c.width;
   const h = c.height;
@@ -187,14 +204,33 @@ function flatten(c: HTMLCanvasElement) {
     for (let x = 0; x < w; x++) {
       const fx = ((x + 0.5) / w) * tw - 0.5;
       const i = (y * w + x) * 4;
+      const lum = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
+      const bgLum = 0.299 * at(fx, fy, 0) + 0.587 * at(fx, fy, 1) + 0.114 * at(fx, fy, 2);
+      const wgt = flattenWeight(lum, bgLum); // 0 on print → untouched
+      if (wgt <= 0) continue;
       for (let ch = 0; ch < 3; ch++) {
-        const b = Math.max(1, at(fx, fy, ch));
-        const gain = Math.min(1.9, 255 / b); // capped: never amplify sensor noise into speckles
+        const gain = 1 + (channelGain(at(fx, fy, ch), bgLum) - 1) * wgt;
         d[i + ch] = Math.min(255, d[i + ch]! * gain);
       }
     }
   }
   ctx.putImageData(img, 0, 0);
+}
+
+/** Black point: near the darkest real ink (0.5th percentile), so the tonal range spans from
+ * actual print to actual paper — faint text keeps its distance from white. Pure. */
+export function inkBlack(samples: number[]): number {
+  if (!samples.length) return 25;
+  const s = [...samples].sort((a, b) => a - b);
+  return clamp(s[Math.floor(s.length * 0.005)] ?? 25, 0, 60);
+}
+
+/** White point: 1st percentile of *paper* samples only (pixels already near-white), so one
+ * black headline can never drag thin grey text into the paper. Pure. */
+export function paperWhite(samples: number[]): number {
+  const paper = samples.filter((v) => v >= 150).sort((a, b) => a - b);
+  if (!paper.length) return 235;
+  return clamp(paper[Math.floor(paper.length * 0.01)] ?? 235, 170, 255);
 }
 
 /** 1st/99th percentile of samples — the white margin and the black print, ignoring specks. */
@@ -206,6 +242,16 @@ export function autoLevels(samples: number[]): [number, number] {
   return hi - lo < 12 ? [Math.max(0, lo - 6), Math.min(255, hi + 6)] : [lo, hi];
 }
 
+/** Scanner tonal curve: real ink maps toward black, paper snaps white, midtones (faint grey
+ * small print) darken for contrast. black = darkest ink on the page, white = paper level.
+ * Gamma 1.35 pushes mid-greys down while holding paper white — the opposite of a lift. Pure. */
+export function enhanceCurve(v: number, black: number, white: number): number {
+  if (v >= white) return 255;
+  if (v <= black) return 0;
+  const x = (v - black) / Math.max(1, white - black);
+  return clamp(255 * Math.pow(x, 1.35), 0, 255);
+}
+
 function stretch(c: HTMLCanvasElement, gray: boolean) {
   const w = c.width;
   const h = c.height;
@@ -215,15 +261,17 @@ function stretch(c: HTMLCanvasElement, gray: boolean) {
   const step = Math.max(1, Math.floor((w * h) / 20000));
   const lum: number[] = [];
   for (let i = 0; i < w * h; i += step) lum.push(0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!);
-  const [lo, hi] = autoLevels(lum);
-  const span = Math.max(1, hi - lo);
+  const white = paperWhite(lum);
+  const black = inkBlack(lum);
   for (let i = 0; i < w * h; i++) {
     const o = i * 4;
     if (gray) {
-      const v = clamp(((0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]! - lo) / span) * 255, 0, 255);
-      d[o] = d[o + 1] = d[o + 2] = v;
+      const v = 0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!;
+      const out = enhanceCurve(v, black, white);
+      d[o] = d[o + 1] = d[o + 2] = out;
     } else {
-      for (let ch = 0; ch < 3; ch++) d[o + ch] = clamp(((d[o + ch]! - lo) / span) * 255, 0, 255);
+      // Per-channel black/white keeps hue: the channels of one pixel span the same range.
+      for (let ch = 0; ch < 3; ch++) d[o + ch] = enhanceCurve(d[o + ch]!, black, white);
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -349,8 +397,8 @@ function develop(src: HTMLCanvasElement, quad: Quad | null, filter: ScanFilter, 
     return c;
   }
   stretch(c, false); // enhance: the CamScanner look — flat white page, punchy print
-  saturate(c, 1.18);
-  sharpen(c);
+  saturate(c, 1.08);
+  sharpen(c, 0.12);
   return c;
 }
 

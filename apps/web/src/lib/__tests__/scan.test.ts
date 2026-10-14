@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyH, autoLevels, rectToQuad, rotFwd, rotInv, rotInvDelta, sauvolaBinarize, solveH } from '../scan';
+import {
+  applyH, autoLevels, channelGain, enhanceCurve, flattenWeight, inkBlack, paperWhite,
+  rectToQuad, rotFwd, rotInv, rotInvDelta, sauvolaBinarize, solveH,
+} from '../scan';
 
 /** SCAN-02: the clean-scan geometry and levels must hold exactly — these run in Node, no canvas. */
 describe('clean-scan math', () => {
@@ -69,5 +72,44 @@ describe('clean-scan math', () => {
     expect(lo).toBeGreaterThanOrEqual(190);
     expect(hi).toBeLessThanOrEqual(210);
     expect(autoLevels([])).toEqual([0, 255]);
+  });
+
+  it('flatten leaves solid print alone and corrects the paper', () => {
+    expect(flattenWeight(30, 230)).toBe(0); // black headline: no boost
+    expect(flattenWeight(150, 230)).toBeGreaterThan(0.3); // faint grey email: partial
+    expect(flattenWeight(150, 230)).toBeLessThan(1);
+    expect(flattenWeight(228, 230)).toBeCloseTo(1, 1); // paper: full correction
+  });
+
+  it('channel gains keep coloured print coloured', () => {
+    // Red name on grey paper: red channel gains less than the grey average.
+    const lum = 0.299 * 180 + 0.587 * 120 + 0.114 * 120;
+    const gR = channelGain(180, lum);
+    const gB = channelGain(120, lum);
+    expect(gB).toBeGreaterThan(gR); // weaker channels lift more → hue survives
+    expect(gR).toBeGreaterThanOrEqual(1);
+    expect(gR).toBeLessThanOrEqual(1.35);
+  });
+
+  it('enhance curve darkens faint print and snaps paper white', () => {
+    const black = 25;
+    const white = 225;
+    expect(enhanceCurve(225, black, white)).toBe(255);
+    expect(enhanceCurve(245, black, white)).toBe(255);
+    expect(enhanceCurve(25, black, white)).toBe(0);
+    expect(enhanceCurve(10, black, white)).toBe(0);
+    const faint = enhanceCurve(165, black, white); // thin grey small print on 232 paper
+    expect(faint).toBeLessThan(160); // darkens for contrast — never drifts toward white
+    const red = enhanceCurve(115, black, white);
+    expect(red).toBeLessThan(faint); // darker input stays darker: hue order preserved
+  });
+
+  it('black/white points track real ink and paper, not each other', () => {
+    const page = [...Array(80).fill(232), ...Array(15).fill(165), ...Array(5).fill(25)];
+    expect(paperWhite(page)).toBeGreaterThanOrEqual(220);
+    const black = inkBlack(page);
+    expect(black).toBeLessThanOrEqual(40);
+    expect(black).toBeGreaterThanOrEqual(0);
+    expect(inkBlack([])).toBe(25);
   });
 });
