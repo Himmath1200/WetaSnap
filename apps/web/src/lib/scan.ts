@@ -153,25 +153,18 @@ function warpCanvas(src: HTMLCanvasElement, quad: Quad | null, maxSide: number):
   return out;
 }
 
-/** How much of the background correction a pixel gets: paper (≈bg) full, solid print none.
- * Without this, faint grey small print is boosted along with the paper and washes out. Pure. */
+/** How much of the background correction a pixel gets: anything clearly darker than its
+ * neighbourhood (real print, including faint grey small print) gets none — only paper and
+ * light shadows are lifted. Smoothstep on the pixel-to-background ratio. Pure. */
 export function flattenWeight(pixLum: number, bgLum: number): number {
-  const bg = Math.max(1, bgLum);
-  return clamp((pixLum - 0.35 * bg) / (0.65 * bg), 0, 1);
+  const t = clamp((pixLum / Math.max(1, bgLum) - 0.75) / 0.2, 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
-/** White-balance gain for one channel, pulled halfway toward the luminance gain so coloured
- * print (red names, blue rules) keeps its hue while grey paper still lands white. Pure. */
-export function channelGain(bgCh: number, bgLum: number): number {
-  const gLum = Math.min(1.35, 255 / Math.max(1, bgLum));
-  const gCh = Math.min(1.35, 255 / Math.max(1, bgCh));
-  return gLum + 0.5 * (gCh - gLum);
-}
-
-/** Flatten uneven light: each pixel is divided by its blurred neighbourhood, so a shadowed
- * corner and a yellow lamp both land on white again. The thumbnail *is* the blur.
- * Gains are text-protected (dark print is left alone) and hue-preserving (coloured print
- * keeps its colour) — an earlier version boosted faint grey emails into the paper. */
+/** Flatten uneven light with ONE luminance gain per pixel (same factor on R, G and B), so a
+ * shadowed corner lands on white again without shifting any hue. Per-channel division is what
+ * bleached red names and faint emails before: the weakest channel was lifted hardest until
+ * coloured print turned paper-white. Lamp tint is handled globally, not per pixel. */
 function flatten(c: HTMLCanvasElement) {
   const w = c.width;
   const h = c.height;
@@ -199,19 +192,41 @@ function flatten(c: HTMLCanvasElement) {
     const i11 = (y1 * tw + x1) * 4 + ch;
     return bg[i00]! * (1 - ax) * (1 - ay) + bg[i10]! * ax * (1 - ay) + bg[i01]! * (1 - ax) * ay + bg[i11]! * ax * ay;
   };
+  const atLum = (fx: number, fy: number) =>
+    0.299 * at(fx, fy, 0) + 0.587 * at(fx, fy, 1) + 0.114 * at(fx, fy, 2);
+  // Global paper-neutral white balance from the thumbnail's bright pixels (lamp tint only).
+  // Mild by design: ±8% max, so coloured print never shifts.
+  const pr: number[] = [];
+  const pg: number[] = [];
+  const pb: number[] = [];
+  for (let i = 0; i < tw * th; i++) {
+    const lum = 0.299 * bg[i * 4]! + 0.587 * bg[i * 4 + 1]! + 0.114 * bg[i * 4 + 2]!;
+    if (lum >= 150) { pr.push(bg[i * 4]!); pg.push(bg[i * 4 + 1]!); pb.push(bg[i * 4 + 2]!); }
+  }
+  const med = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)]! : 0);
+  const mr = med(pr);
+  const mg = med(pg);
+  const mb = med(pb);
+  const paperLum = 0.299 * mr + 0.587 * mg + 0.114 * mb;
+  const bal = [mr, mg, mb].map((ch) => (ch > 0 && paperLum > 0 ? clamp(paperLum / ch, 0.92, 1.08) : 1));
   for (let y = 0; y < h; y++) {
     const fy = ((y + 0.5) / h) * th - 0.5;
     for (let x = 0; x < w; x++) {
       const fx = ((x + 0.5) / w) * tw - 0.5;
       const i = (y * w + x) * 4;
+      // White balance first (whole page, hue-safe: same ratios, tiny factors).
+      d[i] = Math.min(255, d[i]! * bal[0]!);
+      d[i + 1] = Math.min(255, d[i + 1]! * bal[1]!);
+      d[i + 2] = Math.min(255, d[i + 2]! * bal[2]!);
       const lum = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
-      const bgLum = 0.299 * at(fx, fy, 0) + 0.587 * at(fx, fy, 1) + 0.114 * at(fx, fy, 2);
+      const bgLum = atLum(fx, fy);
       const wgt = flattenWeight(lum, bgLum); // 0 on print → untouched
       if (wgt <= 0) continue;
-      for (let ch = 0; ch < 3; ch++) {
-        const gain = 1 + (channelGain(at(fx, fy, ch), bgLum) - 1) * wgt;
-        d[i + ch] = Math.min(255, d[i + ch]! * gain);
-      }
+      // ONE luminance gain on all three channels — hue cannot shift, faint print cannot bleach.
+      const gain = 1 + (Math.min(1.25, 255 / Math.max(1, bgLum)) - 1) * wgt;
+      d[i] = Math.min(255, d[i]! * gain);
+      d[i + 1] = Math.min(255, d[i + 1]! * gain);
+      d[i + 2] = Math.min(255, d[i + 2]! * gain);
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -225,12 +240,14 @@ export function inkBlack(samples: number[]): number {
   return clamp(s[Math.floor(s.length * 0.005)] ?? 25, 0, 60);
 }
 
-/** White point: 1st percentile of *paper* samples only (pixels already near-white), so one
- * black headline can never drag thin grey text into the paper. Pure. */
+/** White point: 90th percentile of all samples. Paper covers most of a card, so this lands
+ * on paper without any brightness threshold — and a threshold is exactly what bleached faint
+ * grey text before (>=150 swept the email into the "paper" set and dragged white down onto it).
+ * Pure. */
 export function paperWhite(samples: number[]): number {
-  const paper = samples.filter((v) => v >= 150).sort((a, b) => a - b);
-  if (!paper.length) return 235;
-  return clamp(paper[Math.floor(paper.length * 0.01)] ?? 235, 170, 255);
+  if (!samples.length) return 235;
+  const s = [...samples].sort((a, b) => a - b);
+  return clamp(s[Math.min(s.length - 1, Math.floor(s.length * 0.9))] ?? 235, 170, 255);
 }
 
 /** 1st/99th percentile of samples — the white margin and the black print, ignoring specks. */
@@ -242,14 +259,14 @@ export function autoLevels(samples: number[]): [number, number] {
   return hi - lo < 12 ? [Math.max(0, lo - 6), Math.min(255, hi + 6)] : [lo, hi];
 }
 
-/** Scanner tonal curve: real ink maps toward black, paper snaps white, midtones (faint grey
- * small print) darken for contrast. black = darkest ink on the page, white = paper level.
- * Gamma 1.35 pushes mid-greys down while holding paper white — the opposite of a lift. Pure. */
+/** Scanner tonal curve: linear black→white with a hard paper snap only in the top 4%.
+ * Faint grey at 70% of paper keeps ~63% output — never bleached, never posterised.
+ * black = darkest ink on the page, white = paper level. Pure. */
 export function enhanceCurve(v: number, black: number, white: number): number {
-  if (v >= white) return 255;
+  const snap = white - Math.max(4, (white - black) * 0.04);
+  if (v >= snap) return 255;
   if (v <= black) return 0;
-  const x = (v - black) / Math.max(1, white - black);
-  return clamp(255 * Math.pow(x, 1.35), 0, 255);
+  return clamp(((v - black) / Math.max(1, snap - black)) * 255, 0, 255);
 }
 
 function stretch(c: HTMLCanvasElement, gray: boolean) {
@@ -265,13 +282,15 @@ function stretch(c: HTMLCanvasElement, gray: boolean) {
   const black = inkBlack(lum);
   for (let i = 0; i < w * h; i++) {
     const o = i * 4;
+    // Luminance-driven curve, applied as ONE ratio per pixel: the curve can never separate
+    // the channels, so hue is preserved exactly (red stays red, grey stays grey).
+    const v = 0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!;
+    const target = enhanceCurve(v, black, white);
     if (gray) {
-      const v = 0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!;
-      const out = enhanceCurve(v, black, white);
-      d[o] = d[o + 1] = d[o + 2] = out;
+      d[o] = d[o + 1] = d[o + 2] = target;
     } else {
-      // Per-channel black/white keeps hue: the channels of one pixel span the same range.
-      for (let ch = 0; ch < 3; ch++) d[o + ch] = enhanceCurve(d[o + ch]!, black, white);
+      const ratio = v > 1 ? target / v : 1;
+      for (let ch = 0; ch < 3; ch++) d[o + ch] = clamp(d[o + ch]! * ratio, 0, 255);
     }
   }
   ctx.putImageData(img, 0, 0);
