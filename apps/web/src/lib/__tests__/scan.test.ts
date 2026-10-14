@@ -64,7 +64,7 @@ describe('clean-scan math', () => {
   });
 
   it('auto-levels ignore specks and survive flat images', () => {
-    const samples = [...Array(98).fill(200), 5, 250]; // 1% specks each end
+    const samples = [...Array(196).fill(200), 5, 5, 250, 250]; // 1% specks each end
     const [lo, hi] = autoLevels(samples);
     expect(lo).toBeGreaterThanOrEqual(190);
     expect(hi).toBeLessThanOrEqual(210);
