@@ -633,7 +633,7 @@ export function createDemoBackend(): Backend {
     const hasPhoto = lead.has_photo || (await S.photos.where('lead_id').equals(id).count()) > 0;
     if (hasPhoto && company?.cloud_ai_enabled && Object.values(lead.fields).every((f) => f.by !== 'ai')) {
       const shot = await S.photos.get(`${id}/front`);
-      const read: ReadResult = shot ? await (await import('../offlineReader')).readOffline(shot.blob).catch(() => ({}) as ReadResult) : {};
+      const read: ReadResult = shot ? await (await import('../offlineReader')).readOffline(shot.blob, 'en', { silent: true }).catch(() => ({}) as ReadResult) : {};
       const fields = { ...lead.fields };
       for (const [k, v] of Object.entries(read)) if (!fields[k]?.value?.trim()) fields[k] = { ...v, by: 'ai' };
       lead = { ...lead, fields, updated_at: nowIso() };
@@ -858,6 +858,7 @@ export function createDemoBackend(): Backend {
       await meter(p.company_id!, 'ai_read');
       // The demo has no cloud model, so the card is read on this device (Tesseract) — the values
       // come from the photo in front of you, never from a sample. The API adds Claude on top.
+      // readOffline pushes the raw text to the live popup itself.
       const { readOffline } = await import('../offlineReader');
       return readOffline(photo);
     },

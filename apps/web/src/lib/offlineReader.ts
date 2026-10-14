@@ -1,4 +1,5 @@
 import type { ReadResult } from './backend';
+import { pushOcrText } from './ocrLog';
 
 /**
  * Reading a card on the device itself (AI-05): Tesseract runs in the browser, so a card can be
@@ -36,9 +37,11 @@ export async function preloadOfflinePack(language = 'en') {
 }
 export const offlinePackReady = () => localStorage.getItem('wetasnap-offline-pack') === 'ready';
 
-export async function readOffline(photo: Blob, language = 'en'): Promise<ReadResult> {
+export async function readOffline(photo: Blob, language = 'en', opts?: { silent?: boolean }): Promise<ReadResult> {
   const w = await getWorker(language);
   const { data } = await w.recognize(photo);
+  // OCR-LOG: popup shows this raw Tesseract text right after the scan (silent for background re-reads).
+  if (!opts?.silent) pushOcrText(data.text ?? '', 'device Tesseract');
   return parseCardText(data.text);
 }
 

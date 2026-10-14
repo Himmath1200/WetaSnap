@@ -41,6 +41,8 @@ export interface ReadOutcome {
   engines: string[];
   cropped: boolean;
   ms: number;
+  /** Raw OCR lines for the live popup in the app (empty when only AI answered). */
+  raw_text: string;
 }
 
 @Injectable()
@@ -102,6 +104,7 @@ export class PipelineService {
       engines: [ocr?.engine, ai?.engine].filter(Boolean) as string[],
       cropped: cropped.by !== 'none',
       ms: Date.now() - started,
+      raw_text: ocr?.text ?? '',
     };
   }
 

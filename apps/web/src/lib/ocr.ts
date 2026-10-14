@@ -1,5 +1,6 @@
 import type { ReadResult } from './backend';
 import type { FieldDefinition } from './types';
+import { pushOcrText } from './ocrLog';
 
 /**
  * Card reading order (client's choice): the local OCR service first (Surya/Tesseract on their
@@ -66,7 +67,10 @@ export async function readWithLocalOcr(photo: Blob, fields: FieldDefinition[], l
     signal: AbortSignal.timeout(20_000),
   });
   if (!r.ok) throw new Error(`Local OCR failed (${r.status})`);
-  const data = (await r.json()) as { fields: ReadResult };
+  const data = (await r.json()) as { fields: ReadResult; raw_text?: string; engine?: string };
+  // OCR-LOG: popup shows the raw text the local service (Surya/Tesseract) read.
+  if (typeof data.raw_text === 'string') pushOcrText(data.raw_text, `local OCR (${data.engine ?? 'ocr'})`);
+  else pushOcrText(Object.values(data.fields ?? {}).map((v) => v?.value).filter(Boolean).join('\n'), 'local OCR');
   const out: ReadResult = {};
   for (const [k, v] of Object.entries(data.fields ?? {})) if (v?.value) out[k] = { ...v, by: 'offline' };
   return out;

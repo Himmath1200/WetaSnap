@@ -78,6 +78,8 @@ class ReadResponse(BaseModel):
     fields: dict[str, FieldOut]
     engine: Literal["surya", "tesseract"]
     ms: int
+    # Raw lines the engine read, joined — the app shows them in a live popup after each scan.
+    raw_text: str = ""
 
 
 class HealthResponse(BaseModel):
@@ -208,6 +210,7 @@ def read(req: ReadRequest) -> ReadResponse:
         fields={k: FieldOut(value=v.value, confidence=v.confidence, reason=v.reason) for k, v in extracted.items()},
         engine=result.engine,
         ms=total_ms,
+        raw_text="\n".join(l.text for l in result.lines),
     )
 
 

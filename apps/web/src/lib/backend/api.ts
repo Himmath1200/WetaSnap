@@ -198,9 +198,15 @@ export function createApiBackend(): Backend {
 
     // ---------------------------------------------------------------- scanning
     async readCard(photo) {
-      const answer = await send<{ fields: ReadResult }>('/v1/scan/read', {
+      const answer = await send<{ fields: ReadResult; raw_text?: string; engines?: string[] }>('/v1/scan/read', {
         body: { image: await toBase64(photo), mime: photo.type || 'image/jpeg', event_id: eventId },
       });
+      // OCR-LOG: popup shows the raw OCR text right after the scan.
+      const { pushOcrText } = await import('../ocrLog');
+      const raw = typeof answer.raw_text === 'string' && answer.raw_text.trim()
+        ? answer.raw_text
+        : Object.values(answer.fields ?? {}).map((v) => v?.value).filter(Boolean).join('\n');
+      pushOcrText(raw, `server read (${(answer.engines ?? []).join(', ') || 'ocr'})`);
       return answer.fields;
     },
     async syncLead(lead) {
