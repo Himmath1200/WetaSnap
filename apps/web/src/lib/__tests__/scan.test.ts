@@ -1,50 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-  applyH, autoLevels, enhanceCurve, flattenWeight, inkBlack, paperWhite,
-  rectToQuad, rotFwd, rotInv, rotInvDelta, sauvolaBinarize, solveH,
-} from '../scan';
+import { autoLevels, enhanceCurve, flattenWeight, inkBlack, paperWhite, sauvolaBinarize } from '../scan';
 
-/** SCAN-02: the clean-scan geometry and levels must hold exactly — these run in Node, no canvas. */
-describe('clean-scan math', () => {
-  it('routes a rectangle through the identity homography', () => {
-    const q = rectToQuad(100, 60);
-    const h = solveH([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }, { x: 0, y: 60 }], [q.tl, q.tr, q.br, q.bl]);
-    for (const [dx, dy, want] of [[0, 0, q.tl], [100, 0, q.tr], [100, 60, q.br], [0, 60, q.bl]] as const) {
-      const p = applyH(h, dx, dy);
-      expect(p.x).toBeCloseTo(want.x, 6);
-      expect(p.y).toBeCloseTo(want.y, 6);
-    }
-  });
-
-  it('un-tilts a trapezoid back onto a rectangle', () => {
-    const dst = [{ x: 0, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 120 }, { x: 0, y: 120 }];
-    const src = [{ x: 20, y: 10 }, { x: 180, y: 4 }, { x: 190, y: 116 }, { x: 12, y: 110 }];
-    const h = solveH(dst, src);
-    for (const [d, s] of dst.map((p, i) => [p, src[i]!] as const)) {
-      const p = applyH(h, d.x, d.y);
-      expect(p.x).toBeCloseTo(s.x, 6);
-      expect(p.y).toBeCloseTo(s.y, 6);
-    }
-  });
-
-  it('rotation round-trips through all four turns', () => {
-    const w = 400;
-    const h = 300;
-    for (const r of [0, 90, 180, 270]) {
-      for (const p of [{ x: 37, y: 251 }, { x: 0, y: 0 }, { x: 400, y: 300 }]) {
-        const back = rotInv(rotFwd(p, w, h, r), r === 90 || r === 270 ? h : w, r === 90 || r === 270 ? w : h, r);
-        expect(back.x).toBeCloseTo(p.x, 6);
-        expect(back.y).toBeCloseTo(p.y, 6);
-      }
-    }
-  });
-
-  it('moves drag deltas through the inverse turn', () => {
-    expect(rotInvDelta({ x: 10, y: 0 }, 90)).toEqual({ x: 0, y: -10 });
-    expect(rotInvDelta({ x: 10, y: 0 }, 270)).toEqual({ x: 0, y: 10 });
-    expect(rotInvDelta({ x: 10, y: 0 }, 180)).toEqual({ x: -10, y: 0 });
-  });
-
+/** SCAN-02: the auto colour clean-up levels must hold exactly — these run in Node, no canvas. */
+describe('clean-scan levels', () => {
   it('Sauvola splits a page into ink and paper', () => {
     const w = 60;
     const h = 40;

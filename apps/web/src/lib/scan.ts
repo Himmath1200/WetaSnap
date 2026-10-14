@@ -1,157 +1,30 @@
-/** Clean-scan pipeline (SCAN-02): CamScanner-style straightening + cleanup, all on-device.
+/** Clean-scan pipeline (SCAN-02): auto colour clean-up, all on-device.
  *
- * The photo becomes a flat, straight, evenly-lit scan: an optional perspective warp pulls the
- * card's own corners into a rectangle, then the background is flattened (shadows and yellow
- * indoor light go white again) and the levels are stretched so print reads black on white.
+ * Capture/upload goes straight to the fill-in form: the photo is flattened (shadows and
+ * yellow indoor light go white again) and levelled so print reads dark on white.
+ * No crop step, no filter picker — one "Enhance card" toggle on the Scan screen.
  * No package — plain canvas, so the 2 MB install budget is untouched.
  */
 import { compressCard } from './image';
 
-export type ScanFilter = 'enhance' | 'color' | 'gray' | 'bw';
-export interface Pt { x: number; y: number }
-export interface Quad { tl: Pt; tr: Pt; br: Pt; bl: Pt }
-
-export const rectToQuad = (w: number, h: number, inset = 0): Quad => ({
-  tl: { x: inset, y: inset },
-  tr: { x: w - inset, y: inset },
-  br: { x: w - inset, y: h - inset },
-  bl: { x: inset, y: h - inset },
-});
-
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-/** Map an image point through a 0/90/180/270° clockwise turn (canvas semantics). */
-export function rotFwd(p: Pt, w: number, h: number, r: number): Pt {
-  const d = ((r % 360) + 360) % 360;
-  if (d === 90) return { x: h - p.y, y: p.x };
-  if (d === 180) return { x: w - p.x, y: h - p.y };
-  if (d === 270) return { x: p.y, y: w - p.x };
-  return { ...p };
-}
-
-/** Inverse of rotFwd: a point in the turned image (w × h) back to the original photo. */
-export function rotInv(p: Pt, w: number, h: number, r: number): Pt {
-  const d = ((r % 360) + 360) % 360;
-  if (d === 90) return { x: p.y, y: w - p.x };
-  if (d === 180) return { x: w - p.x, y: h - p.y };
-  if (d === 270) return { x: h - p.y, y: p.x };
-  return { ...p };
-}
-
-/** Move a delta through the inverse rotation (translation only — deltas ignore offsets). */
-export function rotInvDelta(d: Pt, r: number): Pt {
-  const a = ((r % 360) + 360) % 360;
-  if (a === 90) return { x: d.y, y: -d.x };
-  if (a === 180) return { x: -d.x, y: -d.y };
-  if (a === 270) return { x: -d.y, y: d.x };
-  return { ...d };
-}
-
-// ---------------------------------------------------------------- homography (pure, tested)
-
-type H = [number, number, number, number, number, number, number, number, number];
-
-/** 3×3 homography mapping `dst` corners onto `src` corners (direct linear transform). */
-export function solveH(dst: Pt[], src: Pt[]): H {
-  const a: number[][] = [];
-  for (let i = 0; i < 4; i++) {
-    const xd = dst[i]!.x;
-    const yd = dst[i]!.y;
-    const xs = src[i]!.x;
-    const ys = src[i]!.y;
-    a.push([xd, yd, 1, 0, 0, 0, -xs * xd, -xs * yd, xs]);
-    a.push([0, 0, 0, xd, yd, 1, -ys * xd, -ys * yd, ys]);
+/** "Enhance card" toggle on the Scan screen — on unless the person switched it off. */
+const ENHANCE_KEY = 'wetasnap-enhance';
+export const isEnhanceEnabled = () => {
+  try {
+    return localStorage.getItem(ENHANCE_KEY) !== 'off';
+  } catch {
+    return true;
   }
-  // Gaussian elimination with partial pivoting, h[8] = 1.
-  for (let col = 0; col < 8; col++) {
-    let piv = col;
-    for (let row = col + 1; row < 8; row++) {
-      if (Math.abs(a[row]![col]!) > Math.abs(a[piv]![col]!)) piv = row;
-    }
-    const tmp = a[col]!;
-    a[col] = a[piv]!;
-    a[piv] = tmp;
-    const crow = a[col]!;
-    const div = crow[col]!;
-    for (let k = col; k < 9; k++) crow[k] = crow[k]! / div;
-    for (let row = 0; row < 8; row++) {
-      if (row === col) continue;
-      const rrow = a[row]!;
-      const f = rrow[col]!;
-      if (f !== 0) for (let k = col; k < 9; k++) rrow[k] = rrow[k]! - f * crow[k]!;
-    }
+};
+export const setEnhanceEnabled = (on: boolean) => {
+  try {
+    localStorage.setItem(ENHANCE_KEY, on ? 'on' : 'off');
+  } catch {
+    /* private mode */
   }
-  return [a[0]![8]!, a[1]![8]!, a[2]![8]!, a[3]![8]!, a[4]![8]!, a[5]![8]!, a[6]![8]!, a[7]![8]!, 1];
-}
-
-export function applyH(h: H, x: number, y: number): Pt {
-  const w = h[6]! * x + h[7]! * y + h[8]!;
-  return { x: (h[0]! * x + h[1]! * y + h[2]!) / w, y: (h[3]! * x + h[4]! * y + h[5]!) / w };
-}
-
-const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
-
-/** Rough quad area vs the photo — a collapsed quad falls back to the full frame. */
-function quadArea(q: Quad, w: number, h: number) {
-  const pts = [q.tl, q.tr, q.br, q.bl];
-  let s = 0;
-  for (let i = 0; i < 4; i++) {
-    const a = pts[i]!;
-    const b = pts[(i + 1) % 4]!;
-    s += a.x * b.y - b.x * a.y;
-  }
-  return Math.abs(s) / 2 / Math.max(1, w * h);
-}
-
-// ---------------------------------------------------------------- per-pixel stages (canvas)
-
-function warpCanvas(src: HTMLCanvasElement, quad: Quad | null, maxSide: number): HTMLCanvasElement {
-  const sw = src.width;
-  const sh = src.height;
-  const q = quad && quadArea(quad, sw, sh) > 0.03 ? quad : rectToQuad(sw, sh);
-  const top = dist(q.tl, q.tr);
-  const bot = dist(q.bl, q.br);
-  const left = dist(q.tl, q.bl);
-  const right = dist(q.tr, q.br);
-  let ow = Math.max(2, Math.round(Math.max(top, bot)));
-  let oh = Math.max(2, Math.round(Math.max(left, right)));
-  const k = Math.min(1, maxSide / Math.max(ow, oh));
-  ow = Math.max(2, Math.round(ow * k));
-  oh = Math.max(2, Math.round(oh * k));
-
-  const sctx = src.getContext('2d', { willReadFrequently: true })!;
-  const s = sctx.getImageData(0, 0, sw, sh);
-  const out = document.createElement('canvas');
-  out.width = ow;
-  out.height = oh;
-  const octx = out.getContext('2d')!;
-  const o = octx.createImageData(ow, oh);
-  const h = solveH([{ x: 0, y: 0 }, { x: ow, y: 0 }, { x: ow, y: oh }, { x: 0, y: oh }], [q.tl, q.tr, q.br, q.bl]);
-  const sd = s.data;
-  const od = o.data;
-  for (let y = 0; y < oh; y++) {
-    for (let x = 0; x < ow; x++) {
-      const p = applyH(h, x + 0.5, y + 0.5);
-      const x0 = clamp(Math.floor(p.x - 0.5), 0, sw - 1);
-      const y0 = clamp(Math.floor(p.y - 0.5), 0, sh - 1);
-      const x1 = Math.min(sw - 1, x0 + 1);
-      const y1 = Math.min(sh - 1, y0 + 1);
-      const fx = clamp(p.x - 0.5 - x0, 0, 1);
-      const fy = clamp(p.y - 0.5 - y0, 0, 1);
-      const oi = (y * ow + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        const v00 = sd[(y0 * sw + x0) * 4 + c]!;
-        const v10 = sd[(y0 * sw + x1) * 4 + c]!;
-        const v01 = sd[(y1 * sw + x0) * 4 + c]!;
-        const v11 = sd[(y1 * sw + x1) * 4 + c]!;
-        od[oi + c] = v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
-      }
-      od[oi + 3] = 255;
-    }
-  }
-  octx.putImageData(o, 0, 0);
-  return out;
-}
+};
 
 /** How much of the background correction a pixel gets: anything clearly darker than its
  * neighbourhood (real print, including faint grey small print) gets none — only paper and
@@ -161,10 +34,19 @@ export function flattenWeight(pixLum: number, bgLum: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** Downscale-only "warp": no corners to pull straight any more, just cap the long side. */
+function fitCanvas(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
+  const k = Math.min(1, maxSide / Math.max(1, Math.max(src.width, src.height)));
+  if (k >= 1) return src;
+  const out = document.createElement('canvas');
+  out.width = Math.max(2, Math.round(src.width * k));
+  out.height = Math.max(2, Math.round(src.height * k));
+  out.getContext('2d')!.drawImage(src, 0, 0, out.width, out.height);
+  return out;
+}
+
 /** Flatten uneven light with ONE luminance gain per pixel (same factor on R, G and B), so a
- * shadowed corner lands on white again without shifting any hue. Per-channel division is what
- * bleached red names and faint emails before: the weakest channel was lifted hardest until
- * coloured print turned paper-white. Lamp tint is handled globally, not per pixel. */
+ * shadowed corner lands on white again without shifting any hue. */
 function flatten(c: HTMLCanvasElement) {
   const w = c.width;
   const h = c.height;
@@ -214,7 +96,6 @@ function flatten(c: HTMLCanvasElement) {
     for (let x = 0; x < w; x++) {
       const fx = ((x + 0.5) / w) * tw - 0.5;
       const i = (y * w + x) * 4;
-      // White balance first (whole page, hue-safe: same ratios, tiny factors).
       d[i] = Math.min(255, d[i]! * bal[0]!);
       d[i + 1] = Math.min(255, d[i + 1]! * bal[1]!);
       d[i + 2] = Math.min(255, d[i + 2]! * bal[2]!);
@@ -222,7 +103,6 @@ function flatten(c: HTMLCanvasElement) {
       const bgLum = atLum(fx, fy);
       const wgt = flattenWeight(lum, bgLum); // 0 on print → untouched
       if (wgt <= 0) continue;
-      // ONE luminance gain on all three channels — hue cannot shift, faint print cannot bleach.
       const gain = 1 + (Math.min(1.25, 255 / Math.max(1, bgLum)) - 1) * wgt;
       d[i] = Math.min(255, d[i]! * gain);
       d[i + 1] = Math.min(255, d[i + 1]! * gain);
@@ -232,18 +112,14 @@ function flatten(c: HTMLCanvasElement) {
   ctx.putImageData(img, 0, 0);
 }
 
-/** Black point: near the darkest real ink (0.5th percentile), so the tonal range spans from
- * actual print to actual paper — faint text keeps its distance from white. Pure. */
+/** Black point: near the darkest real ink (0.5th percentile). Pure. */
 export function inkBlack(samples: number[]): number {
   if (!samples.length) return 25;
   const s = [...samples].sort((a, b) => a - b);
   return clamp(s[Math.floor(s.length * 0.005)] ?? 25, 0, 60);
 }
 
-/** White point: 90th percentile of all samples. Paper covers most of a card, so this lands
- * on paper without any brightness threshold — and a threshold is exactly what bleached faint
- * grey text before (>=150 swept the email into the "paper" set and dragged white down onto it).
- * Pure. */
+/** White point: 90th percentile of all samples — paper covers most of a card. Pure. */
 export function paperWhite(samples: number[]): number {
   if (!samples.length) return 235;
   const s = [...samples].sort((a, b) => a - b);
@@ -260,8 +136,7 @@ export function autoLevels(samples: number[]): [number, number] {
 }
 
 /** Scanner tonal curve: linear black→white with a hard paper snap only in the top 4%.
- * Faint grey at 70% of paper keeps ~63% output — never bleached, never posterised.
- * black = darkest ink on the page, white = paper level. Pure. */
+ * Faint grey at 70% of paper keeps ~63% output — never bleached, never posterised. Pure. */
 export function enhanceCurve(v: number, black: number, white: number): number {
   const snap = white - Math.max(4, (white - black) * 0.04);
   if (v >= snap) return 255;
@@ -269,7 +144,7 @@ export function enhanceCurve(v: number, black: number, white: number): number {
   return clamp(((v - black) / Math.max(1, snap - black)) * 255, 0, 255);
 }
 
-function stretch(c: HTMLCanvasElement, gray: boolean) {
+function stretch(c: HTMLCanvasElement) {
   const w = c.width;
   const h = c.height;
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
@@ -282,22 +157,16 @@ function stretch(c: HTMLCanvasElement, gray: boolean) {
   const black = inkBlack(lum);
   for (let i = 0; i < w * h; i++) {
     const o = i * 4;
-    // Luminance-driven curve, applied as ONE ratio per pixel: the curve can never separate
-    // the channels, so hue is preserved exactly (red stays red, grey stays grey).
+    // Luminance-driven curve, applied as ONE ratio per pixel: hue is preserved exactly.
     const v = 0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!;
     const target = enhanceCurve(v, black, white);
-    if (gray) {
-      d[o] = d[o + 1] = d[o + 2] = target;
-    } else {
-      const ratio = v > 1 ? target / v : 1;
-      for (let ch = 0; ch < 3; ch++) d[o + ch] = clamp(d[o + ch]! * ratio, 0, 255);
-    }
+    const ratio = v > 1 ? target / v : 1;
+    for (let ch = 0; ch < 3; ch++) d[o + ch] = clamp(d[o + ch]! * ratio, 0, 255);
   }
   ctx.putImageData(img, 0, 0);
 }
 
-/** Sauvola binarisation on a grey array — print stays solid under uneven light where one
- * global threshold would eat thin strokes or fill the page black. Pure: unit-tested. */
+/** Sauvola binarisation on a grey array — kept for the OCR pre-pass. Pure: unit-tested. */
 export function sauvolaBinarize(gray: Float32Array | number[], w: number, h: number, k = 0.2): Uint8ClampedArray {
   const r = clamp(Math.round(Math.min(w, h) / 60), 8, 40);
   const sat = new Float64Array((w + 1) * (h + 1));
@@ -332,18 +201,6 @@ export function sauvolaBinarize(gray: Float32Array | number[], w: number, h: num
   return out;
 }
 
-function toMono(c: HTMLCanvasElement) {
-  const w = c.width;
-  const h = c.height;
-  const ctx = c.getContext('2d', { willReadFrequently: true })!;
-  const img = ctx.getImageData(0, 0, w, h);
-  const gray = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) gray[i] = 0.299 * img.data[i * 4]! + 0.587 * img.data[i * 4 + 1]! + 0.114 * img.data[i * 4 + 2]!;
-  const bw = sauvolaBinarize(gray, w, h);
-  for (let i = 0; i < w * h; i++) img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = bw[i]!;
-  ctx.putImageData(img, 0, 0);
-}
-
 function saturate(c: HTMLCanvasElement, amount: number) {
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
   const img = ctx.getImageData(0, 0, c.width, c.height);
@@ -358,7 +215,7 @@ function saturate(c: HTMLCanvasElement, amount: number) {
 }
 
 /** Mild 3×3 sharpen — thin print crisps up without haloing at this amount. */
-function sharpen(c: HTMLCanvasElement, a = 0.18) {
+function sharpen(c: HTMLCanvasElement, a = 0.12) {
   const w = c.width;
   const h = c.height;
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
@@ -383,39 +240,13 @@ function sharpen(c: HTMLCanvasElement, a = 0.18) {
   ctx.putImageData(out, 0, 0);
 }
 
-function rotate(c: HTMLCanvasElement, r: number): HTMLCanvasElement {
-  const d = ((r % 360) + 360) % 360;
-  if (!d) return c;
-  const turned = d % 180 !== 0;
-  const out = document.createElement('canvas');
-  out.width = turned ? c.height : c.width;
-  out.height = turned ? c.width : c.height;
-  const ctx = out.getContext('2d')!;
-  ctx.translate(out.width / 2, out.height / 2);
-  ctx.rotate((d * Math.PI) / 180);
-  ctx.drawImage(c, -c.width / 2, -c.height / 2);
-  return out;
-}
-
 // ---------------------------------------------------------------- public pipeline
 
-function develop(src: HTMLCanvasElement, quad: Quad | null, filter: ScanFilter, maxSide: number): HTMLCanvasElement {
-  let c = warpCanvas(src, quad, maxSide);
-  if (filter === 'color') {
-    stretch(c, false); // straightened, lightly levelled — colours as printed
-    return c;
-  }
+/** Auto colour clean-up: flatten → level → gentle punch. Always the colour look. */
+function develop(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
+  const c = fitCanvas(src, maxSide);
   flatten(c);
-  if (filter === 'bw') {
-    toMono(c);
-    return c;
-  }
-  if (filter === 'gray') {
-    stretch(c, true);
-    sharpen(c);
-    return c;
-  }
-  stretch(c, false); // enhance: the CamScanner look — flat white page, punchy print
+  stretch(c);
   saturate(c, 1.08);
   sharpen(c, 0.12);
   return c;
@@ -431,25 +262,7 @@ async function bitmapOf(photo: Blob): Promise<HTMLCanvasElement> {
   return c;
 }
 
-function toBlob(c: HTMLCanvasElement): Promise<Blob> {
-  return new Promise((res, rej) =>
-    c.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), 'image/jpeg', 0.92),
-  );
-}
-
-/** The full clean scan: straighten to the quad, enhance, turn upright, compress ≤ 300 KB. */
-export async function scanBlob(photo: Blob, quad: Quad | null, rotation: number, filter: ScanFilter): Promise<Blob> {
-  const c = rotate(develop(await bitmapOf(photo), quad, filter, 1600), rotation);
-  return compressCard(c);
-}
-
-/** Batch uploads skip the corner editor — full-frame clean scan with the default look. */
-export async function autoEnhance(photo: Blob, filter: ScanFilter = 'enhance'): Promise<Blob> {
-  return scanBlob(photo, null, 0, filter);
-}
-
-/** Small true preview for the corner editor (same pipeline, capped at 640 px). */
-export async function scanPreview(photo: Blob, quad: Quad | null, rotation: number, filter: ScanFilter): Promise<Blob> {
-  const c = rotate(develop(await bitmapOf(photo), quad, filter, 640), rotation);
-  return toBlob(c);
+/** Full-frame clean scan in the colour look, compressed ≤ 300 KB. */
+export async function autoEnhance(photo: Blob): Promise<Blob> {
+  return compressCard(develop(await bitmapOf(photo), 1600));
 }

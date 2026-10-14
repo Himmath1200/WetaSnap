@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Camera as CameraIcon, Keyboard, Upload, Images, ArrowLeft, RotateCcw, Share2, UserPlus, X } from 'lucide-preact';
 import { Camera, type CameraHandle } from '../components/Camera';
-import { CropCard } from '../components/CropCard';
 import { LeadForm, ReadBadge, draftErrors, type Draft, type ReadState } from '../components/LeadForm';
 import { TagPicker } from '../components/TagPicker';
 import { Spinner } from '../components/ui';
@@ -9,7 +8,7 @@ import { useStore, toast } from '../lib/store';
 import { config, session } from '../lib/session';
 import { saveLocal } from '../lib/sync';
 import { compressCard } from '../lib/image';
-import { autoEnhance } from '../lib/scan';
+import { autoEnhance, isEnhanceEnabled, setEnhanceEnabled } from '../lib/scan';
 import { backend } from '../lib/backend';
 import { isOnline } from '../lib/net';
 import { db } from '../lib/db';
@@ -42,8 +41,8 @@ export default function Scan() {
   const [saving, setSaving] = useState(false);
   const [dup, setDup] = useState<string | null>(null);
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
-  /** The photo waiting on the Crop / adjust screen, before anything is read from it. */
-  const [cropping, setCropping] = useState<{ blob: Blob; source: LeadSource; back: boolean } | null>(null);
+  /** Clean-scan look on capture/upload — the toggle beside the shutter, remembered per device. */
+  const [enhance, setEnhance] = useState(isEnhanceEnabled);
   const [dragging, setDragging] = useState(false);
   const cam = useRef<CameraHandle | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -136,20 +135,21 @@ export default function Scan() {
     });
   }
 
+  /** SCAN-02: capture → optional clean scan → straight to the fill-in form, no edit step. */
+  async function develop(raw: Blob): Promise<Blob> {
+    if (!enhance) return compressCard(raw);
+    try {
+      return await autoEnhance(raw);
+    } catch {
+      return compressCard(raw);
+    }
+  }
+
   async function onCapture(video: HTMLVideoElement, crop: { x: number; y: number; w: number; h: number }) {
     const blob = await compressCard(video, crop);
     if (mode === 'review' && !capturingBack && window.innerWidth < 768) return;
-    // SCAN-02: the photo is shown for scan / adjust before anything is read from it.
-    setCropping({ blob, source: 'camera', back: capturingBack });
-  }
-
-  /** What the Scan / adjust screen hands back: the clean scan, ready to read. */
-  async function onCropped(blob: Blob) {
-    const step = cropping;
-    setCropping(null);
-    if (!step) return;
-    if (step.back) { addBack(blob); return; }
-    await startReview(blob, step.source);
+    if (capturingBack) { addBack(await develop(blob)); return; }
+    await startReview(await develop(blob), 'camera');
   }
 
   function addBack(blob: Blob) {
@@ -164,21 +164,17 @@ export default function Scan() {
     const list = [...files].filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
     if (list.length === 1) {
-      // Single upload still goes through scan / adjust — raw gallery pixels, full-frame quad.
-      setCropping({ blob: list[0]!, source: 'upload', back: capturingBack });
+      // Single upload → same path as capture: clean scan, then the fill-in form.
+      const blob = await develop(list[0]!);
+      if (capturingBack) { addBack(blob); return; }
+      await startReview(blob, 'upload');
       return;
     }
     // Many photos → one lead each, clean-scanned first; AI fills them after sync (SCAN-03).
     if (!s.event_id) { toast(t('Choose an event first.'), 'error'); return; }
     setBatch({ done: 0, total: list.length });
     for (const [i, f] of list.entries()) {
-      let blob: Blob;
-      try {
-        blob = await autoEnhance(f);
-      } catch {
-        blob = await compressCard(f);
-      }
-      await saveLocal(newLead(emptyDraft(), 'upload'), blob);
+      await saveLocal(newLead(emptyDraft(), 'upload'), await develop(f));
       setBatch({ done: i + 1, total: list.length });
     }
     toast(tn(list.length, '{n} lead saved. It will be read after sync.', '{n} leads saved. They will be read after sync.'), 'success');
@@ -303,10 +299,6 @@ export default function Scan() {
       onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer?.files) void onFiles(e.dataTransfer.files); }}
     >
       {/* Camera side */}
-      {cropping && (
-        <CropCard photo={cropping.blob} onCancel={() => { setCropping(null); setCapturingBack(false); }}
-          onDone={(blob) => void onCropped(blob)} />
-      )}
       <section class={`relative flex min-h-0 flex-1 flex-col ${mode === 'review' ? 'hidden lg:flex' : 'flex'}`}>
         {!event && <div class="bg-amber-100 px-4 py-2 text-center text-xs font-semibold text-amber-900">{t('No event selected — tap the event name at the top.')}</div>}
         {capturingBack && (
@@ -316,6 +308,13 @@ export default function Scan() {
           </div>
         )}
         <div class="relative min-h-0 flex-1"><Camera active handle={(h) => { cam.current = h; }} onCapture={onCapture} /></div>
+        <div class="flex items-center justify-center bg-surface px-6 pt-3 lg:bg-subtle">
+          <label class="flex min-h-11 cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600">
+            <input type="checkbox" class="size-5 accent-emerald-700" checked={enhance}
+              onChange={(e) => { const on = e.currentTarget.checked; setEnhance(on); setEnhanceEnabled(on); }} />
+            {t('Enhance card')}
+          </label>
+        </div>
         <div class="flex items-center justify-around gap-4 bg-surface px-6 py-4 lg:bg-subtle">
           <button class="flex w-16 flex-col items-center gap-1 text-xs font-semibold text-slate-600 hover:text-ocean-700" onClick={() => fileInput.current?.click()}>
             <span class="flex size-12 items-center justify-center rounded-full border border-line bg-surface"><Upload class="size-5" /></span>{t('Upload')}

@@ -42,11 +42,10 @@ const SCREENS: Record<Portal, State[]> = {
   ],
   staff: [
     { name: 'scan', path: '/scan' },
-    { name: 'scan-crop', path: '/scan', open: async (p) => {
+    { name: 'scan-review', path: '/scan', open: async (p) => {
       await p.locator('input[type=file]').first().setInputFiles(await printedCardFile(p));
-      await p.getByRole('button', { name: 'Use scan' }).waitFor({ timeout: 15_000 });
-    }, dialog: true },
-    { name: 'scan-review', path: '/scan', open: btn('Type') },
+      await p.getByText('Review & save').waitFor({ timeout: 15_000 });
+    } },
     { name: 'my-leads', path: '/my-leads' },
     { name: 'my-leads-filters', path: '/my-leads', open: btn('Filter leads'), dialog: true },
     { name: 'lead-preview', path: '/my-leads', open: clickRow, dialog: true },
