@@ -66,11 +66,11 @@ export function solveH(dst: Pt[], src: Pt[]): H {
   for (let col = 0; col < 8; col++) {
     let piv = col;
     for (let row = col + 1; row < 8; row++) {
-      if (Math.abs(a[row]![col]!) > Math.abs(a[piv]![col]!) piv = row;
+      if (Math.abs(a[row]![col]!) > Math.abs(a[piv]![col]!)) piv = row;
     }
     const tmp = a[col]!;
-    a[col]! = a[piv]!;
-    a[piv]! = tmp;
+    a[col] = a[piv]!;
+    a[piv] = tmp;
     const crow = a[col]!;
     const div = crow[col]!;
     for (let k = col; k < 9; k++) crow[k] = crow[k]! / div;
