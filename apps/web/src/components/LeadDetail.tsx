@@ -159,11 +159,11 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
             )}
 
             {(photo || back) && (
-              <div class="flex gap-2">
+              <div class="flex items-start gap-2">
                 {[['front', photo], ['back', back]].map(([side, url]) =>
                   url ? (
-                    <button key={side} class="group relative min-w-0 flex-1 overflow-hidden rounded-xl border border-line bg-subtle" onClick={() => setZoom(url as string)}>
-                      <img src={url as string} alt={side === 'front' ? t('Front of the card') : t('Back of the card')} class="card-photo max-h-44 w-full object-contain" />
+                    <button key={side} class="group relative block min-w-0 flex-1 overflow-hidden rounded-xl border border-line bg-white p-0" onClick={() => setZoom(url as string)}>
+                      <img src={url as string} alt={side === 'front' ? t('Front of the card') : t('Back of the card')} class="card-photo block h-auto w-full" />
                       <span class="absolute right-2 bottom-2 rounded-full bg-black/50 p-1.5 text-white"><ZoomIn class="size-4" /></span>
                       {back && <span class="absolute top-2 left-2 rounded-full bg-black/50 px-2 py-0.5 text-[11px] font-semibold text-white">{side === 'front' ? t('Front') : t('Back')}</span>}
                     </button>
