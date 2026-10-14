@@ -10,6 +10,7 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   server: {
+    allowedHosts: ['.trycloudflare.com'],
     watch: {
       // Playwright writes traces and screenshots here while a run is in progress; watching them
       // sends the dev server into a reload loop and the site stops answering.
