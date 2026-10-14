@@ -113,10 +113,8 @@ function warpCanvas(src: HTMLCanvasElement, quad: Quad | null, maxSide: number):
   const bot = dist(q.bl, q.br);
   const left = dist(q.tl, q.bl);
   const right = dist(q.tr, q.br);
-  // Average — not max — of opposite edges: max stretches the short side and
-  // visibly widens letters on the far edge of a tilted photo.
-  let ow = Math.max(2, Math.round((top + bot) / 2));
-  let oh = Math.max(2, Math.round((left + right) / 2));
+  let ow = Math.max(2, Math.round(Math.max(top, bot)));
+  let oh = Math.max(2, Math.round(Math.max(left, right)));
   const k = Math.min(1, maxSide / Math.max(ow, oh));
   ow = Math.max(2, Math.round(ow * k));
   oh = Math.max(2, Math.round(oh * k));
@@ -184,47 +182,31 @@ function flatten(c: HTMLCanvasElement) {
     const i11 = (y1 * tw + x1) * 4 + ch;
     return bg[i00]! * (1 - ax) * (1 - ay) + bg[i10]! * ax * (1 - ay) + bg[i01]! * (1 - ax) * ay + bg[i11]! * ax * ay;
   };
-  // Grey-world guard: white-balance the background map when one channel dominates
-  // (yellow indoor light), otherwise per-channel division greys coloured print.
-  let sr = 0;
-  let sg = 0;
-  let sb = 0;
-  for (let i = 0; i < bg.length; i += 4) { sr += bg[i]!; sg += bg[i + 1]!; sb += bg[i + 2]!; }
-  const n = Math.max(1, bg.length / 4);
-  sr /= n; sg /= n; sb /= n;
-  const avg = (sr + sg + sb) / 3;
-  // Weak cast → the background *is* the cast; strong cast → normalise channels to it.
-  const cast = Math.min(1, Math.max(Math.abs(sr - avg), Math.abs(sg - avg), Math.abs(sb - avg)) / 28);
-  const wr = 1 + ((avg / Math.max(1, sr)) - 1) * cast;
-  const wg = 1 + ((avg / Math.max(1, sg)) - 1) * cast;
-  const wb = 1 + ((avg / Math.max(1, sb)) - 1) * cast;
   for (let y = 0; y < h; y++) {
     const fy = ((y + 0.5) / h) * th - 0.5;
     for (let x = 0; x < w; x++) {
       const fx = ((x + 0.5) / w) * tw - 0.5;
       const i = (y * w + x) * 4;
-      // One shared gain from luminance: channel-independent gains desaturate print.
-      const b = Math.max(1, (0.299 * at(fx, fy, 0) + 0.587 * at(fx, fy, 1) + 0.114 * at(fx, fy, 2)));
-      const target = 228; // off-white: shadows lift, print keeps its punch
-      const gain = clamp(target / b, 1, 1.6);
-      d[i] = Math.min(255, d[i]! * gain * wr);
-      d[i + 1] = Math.min(255, d[i + 1]! * gain * wg);
-      d[i + 2] = Math.min(255, d[i + 2]! * gain * wb);
+      for (let ch = 0; ch < 3; ch++) {
+        const b = Math.max(1, at(fx, fy, ch));
+        const gain = Math.min(1.9, 255 / b); // capped: never amplify sensor noise into speckles
+        d[i + ch] = Math.min(255, d[i + ch]! * gain);
+      }
     }
   }
   ctx.putImageData(img, 0, 0);
 }
 
 /** 1st/99th percentile of samples — the white margin and the black print, ignoring specks. */
-export function autoLevels(samples: number[], black = 1, white = 99): [number, number] {
+export function autoLevels(samples: number[]): [number, number] {
   if (!samples.length) return [0, 255];
   const s = [...samples].sort((a, b) => a - b);
-  const lo = s[Math.floor(s.length * (black / 100))] ?? 0;
-  const hi = s[Math.min(s.length - 1, Math.ceil(s.length * (white / 100)) - 1)] ?? 255;
+  const lo = s[Math.floor(s.length * 0.01)] ?? 0;
+  const hi = s[Math.ceil(s.length * 0.99) - 1] ?? 255;
   return hi - lo < 12 ? [Math.max(0, lo - 6), Math.min(255, hi + 6)] : [lo, hi];
 }
 
-function stretch(c: HTMLCanvasElement, gray: boolean, black = 0.5, white = 99.5) {
+function stretch(c: HTMLCanvasElement, gray: boolean) {
   const w = c.width;
   const h = c.height;
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
@@ -233,11 +215,7 @@ function stretch(c: HTMLCanvasElement, gray: boolean, black = 0.5, white = 99.5)
   const step = Math.max(1, Math.floor((w * h) / 20000));
   const lum: number[] = [];
   for (let i = 0; i < w * h; i += step) lum.push(0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!);
-  const s = [...lum].sort((a, b) => a - b);
-  // 0.5th/99.5th percentile of the *warped card*: clips stray margin pixels harder
-  // than the old 1st/99th, so paper lands on white instead of light grey.
-  const lo = s[Math.floor(s.length * (black / 100))] ?? 0;
-  const hi = s[Math.min(s.length - 1, Math.ceil(s.length * (white / 100)) - 1)] ?? 255;
+  const [lo, hi] = autoLevels(lum);
   const span = Math.max(1, hi - lo);
   for (let i = 0; i < w * h; i++) {
     const o = i * 4;
@@ -312,34 +290,28 @@ function saturate(c: HTMLCanvasElement, amount: number) {
   ctx.putImageData(img, 0, 0);
 }
 
-/** Unsharp-mask sharpen: blurred copy subtracted, so thin print crisps up without haloing. */
-function sharpen(c: HTMLCanvasElement, a = 0.5) {
+/** Mild 3×3 sharpen — thin print crisps up without haloing at this amount. */
+function sharpen(c: HTMLCanvasElement, a = 0.18) {
   const w = c.width;
   const h = c.height;
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
   const src = ctx.getImageData(0, 0, w, h);
   const out = ctx.createImageData(w, h);
-  // 3×3 box blur (separable two-pass would need a second buffer — same result, one pass here).
   const s = src.data;
   const o = out.data;
-  const blur = new Float32Array(w * h * 3);
   for (let y = 0; y < h; y++) {
+    const yu = y > 0 ? y - 1 : y;
+    const yd = y < h - 1 ? y + 1 : y;
     for (let x = 0; x < w; x++) {
+      const xl = x > 0 ? x - 1 : x;
+      const xr = x < w - 1 ? x + 1 : x;
+      const i = (y * w + x) * 4;
       for (let ch = 0; ch < 3; ch++) {
-        let sum = 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          const yy = clamp(y + dy, 0, h - 1);
-          for (let dx = -1; dx <= 1; dx++) sum += s[(yy * w + clamp(x + dx, 0, w - 1)) * 4 + ch]!;
-        }
-        blur[(y * w + x) * 3 + ch] = sum / 9;
+        const nb = s[(yu * w + x) * 4 + ch]! + s[(yd * w + x) * 4 + ch]! + s[(y * w + xl) * 4 + ch]! + s[(y * w + xr) * 4 + ch]!;
+        o[i + ch] = clamp(s[i + ch]! * (1 + 4 * a) - nb * a, 0, 255);
       }
+      o[i + 3] = 255;
     }
-  }
-  for (let i = 0; i < w * h; i++) {
-    const o4 = i * 4;
-    const b3 = i * 3;
-    for (let ch = 0; ch < 3; ch++) o[o4 + ch] = clamp(s[o4 + ch]! + (s[o4 + ch]! - blur[b3 + ch]!) * a, 0, 255);
-    o[o4 + 3] = 255;
   }
   ctx.putImageData(out, 0, 0);
 }
@@ -377,8 +349,8 @@ function develop(src: HTMLCanvasElement, quad: Quad | null, filter: ScanFilter, 
     return c;
   }
   stretch(c, false); // enhance: the CamScanner look — flat white page, punchy print
-  saturate(c, 1.1);
-  sharpen(c, 0.55);
+  saturate(c, 1.18);
+  sharpen(c);
   return c;
 }
 
