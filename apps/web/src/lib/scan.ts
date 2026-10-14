@@ -153,9 +153,8 @@ function warpCanvas(src: HTMLCanvasElement, quad: Quad | null, maxSide: number):
   return out;
 }
 
-/** Flatten uneven light with one gain for all channels: each pixel is lifted by its blurred
- * neighbourhood's luminance, so a shadowed corner lands on white again without shifting hues.
- * Single gain on purpose — per-channel gains turned sensor noise into coloured speckle. */
+/** Flatten uneven light: each pixel is divided by its blurred neighbourhood, so a shadowed
+ * corner and a yellow lamp both land on white again. The thumbnail *is* the blur. */
 function flatten(c: HTMLCanvasElement) {
   const w = c.width;
   const h = c.height;
@@ -166,30 +165,33 @@ function flatten(c: HTMLCanvasElement) {
   t.height = th;
   const tctx = t.getContext('2d', { willReadFrequently: true })!;
   tctx.drawImage(c, 0, 0, tw, th); // downscaling averages — a strong blur for free
-  const thumb = tctx.getImageData(0, 0, tw, th).data;
-  const lum = new Float32Array(tw * th);
-  for (let i = 0; i < tw * th; i++) lum[i] = 0.299 * thumb[i * 4]! + 0.587 * thumb[i * 4 + 1]! + 0.114 * thumb[i * 4 + 2]!;
+  const bg = tctx.getImageData(0, 0, tw, th).data;
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
-  const at = (fx: number, fy: number) => {
+  const at = (fx: number, fy: number, ch: number) => {
     const x0 = clamp(Math.floor(fx), 0, tw - 1);
     const y0 = clamp(Math.floor(fy), 0, th - 1);
     const x1 = Math.min(tw - 1, x0 + 1);
     const y1 = Math.min(th - 1, y0 + 1);
     const ax = fx - x0;
     const ay = fy - y0;
-    return lum[y0 * tw + x0]! * (1 - ax) * (1 - ay) + lum[y0 * tw + x1]! * ax * (1 - ay)
-      + lum[y1 * tw + x0]! * (1 - ax) * ay + lum[y1 * tw + x1]! * ax * ay;
+    const i00 = (y0 * tw + x0) * 4 + ch;
+    const i10 = (y0 * tw + x1) * 4 + ch;
+    const i01 = (y1 * tw + x0) * 4 + ch;
+    const i11 = (y1 * tw + x1) * 4 + ch;
+    return bg[i00]! * (1 - ax) * (1 - ay) + bg[i10]! * ax * (1 - ay) + bg[i01]! * (1 - ax) * ay + bg[i11]! * ax * ay;
   };
   for (let y = 0; y < h; y++) {
     const fy = ((y + 0.5) / h) * th - 0.5;
     for (let x = 0; x < w; x++) {
-      const g = Math.min(1.5, 255 / Math.max(1, at(((x + 0.5) / w) * tw - 0.5, fy)));
+      const fx = ((x + 0.5) / w) * tw - 0.5;
       const i = (y * w + x) * 4;
-      d[i] = Math.min(255, d[i]! * g);
-      d[i + 1] = Math.min(255, d[i + 1]! * g);
-      d[i + 2] = Math.min(255, d[i + 2]! * g);
+      for (let ch = 0; ch < 3; ch++) {
+        const b = Math.max(1, at(fx, fy, ch));
+        const gain = Math.min(1.9, 255 / b); // capped: never amplify sensor noise into speckles
+        d[i + ch] = Math.min(255, d[i + ch]! * gain);
+      }
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -221,21 +223,27 @@ export function estimatePaperInk(samples: number[]): { paper: number; ink: numbe
   return { paper, ink };
 }
 
-/** Additive whitening lift for one pixel's luminance: 0 for print and mid-tones (they pass
- * through byte-identical), ramping to full white at the paper level. The caller adds the
- * same lift to R, G and B — one equal shift can never pull hues apart into speckle. Pure. */
-export function paperLift(l: number, paper: number): number {
-  if (l >= paper - 16) return 255 - l; // grain at paper level snaps to white
-  const t0 = paper - 60;
-  if (l <= t0) return 0;
-  const t = (l - t0) / 60;
-  const e = t * t * (3 - 2 * t);
-  return (255 - l) * e;
+/** Target luminance for one pixel: linear map, ink → black, paper → white, with a smooth
+ * knee that melts grain into white. Linear on purpose: anything darker (gamma > 1) crushes
+ * coloured print — red logo text reads dark, so it goes near-black. Pure. */
+export function targetLum(l: number, paper: number, ink: number, whiten = true): number {
+  const span = Math.max(1, paper - ink);
+  const norm = clamp((l - ink) / span, 0, 1);
+  if (whiten) {
+    if (norm >= 0.9) return 255;
+    if (norm > 0.76) {
+      const t = (norm - 0.76) / 0.14;
+      const e = t * t * (3 - 2 * t);
+      const base = norm * 255;
+      return base + (255 - base) * e;
+    }
+  }
+  return norm * 255;
 }
 
-/** Background-only whitening (Enhance): bright paper melts to white, every darker pixel —
- * red logos, navy rules, black print — passes through untouched. Per-channel mapping is
- * what turned sensor noise into coloured confetti; this never maps channels apart. */
+/** Per-channel linear levels with a white knee past 200: paper grain melts to white, print
+ * passes through untouched — red stays red, navy stays navy. The old luminance-ratio build
+ * darkened every saturated colour toward black; this never touches mid-tones. */
 function cleanPage(c: HTMLCanvasElement, whiten: boolean) {
   const w = c.width;
   const h = c.height;
@@ -246,22 +254,17 @@ function cleanPage(c: HTMLCanvasElement, whiten: boolean) {
   const lum: number[] = [];
   for (let i = 0; i < w * h; i += step) lum.push(0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!);
   const { paper, ink } = estimatePaperInk(lum);
-  if (whiten) {
-    for (let i = 0; i < w * h; i++) {
-      const o = i * 4;
-      const lift = paperLift(0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!, paper);
-      if (lift !== 0) {
-        d[o] = clamp(d[o]! + lift, 0, 255);
-        d[o + 1] = clamp(d[o + 1]! + lift, 0, 255);
-        d[o + 2] = clamp(d[o + 2]! + lift, 0, 255);
+  const span = Math.max(1, paper - ink);
+  for (let i = 0; i < w * h; i++) {
+    const o = i * 4;
+    for (let ch = 0; ch < 3; ch++) {
+      let t = clamp(((d[o + ch]! - ink) / span) * 255, 0, 255);
+      if (whiten && t > 200) {
+        const k = (t - 200) / 55;
+        const e = k * k * (3 - 2 * k);
+        t = t + (255 - t) * e;
       }
-    }
-  } else {
-    // Grey path only (R=G=B throughout): plain linear levels, no hue to shift.
-    const span = Math.max(1, paper - ink);
-    for (let i = 0; i < w * h; i++) {
-      const o = i * 4;
-      d[o] = d[o + 1] = d[o + 2] = clamp(((d[o]! - ink) / span) * 255, 0, 255);
+      d[o + ch] = t;
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -275,6 +278,29 @@ function toGray(c: HTMLCanvasElement) {
   for (let i = 0; i < d.length; i += 4) {
     const l = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
     d[i] = d[i + 1] = d[i + 2] = l;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function stretch(c: HTMLCanvasElement, gray: boolean) {
+  const w = c.width;
+  const h = c.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  const step = Math.max(1, Math.floor((w * h) / 20000));
+  const lum: number[] = [];
+  for (let i = 0; i < w * h; i += step) lum.push(0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!);
+  const [lo, hi] = autoLevels(lum);
+  const span = Math.max(1, hi - lo);
+  for (let i = 0; i < w * h; i++) {
+    const o = i * 4;
+    if (gray) {
+      const v = clamp(((0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]! - lo) / span) * 255, 0, 255);
+      d[o] = d[o + 1] = d[o + 2] = v;
+    } else {
+      for (let ch = 0; ch < 3; ch++) d[o + ch] = clamp(((d[o + ch]! - lo) / span) * 255, 0, 255);
+    }
   }
   ctx.putImageData(img, 0, 0);
 }
@@ -327,6 +353,87 @@ function toMono(c: HTMLCanvasElement) {
   ctx.putImageData(img, 0, 0);
 }
 
+function saturate(c: HTMLCanvasElement, amount: number) {
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const img = ctx.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const l = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
+    if (l > 225) continue; // near-white paper: keep it white, don't wake the grain
+    const avg = (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
+    d[i] = clamp(avg + (d[i]! - avg) * amount, 0, 255);
+    d[i + 1] = clamp(avg + (d[i + 1]! - avg) * amount, 0, 255);
+    d[i + 2] = clamp(avg + (d[i + 2]! - avg) * amount, 0, 255);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/** 3×3 median on near-white pixels only: melts paper grain and JPEG speckle into pure
+ * white while every dark pixel of print passes through untouched. Pure-adjacent, canvas I/O only. */
+function despeckleWhite(c: HTMLCanvasElement) {
+  const w = c.width;
+  const h = c.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const src = ctx.getImageData(0, 0, w, h);
+  const out = ctx.createImageData(w, h);
+  const s = src.data;
+  const o = out.data;
+  const win = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      o[i + 3] = 255;
+      const l = 0.299 * s[i]! + 0.587 * s[i + 1]! + 0.114 * s[i + 2]!;
+      if (l < 208) {
+        o[i] = s[i]!; o[i + 1] = s[i + 1]!; o[i + 2] = s[i + 2]!;
+        continue;
+      }
+      for (let ch = 0; ch < 3; ch++) {
+        for (let k = 0; k < 9; k++) {
+          const nx = clamp(x + (k % 3) - 1, 0, w - 1);
+          const ny = clamp(y + Math.floor(k / 3) - 1, 0, h - 1);
+          win[k] = s[(ny * w + nx) * 4 + ch]!;
+        }
+        win.sort((a, b) => a - b);
+        o[i + ch] = win[4]!;
+      }
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+/** Print-safe unsharp mask: crisps edges but skips near-white pixels, so paper grain is
+ * never sharpened into speckle. Mild amount — no haloing at thin print sizes. */
+function sharpen(c: HTMLCanvasElement, a = 0.22) {
+  const w = c.width;
+  const h = c.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const src = ctx.getImageData(0, 0, w, h);
+  const out = ctx.createImageData(w, h);
+  const s = src.data;
+  const o = out.data;
+  for (let y = 0; y < h; y++) {
+    const yu = y > 0 ? y - 1 : y;
+    const yd = y < h - 1 ? y + 1 : y;
+    for (let x = 0; x < w; x++) {
+      const xl = x > 0 ? x - 1 : x;
+      const xr = x < w - 1 ? x + 1 : x;
+      const i = (y * w + x) * 4;
+      o[i + 3] = 255;
+      const l = 0.299 * s[i]! + 0.587 * s[i + 1]! + 0.114 * s[i + 2]!;
+      if (l > 225) {
+        o[i] = s[i]!; o[i + 1] = s[i + 1]!; o[i + 2] = s[i + 2]!;
+        continue;
+      }
+      for (let ch = 0; ch < 3; ch++) {
+        const nb = s[(yu * w + x) * 4 + ch]! + s[(yd * w + x) * 4 + ch]! + s[(y * w + xl) * 4 + ch]! + s[(y * w + xr) * 4 + ch]!;
+        o[i + ch] = clamp(s[i + ch]! * (1 + 4 * a) - nb * a, 0, 255);
+      }
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
 function rotate(c: HTMLCanvasElement, r: number): HTMLCanvasElement {
   const d = ((r % 360) + 360) % 360;
   if (!d) return c;
@@ -346,10 +453,10 @@ function rotate(c: HTMLCanvasElement, r: number): HTMLCanvasElement {
 function develop(src: HTMLCanvasElement, quad: Quad | null, filter: ScanFilter, maxSide: number): HTMLCanvasElement {
   const c = warpCanvas(src, quad, maxSide);
   if (filter === 'color') {
-    cleanPage(c, false); // straightened, linear levels — colours as printed
+    stretch(c, false); // straightened, lightly levelled — colours as printed
     return c;
   }
-  flatten(c); // one luminance gain for every channel — no hue shifts, no speckle
+  flatten(c);
   if (filter === 'bw') {
     toMono(c);
     return c;
