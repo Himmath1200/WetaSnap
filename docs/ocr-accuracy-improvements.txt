@@ -1,21 +1,18 @@
-OCR Popup - What It Does (simple version)
+How we made scans more accurate
 
-What is new:
-After you scan a card, a small box pops up on the screen.
-It shows the raw text the scanner actually read.
+Problem before:
+If the scanner misread a letter or number, you could not tell.
+The wrong name, email or phone got saved.
 
-Why it helps:
-You can see what the scanner saw.
-If a letter or number is wrong, you can fix it before saving.
-So saved leads are more correct.
+What we added:
+After each scan, a small box shows the exact text the scanner saw.
+You compare it with the filled form and fix anything wrong before saving.
 
-How it works:
-1. You scan a card.
-2. The scanner reads the text.
-3. The popup shows that text at the bottom-right.
-4. You check it, copy it if needed, then close it or it hides by itself after 12 seconds.
-5. If nothing could be read, it says: try better light or move closer.
+How this makes it accurate:
+1. Misreads become visible. You see "63831" vs "6383338084" and fix it.
+2. You check before saving, so bad data never enters your leads.
+3. If nothing could be read, it tells you to retake with better light, instead of saving a half-empty lead.
+4. Only your live scan pops up, so you check at the right moment.
 
-Notes:
-- It does not change how scanning works. It only shows the text.
-- Background re-scans do not show the popup. Only your live scans do.
+Result:
+The scanner itself did not change. Accuracy went up because a person catches the errors at review time.
