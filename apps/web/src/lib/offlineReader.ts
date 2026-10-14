@@ -170,13 +170,31 @@ const PARTICLES = new Set([
   'von', 'ter', 'ten', 'le', 'la', 'el', 'al', 'bin', 'mc', 'mac',
 ]);
 
-const clean = (v: string) => v.replace(/\s+/g, ' ').trim().replace(/[,;|]+$/, '');
+/**
+ * Collapses whitespace, then strips Tesseract's edge debris: leading rule fragments
+ * ("~~ M:…", "| Jayakumar P", "1 M:…") and trailing label punctuation. The trailing
+ * dot is kept — it belongs to "B.V." and "S.r.l.".
+ */
+const clean = (v: string) =>
+  v.replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^([|~_—–\-=:;.,#*]+\s*)+/, '')
+    .replace(/^\d+\s+(?=[A-Za-z])/, '')
+    .replace(/[,;|~_—–\-=:]+$/, '')
+    .trim();
 
-/** Rule lines and OCR debris ("ee ——", "Ld", "3 J"): fewer than 3 letters/digits, or a long rule with no real words. */
+/**
+ * Rule lines and OCR debris: fewer than 3 letters/digits, or a long rule mixed with E-fragments
+ * ("EE ——— EE eeeee———"), where Tesseract reads the red hairline as Es. Real mixed facts such as
+ * "M: +91 … Chennal 600002" carry several solid words (a letter-run of 3+), so they survive.
+ */
 function isDebris(l: string) {
   if (l.replace(/[^A-Za-z0-9]/g, '').length < 3) return true;
-  if (/([—–\-_=|:.])\1{3,}/.test(l)) {
-    return l.split(/\s+/).filter((w) => /[A-Za-z0-9]{3,}/.test(w)).length <= 1;
+  if (/([—–\-_=|:.Ee])\1{3,}/.test(l) || /[—–_=|]{5,}/.test(l)) {
+    const solid = l.split(/\s+/).filter((w) => /[A-Za-z0-9]{3,}/.test(w));
+    if (solid.length <= 1) return true;
+    // "EE … EE eeeee…" — the only solid words are single-letter runs (E/EE), not facts.
+    if (solid.every((w) => /^(E+|[Ee]+)$/.test(w.replace(/[^Ee]/g, '')) || w.replace(/[^A-Za-z]/g, '').length < 2)) return true;
   }
   return false;
 }
@@ -203,7 +221,8 @@ function repairPhone(p: string) {
   let s = clean(p);
   s = s.replace(/\s*[;:|]+\s*/g, ' '); // label punctuation left on the line: "T;: +91 …"
   s = s.replace(/(\+\d+)\s*[Bb](\d)/, '$1 8$2'); // B for 8, only between digits
-  s = s.replace(/[()]/g, ''); // "+9) 8424015630"
+  s = s.replace(/\+9\s*[\)\]\}lI](?=\s*\d)/, '+91'); // "+9) 842…" — the second digit of 91 misread as a bracket
+  s = s.replace(/[()]/g, ''); // leftover brackets elsewhere
   s = clean(s);
   if (s.startsWith('4') && !s.startsWith('+')) {
     const digits = s.replace(/\D/g, '');
