@@ -223,25 +223,27 @@ export function estimatePaperInk(samples: number[]): { paper: number; ink: numbe
   return { paper, ink };
 }
 
-/** Target luminance for one pixel: ink → black, paper → white, mid-tones bowed slightly dark
- * so print reads bold, with a smooth knee that melts paper grain into pure white. Pure. */
+/** Target luminance for one pixel: linear map, ink → black, paper → white, with a smooth
+ * knee that melts grain into white. Linear on purpose: anything darker (gamma > 1) crushes
+ * coloured print — red logo text reads dark, so it goes near-black. Pure. */
 export function targetLum(l: number, paper: number, ink: number, whiten = true): number {
   const span = Math.max(1, paper - ink);
   const norm = clamp((l - ink) / span, 0, 1);
   if (whiten) {
-    if (norm >= 0.93) return 255;
-    if (norm > 0.78) {
-      const t = (norm - 0.78) / 0.15;
+    if (norm >= 0.9) return 255;
+    if (norm > 0.76) {
+      const t = (norm - 0.76) / 0.14;
       const e = t * t * (3 - 2 * t);
-      const base = Math.pow(norm, 1.12) * 255;
+      const base = norm * 255;
       return base + (255 - base) * e;
     }
   }
-  return Math.pow(norm, whiten ? 1.12 : 1.0) * 255;
+  return norm * 255;
 }
 
-/** One-pass levels that preserve hue: every channel rides the luminance curve, so the paper
- * goes white without shifting the logo colours, and print goes bold without clipping. */
+/** Per-channel linear levels with a white knee past 200: paper grain melts to white, print
+ * passes through untouched — red stays red, navy stays navy. The old luminance-ratio build
+ * darkened every saturated colour toward black; this never touches mid-tones. */
 function cleanPage(c: HTMLCanvasElement, whiten: boolean) {
   const w = c.width;
   const h = c.height;
@@ -252,14 +254,30 @@ function cleanPage(c: HTMLCanvasElement, whiten: boolean) {
   const lum: number[] = [];
   for (let i = 0; i < w * h; i += step) lum.push(0.299 * d[i * 4]! + 0.587 * d[i * 4 + 1]! + 0.114 * d[i * 4 + 2]!);
   const { paper, ink } = estimatePaperInk(lum);
+  const span = Math.max(1, paper - ink);
   for (let i = 0; i < w * h; i++) {
     const o = i * 4;
-    const l = 0.299 * d[o]! + 0.587 * d[o + 1]! + 0.114 * d[o + 2]!;
-    const t = targetLum(l, paper, ink, whiten);
-    const ratio = t / Math.max(1, l);
-    d[o] = clamp(d[o]! * ratio, 0, 255);
-    d[o + 1] = clamp(d[o + 1]! * ratio, 0, 255);
-    d[o + 2] = clamp(d[o + 2]! * ratio, 0, 255);
+    for (let ch = 0; ch < 3; ch++) {
+      let t = clamp(((d[o + ch]! - ink) / span) * 255, 0, 255);
+      if (whiten && t > 200) {
+        const k = (t - 200) / 55;
+        const e = k * k * (3 - 2 * k);
+        t = t + (255 - t) * e;
+      }
+      d[o + ch] = t;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/** Luminance copy — the Grey filter path. */
+function toGray(c: HTMLCanvasElement) {
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  const img = ctx.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const l = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
+    d[i] = d[i + 1] = d[i + 2] = l;
   }
   ctx.putImageData(img, 0, 0);
 }
@@ -444,15 +462,13 @@ function develop(src: HTMLCanvasElement, quad: Quad | null, filter: ScanFilter, 
     return c;
   }
   if (filter === 'gray') {
-    despeckleWhite(c);
+    toGray(c);
     cleanPage(c, false); // even levels, no whitening knee — grey stays photographic
     return c;
   }
-  // enhance: the CamScanner look — flat white page, bold print, quiet grain.
-  despeckleWhite(c);
-  cleanPage(c, true); // hue-preserving paper→white curve (ageas red stays red)
-  saturate(c, 1.12);
-  sharpen(c);
+  // enhance: flat white page, print exactly as photographed.
+  // No despeckle, no saturate, no sharpen — each of those fed the speckle in your sample.
+  cleanPage(c, true); // linear levels + white knee: paper melts, colours pass through
   return c;
 }
 
