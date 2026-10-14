@@ -1,142 +1,84 @@
-# Offline OCR techniques — `apps/web/src/lib/offlineReader.ts`
+# Offline OCR techniques — this chat session only (`apps/web/src/lib/offlineReader.ts`)
 
-How the on-device reader (Tesseract.js, no server, no cloud) turns a business-card
-photo into filled form fields. Each numbered item is one Technique: what it does,
-why it exists, and the real card sample that forced it.
-
-Pipeline order: `preprocessForOcr` → Tesseract (`getWorker`) → `rebuildText` →
-`parseCardText` (`repairTypos` → line splitting → email → phones → website →
-country → company → job title → name). Field mapping is scored, not first-match;
-every guess carries a confidence and, below it, a check-reason for the reviewer.
+Scope: only what changed in this session vs baseline `0ca85c6` (which already had
+basic email/phone/company/title/name regex matching). Baseline matching is not
+listed below — each Technique is one new repair added while fixing your Ageas card.
 
 ---
 
-## 1. Image-side techniques (before Tesseract sees anything)
+### Technique 1 — Upscale + autocontrast before Tesseract (`preprocessForOcr`)
+New in this session. Canvas upscale toward ~2200 px wide (max 2.5×, ~12 MP cap),
+greyscale + min/max stretch so off-white card → white, grey small print → black.
+In-memory only. Fixed `491 …` reads and tiny `@ageasfederal.com` print.
 
-### Technique 1 — Upscale small print (`preprocessForOcr`)
-Scale the photo so its width reaches ~2200 px (max 2.5×, max ~12 MP), in memory only.
-Small print (emails, addresses) often drops under 30 px after SCAN-06 compression;
-Tesseract reads ~300 dpi best. Bigger letters, fewer misreads, same photo.
+### Technique 2 — Card-tuned Tesseract parameters (`getWorker`)
+New in this session. `tessedit_pageseg_mode '6'` (one block, not a page),
+`preserve_interword_spaces '1'` (column gutter survives as spaces),
+`user_defined_dpi '300'` (phone photos have no DPI tag). Enables Technique 5's
+column split.
 
-### Technique 2 — Greyscale + autocontrast (`preprocessForOcr`)
-Stretch the sampled min/max to 0–255 so an off-white card becomes white and grey
-small print becomes black. Sampled every 64th pixel (fast), applied to all pixels.
+### Technique 3 — Word-box rebuild (`rebuildText`)
+New in this session. Rebuild lines from `data.lines[].words[]`: drop words with
+confidence < 30 unless they carry `@`/`+`/digits, strip `©®™`, drop decoration
+tokens (`——`, `|`), drop rule-only lines. Falls back to `data.text` when no boxes.
 
-### Technique 3 — Card-tuned Tesseract parameters (`getWorker`)
-- `tessedit_pageseg_mode: '6'` (single uniform block — a card is not a page).
-- `preserve_interword_spaces: '1'` — the gutter between two columns survives as
-  extra spaces, so merged `email   Company` lines can be split again later.
-- `user_defined_dpi: '300'` — phone photos carry no DPI tag; the 70 dpi default
-  mis-scales small print.
+### Technique 4 — Typo table (`repairTypos`)
+New in this session (ported idea, rewritten here). `©`→`@` between alphanumerics,
+`,com`/`.oom`→`.com`, `.eh`→`.ch`, `—`→`-`, `|`→`l` / `0`→`o` inside words,
+`1`→`i` in long words. Letter neighbours required — phone digit runs untouched.
 
----
+### Technique 5 — Merged-fact splitting + edge clean (`parseCardText`, `clean`)
+New in this session. Split on tabs / 2+ spaces (column gutter: `email   Company`)
+and on label boundaries (`Tel: … Mobile: …` on one OCR line). `clean()` strips
+leading rule fragments (`| Jayakumar P`, `~~ M:…`, `1 M:…`) and trailing label
+punctuation; trailing dot kept for `B.V.` / `S.r.l.`.
 
-## 2. Text-cleanup techniques (Tesseract output → usable lines)
+### Technique 6 — Debris filter for rules and E-runs (`isDebris`, `looksLikeText`)
+New in this session. Drop < 3 alphanumerics (`Ld`, `3 J`) and long rules mixed
+with E-fragments (`EE ——— EE eeeee———`, red hairline read as Es) with no solid
+3+ letter word; drop mostly-symbol lines (`=a F -— : AL — p—— -`) by symbol ratio.
+`M: +91 … Chennal 600002` survives (solid words present).
 
-### Technique 4 — Word-box rebuild (`rebuildText`)
-Rebuild lines from Tesseract's word boxes instead of trusting `data.text`:
-drop words Tesseract itself barely saw (confidence < 30, unless they carry
-`@`, `+` or digits — emails and phones are kept), strip `©®™`, drop
-decoration tokens (`——`, `©`, stray glyphs) and rule-only lines. Falls back to
-plain text when no word boxes come back.
+### Technique 7 — Fragmented email glue (`extractEmail`)
+New in this session. Glues whitespace inside the local part (`ay 2 kumar.p@…` →
+`ay2kumar.p@…`), longest local part wins, domain taken as printed and never
+repaired. Glued = 0.6 + `Uncertain characters — check the spelling`; clean = 0.9.
 
-### Technique 5 — Typo table (`repairTypos`)
-Single-character slips repaired before parsing; every rule needs letter
-neighbours, so phone digit runs are never touched: `©`→`@` between alphanumerics,
-`,com`/`.oom`→`.com`, `.eh`→`.ch`, `—`→`-`, `|`→`l` and `0`→`o` inside words,
-`1`→`i` inside long words. *Adapted from syneo-tools-gmbh/Javascript-BCR-Library
-(Apache-2.0).*
+### Technique 8 — Phone digit repairs + sibling-code borrow (`repairPhone`)
+New in this session. Strip label punctuation (`T;: +91 …`), brackets; `B`→`8`
+only between digits (before matching, so `+91 B424015630` matches); `+9)` +
+bracket → `+91`; leading `4` → `+` only for plausible calling-code lengths
+(`T: 491 …` → `+91 …` via `CC_COUNTRY`); country-less number borrows the code
+from a sibling number on the same card. < 7 digits skipped, never stored;
+repaired/short numbers capped at 0.65/0.5 with a reason.
 
-### Technique 6 — Column and fact splitting (`parseCardText`)
-Split merged lines three ways: on tabs / 2+ spaces (two-column gutter),
-and on label boundaries (`Tel: … Mobile: …` on one OCR line splits before each
-label). Then `clean()`: collapse whitespace, strip leading rule fragments
-(`| Jayakumar P`, `~~ M:…`, `1 M:…`) and trailing punctuation — but keep the
-trailing dot, it belongs to `B.V.` / `S.r.l.`.
+### Technique 9 — Mobile-over-desk with misread labels (`MOBILE_LABEL`, `MISREAD_MOBILE`)
+New in this session. Explicit mobile labels first; `A:` counts as mobile (middle
+stroke of `M` dropped on small print); fax excluded outright. Visibly short
+mobile (`+91 63831 8084`) loses to the intact desk number with
+`The mobile number looked incomplete`.
 
-### Technique 7 — Debris filter (`isDebris` + `looksLikeText`)
-Drop rule lines and OCR junk: under 3 alphanumerics (`Ld`, `3 J`), or a long
-rule mixed with E-fragments (`EE ——— EE eeeee———`, where Tesseract reads the red
-hairline as Es) with no solid 3+ letter word. Real mixed facts such as
-`M: +91 … Chennal 600002` survive — they carry solid words. Lines that are
-mostly symbols (`=a F -— : AL — p—— -`) are dropped by the symbol-ratio check.
+### Technique 10 — Legal-suffix tier + domain-similarity fallback (`HARD_SUFFIX`, `matchDomain`)
+New in this session. Hard-suffix line (`… Co. Ltd.`) beats generic company words
+(`LIFE INSURANCE`); longest wins per tier so `gcc INSURANCE` never beats the
+printed name; merged `email   Company` lines contribute text after the email.
+Only when nothing won: domain-similarity fallback (exact containment, then bigram
+Dice ≥ 0.55, e.g. `nordsaat.de` → `NORDSAAT`) — never overrules a real match.
 
----
+### Technique 11 — Country from dialling code (`CC_COUNTRY`)
+New in this session. Printed country word first; else dialling-code table from
+the stored phone (`+91` → India, 0.6 + `Worked out from the dialling code`).
+Your card prints no country, so `+91` supplies India.
 
-## 3. Field techniques (lines → card fields)
+### Technique 12 — Scored name + title cleanup (`pickName`, `splitName`)
+New in this session. Name scored, not first-match: capitalised start, 2 words,
+lone initial (`Jayakumar P`), per-word email-local agreement (accent-insensitive,
+bigram-tolerant so `ayakumar P` still matches `jayakumar.p`), near-top bonus,
+threshold ≥ 3; honorifics stripped, surname particles kept (`de Vries`),
+lowercase capitalised. Title trailing rule glyphs stripped
+(`Manager ©/C/Ar.` → `Manager`).
 
-### Technique 8 — Email as anchor (`extractEmail`)
-The most reliable thing on a card. Glues whitespace inside the local part
-(`ay 2 kumar.p@…` → `ay2kumar.p@…`); longest local part wins so a fragment never
-beats the full address. The domain is taken as printed and **never repaired**.
-Glued addresses store at 0.6 with `Uncertain characters — check the spelling`;
-clean ones at 0.9.
-
-### Technique 9 — Phone repair, never invention (`repairPhone` + sibling code)
-- Strip label punctuation (`T;: +91 …`), brackets (`+9) 842…`).
-- `B`→`8` only between digits (`+91 B424015630`); the match runs on the
-  normalised line so the digit run matches at all.
-- Leading `4` restored to `+` when the rest is a plausible calling code +
-  subscriber number (`T: 491 …` → `+91 …`, via the `CC_COUNTRY` table).
-- `+9)` + bracket → `+91` (second digit of 91 misread as `)` / `]` / `l`).
-- A country-less number borrows the calling code from a sibling number on the
-  same card (`; +9) 8424015630` next to a `+91` line).
-- Numbers under 7 digits are skipped, not stored. A visibly short mobile loses
-  to the intact desk number with `The mobile number looked incomplete`.
-  Any repaired/incomplete number is capped at 0.65/0.5 with a check-reason.
-
-### Technique 10 — Mobile wins over desk (`MOBILE_LABEL`, `MISREAD_MOBILE`)
-Label-aware pick: explicit mobile labels first, then any labelled / `+` line,
-then the first number. `A:` counts as mobile (Tesseract drops the middle stroke
-of `M` on small print). Fax lines are excluded outright — a fax is never a contact.
-
-### Technique 11 — Legal suffix beats logo (`HARD_SUFFIX` vs `COMPANY`)
-Two-tier company match: a line with a hard legal suffix (`… Co. Ltd.`, `GmbH`,
-`SAS`, `B.V.` …) beats a generic company word (`LIFE INSURANCE`, `Group` …).
-A merged `email   Company` line contributes what follows the email. Longest
-candidate wins within a tier, so a logo fragment (`gcc INSURANCE`) never beats
-the printed name. Split letterheads rejoin (`NORDSAAT` above `Saatgut GmbH`).
-
-### Technique 12 — Domain similarity as fallback (`matchDomain`, bigram similarity)
-Only when no legal suffix or company-like line won: the email/website domain
-usually is the company (`nordsaat.de` → `NORDSAAT`). Exact containment first,
-then bigram (Dice) similarity ≥ 0.55 so one misread letter still matches.
-Refines the fallback guess only — never overrules a real match.
-*Bigram similarity adapted from syneo-tools-gmbh/Javascript-BCR-Library (Apache-2.0).*
-
-### Technique 13 — Country from three sources (`COUNTRY`, `CC_COUNTRY`)
-Printed country word first (`Chennai` alone says nothing — no match), else the
-dialling-code table from the stored phone (`+91` → India), else nothing.
-Sample card has no printed country: `+91` says India at 0.6 with
-`Worked out from the dialling code`.
-
-### Technique 14 — Scored name, not first-match (`pickName` + `splitName`)
-Candidates scored: capitalised start, 2 words (+2), lone initial (`Jayakumar P`,
-+2), email-local agreement per word (+2 each, accent-insensitive, bigram-tolerant
-so `ayakumar P` still matches `jayakumar.p`), position near the top (+1).
-Threshold ≥ 3, else fall back to `first.last@…` email guess at 0.4.
-Contact/company/title lines excluded. Honorifics stripped (`Dr. Katharina Vogel`
-→ `Katharina / Vogel`); surname particles kept (`Sanne de Vries` →
-`Sanne / de Vries`); lowercase words capitalised.
-
-### Technique 15 — Job-title cleanup (`TITLE`)
-Matched on a multilingual title list, then trailing rule glyphs stripped
-(`Manager ©/C/Ar.` → `Manager`). Stored at 0.7.
-
-### Technique 16 — Confidence + reason on every value
-Every field carries `{ value, confidence, reason?, by: 'offline' }`.
-Clean reads score 0.7–0.9; anything repaired, guessed (website/country from
-email, name from email local part), or ambiguous (two numbers, short mobile)
-scores lower **with a plain-words reason** the review screen shows next to the
-field. Nothing is silently invented: unfixable lines (`+91 € x 8084`, single-glyph
-damage like `g€c` / `No.2]`) are left for the person, flagged, not guessed.
-
----
-
-## 4. Deliberate non-goals
-
-- No digit invention (Technique 9): a destroyed number stays flagged, never stored wrong.
-- No domain repair (Technique 8): the domain is the company/country evidence.
-- No letter guessing inside words: `g€c`, `No.2]` come through raw with a reason.
-- No new packages: stdlib + canvas + existing `tesseract.js` (lazy import, PWA
-  cache-excluded per `AI_RULES.md` size budget).
+## Non-goals (held in this session)
+No digit invention (`+91 € x 8084` left flagged, never stored wrong); no domain
+repair; no letter guessing inside words (`g€c`, `No.2]` pass through raw with a
+reason); no new packages.
