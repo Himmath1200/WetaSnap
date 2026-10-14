@@ -1,0 +1,21 @@
+OCR Popup - What It Does (simple version)
+
+What is new:
+After you scan a card, a small box pops up on the screen.
+It shows the raw text the scanner actually read.
+
+Why it helps:
+You can see what the scanner saw.
+If a letter or number is wrong, you can fix it before saving.
+So saved leads are more correct.
+
+How it works:
+1. You scan a card.
+2. The scanner reads the text.
+3. The popup shows that text at the bottom-right.
+4. You check it, copy it if needed, then close it or it hides by itself after 12 seconds.
+5. If nothing could be read, it says: try better light or move closer.
+
+Notes:
+- It does not change how scanning works. It only shows the text.
+- Background re-scans do not show the popup. Only your live scans do.
