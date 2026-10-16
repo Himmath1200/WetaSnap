@@ -145,19 +145,28 @@ export default function Scan() {
     }
   }
 
-  async function onCapture(video: HTMLVideoElement, crop: { x: number; y: number; w: number; h: number }) {
-    const blob = await compressCard(video, crop);
+  async function onCapture(shot: HTMLCanvasElement) {
+    const blob = await compressCard(shot);
     if (mode === 'review' && !capturingBack && window.innerWidth < 768) return;
-    if (capturingBack) { addBack(await develop(blob)); return; }
+    if (capturingBack) { await addBack(await develop(blob)); return; }
     await startReview(await develop(blob), 'camera');
   }
 
-  function addBack(blob: Blob) {
+  async function addBack(blob: Blob) {
     setBackPhoto(blob);
     setBackThumb(URL.createObjectURL(blob));
     setCapturingBack(false);
     setMode('review');
     toast(t('Back of the card added'), 'success', 1500);
+    // Back often carries the address / QR — fill what the front left empty, never overwrite.
+    try {
+      const r = await readOffline(blob, s.company?.default_language ?? 'en', { silent: true });
+      setDraft((d) => {
+        const fields = { ...d.fields };
+        for (const [k, v] of Object.entries(r)) if (!fields[k]?.value?.trim()) fields[k] = { ...v, by: 'offline' };
+        return { ...d, fields };
+      });
+    } catch { /* front values stand */ }
   }
 
   async function onFiles(files: FileList | File[]) {
@@ -166,7 +175,7 @@ export default function Scan() {
     if (list.length === 1) {
       // Single upload → same path as capture: clean scan, then the fill-in form.
       const blob = await develop(list[0]!);
-      if (capturingBack) { addBack(blob); return; }
+      if (capturingBack) { await addBack(blob); return; }
       await startReview(blob, 'upload');
       return;
     }
@@ -230,6 +239,24 @@ export default function Scan() {
     return () => window.removeEventListener('keydown', h);
   });
 
+  const [retrying, setRetrying] = useState(false);
+  async function retryRead() {
+    if (!photo || retrying) return;
+    const token = ++readToken.current;
+    setRetrying(true);
+    setRead('reading');
+    try {
+      const r = await readOffline(photo, s.company?.default_language ?? 'en');
+      if (token !== readToken.current) return;
+      fillFromRead(r, 'offline');
+      setRead('offline');
+    } catch {
+      if (token === readToken.current) setRead('pending');
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   /** A lead-shaped object for the contact helpers while the draft is still on screen. */
   const draftAsLead = (): Lead => newLead(draft, source);
 
@@ -257,6 +284,11 @@ export default function Scan() {
           <p class="text-sm font-bold">{t('Review & save')}</p>
           <ReadBadge state={read} />
         </div>
+        {(read === 'pending' || read === 'offline') && photo && (
+          <button class="btn-secondary ml-auto min-h-10 shrink-0 px-3 text-xs" disabled={retrying || read === 'reading'} onClick={() => void retryRead()}>
+            {retrying ? <Spinner class="size-4" /> : <RotateCcw class="size-4" />}{t('Re-read')}
+          </button>
+        )}
       </div>
       <div class="flex-1 overflow-y-auto px-4 py-4">
         <div class="mb-4 flex flex-wrap gap-2">

@@ -1,5 +1,6 @@
 import type { ReadResult } from './backend';
 import { pushOcrText } from './ocrLog';
+import { sauvolaBinarize } from './scan';
 
 /**
  * Reading a card on the device itself (AI-05): Tesseract runs in the browser, so a card can be
@@ -55,20 +56,58 @@ export async function preloadOfflinePack(language = 'en') {
 }
 export const offlinePackReady = () => localStorage.getItem('wetasnap-offline-pack') === 'ready';
 
+/** Per-field winner across passes: highest confidence wins. Pure. */
+export function mergeReads(reads: ReadResult[]): ReadResult {
+  const out: ReadResult = {};
+  for (const r of reads) for (const [k, v] of Object.entries(r)) {
+    if (!v?.value) continue;
+    if (!out[k]?.value || (v.confidence ?? 0) > (out[k]!.confidence ?? 0)) out[k] = v;
+  }
+  return out;
+}
+
+const filledCount = (r: ReadResult) => Object.values(r).filter((v) => v?.value).length;
+const meanConf = (r: ReadResult) => {
+  const vs = Object.values(r);
+  return vs.length ? vs.reduce((s, v) => s + (v.confidence ?? 0), 0) / vs.length : 0;
+};
+
+/** Multi-pass offline read: grey block, then B&W block, then sparse — vote per field. All on-device. */
 export async function readOffline(photo: Blob, language = 'en', opts?: { silent?: boolean }): Promise<ReadResult> {
   const w = await getWorker(language);
-  const { data } = await w.recognize(await preprocessForOcr(photo));
-  const raw = (data as { text?: string })?.text ?? '';
-  // OCR-LOG: popup shows this raw Tesseract text right after the scan (silent for background re-reads).
-  if (!opts?.silent) pushOcrText(raw, 'device Tesseract');
-  return parseCardText(rebuildText(data as unknown as TesseractData) || raw);
+  const pass = async (psm: number, bw: boolean) => {
+    await w.setParameters({
+      tessedit_pageseg_mode: psm as never,
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '300',
+    });
+    const { data } = await w.recognize(await preprocessForOcr(photo, { bw }));
+    const raw = (data as { text?: string })?.text ?? '';
+    return { parsed: parseCardText(rebuildText(data as unknown as TesseractData) || raw), raw };
+  };
+  const p1 = await pass(6, false);
+  if (meanConf(p1.parsed) >= 0.7 && filledCount(p1.parsed) >= 4) {
+    if (!opts?.silent) pushOcrText(p1.raw, 'device Tesseract');
+    return p1.parsed;
+  }
+  const p2 = await pass(6, true).catch(() => null);
+  const merged2 = mergeReads([p1.parsed, ...(p2 ? [p2.parsed] : [])]);
+  if (!p2 || meanConf(merged2) >= 0.7 || filledCount(merged2) >= 4) {
+    if (!opts?.silent) pushOcrText([p1.raw, p2?.raw].filter(Boolean).join('\n---\n'), 'device Tesseract (2 passes)');
+    return merged2;
+  }
+  const p3 = await pass(11, false).catch(() => null);
+  const merged = mergeReads([p1.parsed, p2.parsed, ...(p3 ? [p3.parsed] : [])]);
+  if (!opts?.silent) pushOcrText([p1.raw, p2.raw, p3?.raw].filter(Boolean).join('\n---\n'), 'device Tesseract (3 passes)');
+  return merged;
 }
 
 /**
  * Upscale + normalise the photo for Tesseract: small print (emails, addresses) is often under
  * 30 px tall after SCAN-06 compression, and Tesseract reads 300 dpi best. In-memory only.
+ * bw: Sauvola pass for faint print; always finished with a 10px white border (tight crops fail).
  */
-async function preprocessForOcr(photo: Blob): Promise<Blob> {
+async function preprocessForOcr(photo: Blob, opts?: { bw?: boolean }): Promise<Blob> {
   try {
     if (typeof document === 'undefined' || typeof createImageBitmap !== 'function') return photo;
     const bmp = await createImageBitmap(photo);
@@ -99,8 +138,34 @@ async function preprocessForOcr(photo: Blob): Promise<Blob> {
       d[i] = v; d[i + 1] = v; d[i + 2] = v;
     }
     ctx.putImageData(img, 0, 0);
+    let src = c;
+    if (opts?.bw) {
+      const g = new Float32Array(W * H);
+      const done = ctx.getImageData(0, 0, W, H).data;
+      for (let i = 0; i < W * H; i++) g[i] = 0.299 * done[i * 4]! + 0.587 * done[i * 4 + 1]! + 0.114 * done[i * 4 + 2]!;
+      const bw = sauvolaBinarize(g, W, H);
+      const bc = document.createElement('canvas');
+      bc.width = W; bc.height = H;
+      const bctx = bc.getContext('2d')!;
+      const bout = bctx.createImageData(W, H);
+      for (let i = 0; i < W * H; i++) {
+        const v = bw[i]!;
+        bout.data[i * 4] = v; bout.data[i * 4 + 1] = v; bout.data[i * 4 + 2] = v; bout.data[i * 4 + 3] = 255;
+      }
+      bctx.putImageData(bout, 0, 0);
+      src = bc;
+    }
+    // 10px white border: Tesseract mis-segments text touching the image edge.
+    const PAD = 10;
+    const fin = document.createElement('canvas');
+    fin.width = src.width + PAD * 2;
+    fin.height = src.height + PAD * 2;
+    const fctx = fin.getContext('2d')!;
+    fctx.fillStyle = '#fff';
+    fctx.fillRect(0, 0, fin.width, fin.height);
+    fctx.drawImage(src, PAD, PAD);
     const out = await new Promise<Blob | null>((res) => {
-      try { c.toBlob((b) => res(b), 'image/jpeg', 0.92); } catch { res(null); }
+      try { fin.toBlob((b) => res(b), 'image/jpeg', 0.92); } catch { res(null); }
     });
     return out ?? photo;
   } catch {
@@ -223,7 +288,7 @@ const WEB = /\b((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}
 const COMPANY = /\b(GmbH|AG|KG|UG|SAS|SARL|S\.?r\.?l\.?|S\.?p\.?A\.?|SL|S\.?A\.?|B\.?V\.?|N\.?V\.?|Lda|Ltd|Limited|LLC|LLP|Inc|Corp|Pvt|OPC|KG|AB|OY|A\/S|ApS|Co\.?|Group|Holding|Insurance|Assurance|Life|Bank|Finance|Financial|Technolog(?:y|ies)|Solutions?|Services?|Systems?|Software|Consulting|Enterprises?|Industr(?:y|ies)|Logistics|Trading|Capital|Partners|Ventures|Labs?|Saatgut|Agritech)\b/i;
 /** A hard legal suffix beats a generic word: "LIFE INSURANCE" (logo) must lose to "… Co. Ltd." (legal name). */
 const HARD_SUFFIX = /\b(GmbH|AG|KG|UG|SAS|SARL|S\.?r\.?l\.?|S\.?p\.?A\.?|SL|S\.?A\.?|B\.?V\.?|N\.?V\.?|Lda|Ltd|Limited|LLC|LLP|Inc|Corp|Pvt|OPC|AB|A\/S|ApS|Co\.?)\b/i;
-const TITLE = /\b(manager|director|head of|head|chief|ceo|cto|cfo|coo|owner|founder|partner|president|vice[- ]president|vp|sales|marketing|purchas|procurement|export|import|leiter(in)?|gesch[äa]ftsf[üu]hrer(in)?|vertrieb|einkauf|directeur|directrice|responsable|responsabile|gerente|director[ao]|inkoper|engineer|consultant|specialist|executive|representative|agronom)/i;
+const TITLE = /\b(manager|director|head of|head|chief|ceo|cto|cfo|coo|chairman|chairwoman|evp|svp|avp|owner|proprietor|founder|partner|president|presidente|président|vice[- ]president|vp|lead|team leader|diretor|sales|marketing|purchas|procurement|export|import|commercial|comercial|vendedor|leiter(in)?|gesch[äa]ftsf[üu]hrer(in)?|gründer|vorstand|vertrieb|einkauf|directeur|directrice|fondateur|gérant|comptable|responsable|responsabile|respons[áa]vel|gerente|fundador|fondatore|jefe|encargado|propietario|contable|titolare|amministratore|consulente|sócio|socio|oprichter|eigenaar|verkoper|adviseur|director[ao]|inkoper|engineer|consultant|specialist|executive|representative|agronom|supervisor|foreman|coordinator|administrator|secretary|treasurer|trustee|governor|assistant|associate|dealer|distributor|retailer|wholesaler|supplier|vendor|contractor|builder|merchant|trader|farmer|freelancer|accountant|auditor|banker|broker|agent|advisor|adviser|analyst|designer|developer|architect|doctor|nurse|lawyer|advocate|writer|editor|journalist|photographer|artist|musician|actor|driver|coach|trainer|teacher|professor|lecturer|instructor|researcher|scientist|receptionist|clerk|cashier|intern|trainee|apprentice)/i;
 /** Lines that are labels rather than content. */
 const LABEL = /^(tel|telephone|telefon|phone|mobile|mob|handy|cell|fax|e-?mail|mail|web|www|address|adresse)\b[:.\s-]*$/i;
 const PHONE_LABEL = /\b(tel|telefon|phone|mobile|mob\.?|handy|cell|m|t)\b[:.\s-]*/i;
@@ -330,18 +395,77 @@ export function domainScoreOf(line: string, base: string): number {
   return sim >= 0.55 ? sim : 0;
 }
 
+/** Plain Levenshtein distance — for single-slip OCR repairs. Pure. */
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j]!;
+      prev[j] = Math.min(prev[j]! + 1, prev[j - 1]! + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = tmp;
+    }
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * Repairs OCR slips in a company line against the website domain ("Ennich Spaces"
+ * + enrichspaces.co.in → "Enrich Spaces"). Each long word missing from the domain
+ * takes its closest domain substring (one slip, two for long words), keeping the
+ * word's case pattern and position — the printed word breaks survive, only letters
+ * change. Returns the line untouched when nothing is worth fixing. Pure: unit-tested.
+ */
+export function repairCompanySpelling(line: string, base: string): string {
+  if (!base || domainScoreOf(line, base) >= 1) return line;
+  let changed = false;
+  const out = line.split(/(\s+)/).map((tok) => {
+    if (!/[A-Za-z]/.test(tok) || tok.length < 4) return tok;
+    const wl = tok.toLowerCase();
+    if (base.includes(wl)) return tok;
+    const allow = wl.length >= 7 ? 2 : 1;
+    let best = '';
+    let bestDist = Infinity;
+    for (let len = Math.max(4, wl.length - 2); len <= wl.length + 2; len++) {
+      for (let i = 0; i + len <= base.length; i++) {
+        const sub = base.slice(i, i + len);
+        const d = editDistance(wl, sub);
+        if (d < bestDist) { bestDist = d; best = sub; }
+      }
+    }
+    if (bestDist > allow || !best) return tok;
+    changed = true;
+    return /^[A-Z]+$/.test(tok.replace(/[^A-Za-z]/g, '')) ? best.toUpperCase()
+      : best.charAt(0).toUpperCase() + best.slice(1);
+  });
+  return changed ? out.join('') : line;
+}
+
+/**
+ * Name-shaped: 2–4 plain words ("Priya Nair", "Enrich Spaces"). Shared by the
+ * person guard below — a public mailbox says nothing, so with gmail & friends
+ * any name-shaped line is ambiguous and the company fallback abstains instead of
+ * guessing. Pure: unit-tested.
+ */
+export function isNameShaped(line: string): boolean {
+  const words = line.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 4
+    && words.every((w) => /^[A-Za-z][\p{L}'’.-]*$/u.test(w));
+}
+
 /**
  * A name-shaped line that also matches the email local part ("Priya Nair" next to
  * priya.nair@…) belongs to the person — the company fallback must not steal it
- * before pickName runs. Pure: unit-tested.
+ * before pickName runs. Only meaningful for company mail: with a public mailbox
+ * the local part could be either side, so callers must check that first.
+ * Pure: unit-tested.
  */
 export function isPersonLine(line: string, emailLocal: string): boolean {
-  const words = line.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > 4) return false;
-  if (!words.every((w) => /^[A-Za-z][\p{L}'’.-]*$/u.test(w))) return false;
+  if (!isNameShaped(line)) return false;
   const local = squashForSim(emailLocal);
   if (!local) return false;
-  return words.some((w) => {
+  return line.split(/\s+/).some((w) => {
     const sq = squashForSim(w);
     return sq.length >= 3 && local.includes(sq);
   });
@@ -441,31 +565,37 @@ function extractEmail(text: string): { email: string; repaired: boolean } | null
 }
 
 /** Best line for the person's name: 2 words and a lone initial beat logo fragments and debris. */
-function pickName(lines: string[], used: Set<string>, emailLocal: string, domainBase = ''): string | null {
+function pickName(lines: string[], used: Set<string>, emailLocal: string, domainBase = '', emailPublic = false): string | null {
   let best: string | null = null;
   let bestScore = -1;
   lines.forEach((l, idx) => {
     if (used.has(l) || /[@\d]/.test(l) || COMPANY.test(l) || TITLE.test(l)) return;
-    // Cross-check: a line that IS the email domain is the company, never the person.
-    if (domainBase && domainScoreOf(l, domainBase) >= 0.75) return;
     const stripped = l.replace(/^((dr|prof|mr|mrs|ms|ing|dipl)\.?\s+)+/i, '');
     const words = stripped.split(/\s+/).filter(Boolean);
     if (words.length < 2 || words.length > 4) return;
     if (!words.every((w) => /^[A-Za-z][\p{L}'’.-]*$/u.test(w))) return;
     if (stripped.replace(/[^A-Za-z]/g, '').length < 3) return;
+    // Person proof first: a line matching the email local part is the person even
+    // when it also contains the domain ("Arokiaswamy" in christian@arokia.in).
+    let m = 0;
+    if (emailLocal) {
+      const el = squashForSim(emailLocal);
+      for (const w of words) {
+        const sq = squashForSim(w);
+        if (sq.length >= 3 && (el.includes(sq) || bigramSim(sq, el) >= 0.7)) m++;
+      }
+    }
+    // Cross-check: a line that IS the email domain is the company, never the person.
+    if (m === 0 && domainBase && domainScoreOf(l, domainBase) >= 0.75) return;
     let s = 0;
     if (/^[A-Z]/.test(words[0]!)) s += 2;
     if (words.length === 2) s += 2;
     else if (words.length === 3) s += 1;
     if (/^[A-Z]\.?$/.test(words[words.length - 1]!)) s += 2; // a lone initial: "Jayakumar P"
     if (emailLocal) {
-      const el = squashForSim(emailLocal);
-      let m = 0;
-      for (const w of words) {
-        const sq = squashForSim(w);
-        if (sq.length >= 3 && (el.includes(sq) || bigramSim(sq, el) >= 0.7)) m++;
-      }
-      s += Math.min(m, 2) * 2;
+      // A public mailbox only whispers: companyname@gmail.com and personname@gmail.com
+      // look identical, so its local part may break a shape tie but never outvote shape.
+      s += emailPublic ? (m > 0 ? 1 : 0) : Math.min(m, 2) * 2;
     }
     if (idx <= 2) s += 1; // the name sits near the top, under the logo
     if (s > bestScore) { bestScore = s; best = stripped; }
@@ -522,23 +652,31 @@ export function parseCardText(text: string): ReadResult {
 
   // Phone: the mobile wins (it is the number sales calls); never a fax number.
   // "A:" is Tesseract's M with the middle stroke dropped — treat it as the mobile label.
-  interface PhoneCand { line: string; value: string; digits: string; mobile: boolean; repairedCC: boolean }
+  // Numbers glued with a comma or slash ("M: +91 …, +91 …") each count, and any
+  // further distinct number gets its own slot (phone2, phone3) so none is lost.
+  interface PhoneCand { line: string; value: string; digits: string; mobile: boolean; repairedCC: boolean; indiaDefaulted: boolean }
   const cands: PhoneCand[] = [];
   for (const l of lines.filter((x) => PHONE_CHARS.test(x.replace(/(\d)\s*[Bb]\s*(\d)/g, '$1 8 $2')) && !x.includes('@') && !FAX.test(x))) {
     // B-for-8 happens before the match, otherwise the digit run never matches ("+91 B424015630").
     const norm = l.replace(/(\d)\s*[Bb]\s*(\d)/g, '$1 8 $2');
-    const m = norm.match(PHONE_CHARS)?.[1];
-    if (!m) continue;
-    const value = repairPhone(m);
-    const digits = value.replace(/\D/g, '');
-    if (digits.length < 7) continue; // a mangled fragment, not a number — leave it for the person
-    cands.push({ line: l, value, digits, mobile: MOBILE_LABEL.test(l) || MISREAD_MOBILE.test(l) || MOBILE_INITIAL.test(l), repairedCC: false });
+    for (const m of norm.matchAll(new RegExp(PHONE_CHARS.source, 'g'))) {
+      const value = repairPhone(m[1]);
+      const digits = value.replace(/\D/g, '');
+      if (digits.length < 7) continue; // a mangled fragment, not a number — leave it for the person
+      cands.push({ line: l, value, digits, mobile: MOBILE_LABEL.test(l) || MISREAD_MOBILE.test(l) || MOBILE_INITIAL.test(l), repairedCC: false, indiaDefaulted: false });
+    }
+    if (cands.some((c) => c.line === l)) used.add(l);
   }
   // A digit Tesseract dropped ("; +9) 8424015630" for +91 …): borrow the calling code from a
   // sibling number on the same card rather than storing a number with no country.
   const knownCCs = new Set(cands.map((c) => ccOf(c.digits)).filter((c): c is string => c !== null));
+  // A bare 10-digit mobile starting 6–9 is not a dropped digit when the card is Indian
+  // (a +91 sibling, or India printed on it) — the loop below must not eat its first
+  // digit; it gets +91 afterwards. Anything else stays exactly as printed.
+  const indiaContext = /india/i.test(fixed) || knownCCs.has('91');
   for (const c of cands) {
     if (ccOf(c.digits) || c.digits.length < 10) continue;
+    if (c.digits.length === 10 && /^[6-9]/.test(c.digits) && indiaContext) continue;
     for (const sib of knownCCs) {
       if (c.digits.startsWith(sib.charAt(0)) && c.digits.slice(1).length >= 8 && c.digits.slice(1).length <= 12) {
         c.value = `+${sib}${c.digits.slice(1)}`;
@@ -546,6 +684,13 @@ export function parseCardText(text: string): ReadResult {
         c.repairedCC = true;
         break;
       }
+    }
+  }
+  for (const c of cands) {
+    if (!ccOf(c.digits) && c.digits.length === 10 && /^[6-9]/.test(c.digits) && indiaContext) {
+      c.value = `+91 ${c.digits}`;
+      c.digits = `91${c.digits}`;
+      c.indiaDefaulted = true;
     }
   }
   let pick = cands.find((c) => c.mobile)
@@ -563,7 +708,10 @@ export function parseCardText(text: string): ReadResult {
       reason = 'The mobile number looked incomplete — check this one';
     }
     let conf = cands.length > 1 ? 0.7 : 0.8;
-    if (pick.repairedCC || !ccOf(pick.digits)) {
+    if (pick.indiaDefaulted) {
+      conf = Math.min(conf, 0.65);
+      reason ??= 'No country code on the card — assumed India from context';
+    } else if (pick.repairedCC || !ccOf(pick.digits)) {
       conf = Math.min(conf, 0.65);
       reason ??= 'Repaired a misread digit — check the number';
     }
@@ -573,6 +721,17 @@ export function parseCardText(text: string): ReadResult {
     }
     out.phone = mark(pick.value, conf, reason);
     used.add(pick.line);
+    // Every further distinct number gets its own slot — the card printed it, so it is kept.
+    const seen = new Set([pick.digits]);
+    const extras = cands.filter((c) => {
+      if (c === pick || seen.has(c.digits)) return false;
+      seen.add(c.digits);
+      return true;
+    });
+    (['phone2', 'phone3'] as const).forEach((key, i) => {
+      const extra = extras[i];
+      if (extra) out[key] = mark(extra.value, 0.65, 'Another number from the same card — check which is which');
+    });
   }
 
   // Website, or the email's domain when the card only prints an address.
@@ -624,21 +783,29 @@ export function parseCardText(text: string): ReadResult {
   // belongs to the name fields (this is the swap the other way round).
   const emailLocal = email?.split('@')[0] ?? '';
   const emailDomain = email?.split('@')[1] ?? '';
-  const domainBase = emailDomain && !isFreeMailDomain(emailDomain) ? domainBaseOf(emailDomain) : '';
+  const emailPublic = !!emailDomain && isFreeMailDomain(emailDomain);
+  const domainBase = emailDomain && !emailPublic ? domainBaseOf(emailDomain) : '';
   const webHost = webPrinted?.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] ?? '';
   const siteBase = webHost && !isFreeMailDomain(webHost) ? domainBaseOf(webHost) : '';
   let company = hard[0] ?? soft[0] ?? null;
   let companyWhy: 'suffix' | 'site' | 'domain' | 'top' | null = company ? 'suffix' : null;
   if (!company) {
-    const cands = lines.filter((l) =>
-      !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l) && !isPersonLine(l, emailLocal));
-    const agree = (base: string) => cands
+    const cands = lines.filter((l) => !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l));
+    const agreeIn = (pool: string[], base: string) => pool
       .map((l) => ({ l, s: domainScoreOf(l, base) }))
       .sort((a, b) => b.s - a.s)
       .find((r) => r.s >= 0.55)?.l ?? null;
-    const siteHit = siteBase ? agree(siteBase) : null;
-    const mailHit = !siteHit && domainBase ? agree(domainBase) : null;
-    company = siteHit ?? mailHit ?? cands[0] ?? null;
+    // The website is independent evidence — consulted over every candidate, even
+    // name-shaped ones the email step below must abstain on.
+    const siteHit = siteBase ? agreeIn(cands, siteBase) : null;
+    // Email evidence only when the mailbox belongs to a company. A public mailbox
+    // poisons this step either way (companyname@gmail.com and personname@gmail.com
+    // look identical), so name-shaped lines abstain entirely rather than coin-flip.
+    const screened = emailPublic
+      ? cands.filter((l) => !isNameShaped(l))
+      : cands.filter((l) => !isPersonLine(l, emailLocal));
+    const mailHit = !siteHit && domainBase ? agreeIn(screened, domainBase) : null;
+    company = siteHit ?? mailHit ?? screened[0] ?? null;
     companyWhy = siteHit ? 'site' : mailHit ? 'domain' : company ? 'top' : null;
   }
   if (company && lines.includes(company)) {
@@ -652,11 +819,21 @@ export function parseCardText(text: string): ReadResult {
   }
   if (company) {
     const hardWon = hard.includes(company) || (company.includes(' ') && hard.some((h) => company!.includes(h)));
-    const conf = hardWon ? 0.85 : companyWhy === 'site' ? 0.8 : companyWhy === 'domain' ? 0.75 : 0.5;
-    const reason = hardWon ? undefined
+    let value = company;
+    let conf = hardWon ? 0.85 : companyWhy === 'site' ? 0.8 : companyWhy === 'domain' ? 0.75 : 0.5;
+    let reason = hardWon ? undefined
       : companyWhy === 'site' ? 'Matches the website address'
       : companyWhy === 'domain' ? 'Matches the email address' : 'Taken from the top of the card';
-    out.company = mark(company, conf, reason);
+    if (!hardWon && companyWhy === 'site' && siteBase) {
+      // The logo read is often the misread one — the website domain spells it right.
+      const fixed = repairCompanySpelling(company, siteBase);
+      if (fixed !== company) {
+        value = fixed;
+        conf = 0.75;
+        reason = 'Spelling fixed from the website address';
+      }
+    }
+    out.company = mark(value, conf, reason);
     used.add(company);
   }
 
@@ -671,15 +848,16 @@ export function parseCardText(text: string): ReadResult {
 
   // Name: scored, not first-match — "ayakumar P" (lowercased by a misread) still beats debris.
   // “Dr. Katharina Vogel” → the honorific is dropped, “Katharina” / “Vogel”.
-  const nameLine = pickName(lines, used, emailLocal, siteBase || domainBase);
+  const nameLine = pickName(lines, used, emailLocal, siteBase || domainBase, emailPublic);
   if (nameLine) {
     const [first, last] = splitName(nameLine);
     if (first && last) {
       out.first_name = mark(first, 0.75);
       out.last_name = mark(last, 0.75);
     }
-  } else if (email) {
-    // Last resort: many company addresses are first.last@…
+  } else if (email && !emailPublic) {
+    // Last resort: many company addresses are first.last@… — but never from a
+    // public mailbox, where the local part could be either side.
     const local = email.split('@')[0]!;
     const m = local.match(/^([a-z]+)[._-]([a-z]+)$/i);
     if (m) {
@@ -696,6 +874,29 @@ export function parseCardText(text: string): ReadResult {
     const co = squashForSim(out.company.value);
     const nm = squashForSim(`${out.first_name.value} ${out.last_name.value}`);
     if (co && co === nm) delete out.company;
+  }
+
+  // Address: street + postcode lines, joined in card order. A 6-digit PIN anchors an
+  // address on its own; a 5-digit postcode needs a street marker or comma beside it
+  // (so years and order numbers never qualify), and fax lines are never addresses.
+  const PINCODE = /\b[1-9]\d{5}\b/;
+  const POSTCODE5 = /\b\d{5}\b/;
+  const STREET = /\b(stra[sß]e|strasse|str\.|platz|weg|gasse|allee|ring|ufer|rue|avenue|av\.|boulevard|bd\.|impasse|chemin|place|quai|route|via|viale|piazza|corso|vicolo|largo|calle|avenida|plaza|paseo|carrer|camino|straat|laan|plein|kade|dijk|singel|weg|rua|travessa|praca|praça|street|st\.|road|rd\.|lane|drive|park|square|suite|floor|unit|nagar|marg|gali|colony|layout|enclave|vihar|puram|cross|main|plot|highway)(?![A-Za-z])/i;
+  const addrLines = lines.filter((l) => {
+    // The country line often IS the address tail — it stays eligible here.
+    if ((used.has(l) && l !== countryLine) || l.includes('@') || FAX.test(l)) return false;
+    let s = 0;
+    if (PINCODE.test(l)) s += 3;
+    else if (POSTCODE5.test(l) && (STREET.test(l) || l.includes(','))) s += 2;
+    if (STREET.test(l)) s += 2;
+    if (/\d/.test(l)) s += 1;
+    return s >= 3;
+  }).slice(0, 3);
+  if (addrLines.length) {
+    const hasPin = addrLines.some((l) => PINCODE.test(l));
+    out.address = mark(addrLines.join(', '), hasPin ? 0.7 : 0.55,
+      hasPin ? undefined : 'No postcode on the card — check the address');
+    addrLines.forEach((l) => used.add(l));
   }
 
   return out;

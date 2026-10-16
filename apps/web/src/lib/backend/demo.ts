@@ -151,6 +151,9 @@ const DEFAULT_FIELDS: [string, string, FieldDefinition['type'], boolean, string]
   ['phone', 'Phone', 'phone', false, 'Prefer the mobile number if there are several'],
   ['website', 'Website', 'link', false, ''],
   ['country', 'Country', 'text', false, 'Infer from address or phone prefix'],
+  ['address', 'Address', 'text', false, 'Street and postcode as printed'],
+  ['phone2', 'Second phone', 'phone', false, ''],
+  ['phone3', 'Third phone', 'phone', false, ''],
   ['product_interest', 'Product interest', 'choice', false, ''],
 ];
 

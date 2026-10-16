@@ -10,13 +10,17 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   server: {
-    allowedHosts: ['.trycloudflare.com'],
+    // Allow Cloudflare quick-tunnel hosts (each run gets a new random subdomain).
+    allowedHosts: true,
     watch: {
       // Playwright writes traces and screenshots here while a run is in progress; watching them
       // sends the dev server into a reload loop and the site stops answering.
       // Test sources are never bundled, so saving them must not reload the app mid-run either.
       ignored: ['**/e2e/.results/**', '**/e2e/.report/**', '**/e2e/*.ts', '**/dist/**', '**/docs/**'],
     },
+  },
+  preview: {
+    allowedHosts: true,
   },
   plugins: [
     preact(),

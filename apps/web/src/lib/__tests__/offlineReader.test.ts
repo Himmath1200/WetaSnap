@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { domainBaseOf, domainScoreOf, isFreeMailDomain, isPersonLine, parseCardText } from '../offlineReader';
+import { domainBaseOf, domainScoreOf, isFreeMailDomain, isNameShaped, isPersonLine, parseCardText, repairCompanySpelling } from '../offlineReader';
 
 /**
  * The parser turns the lines an OCR engine read into card fields. The samples below are real
@@ -71,7 +71,21 @@ describe('parseCardText', () => {
       expect(r.website, `no website from ${domain}`).toBeUndefined();
       // And the name line is not stolen as the company either.
       expect(r.company, `no company from ${domain}`).toBeUndefined();
-      // The name fallback still uses the local part — only the website guess is blocked.
+      // The name still resolves by shape plus a whisper of local-part tiebreak.
+      expect(r.first_name?.value).toBe('Priya');
+      expect(r.last_name?.value).toBe('Nair');
+    }
+  });
+
+  it('a public mailbox abstains on the company either way round', () => {
+    // Name-first and company-first: with gmail there is no signal, so the company
+    // stays blank in both orders instead of flipping a coin — the name still resolves.
+    for (const cardLines of [
+      ['Priya Nair', 'Enrich Spaces', 'priya.nair@gmail.com', '+91 98400 12345'],
+      ['Enrich Spaces', 'Priya Nair', 'priya.nair@gmail.com', '+91 98400 12345'],
+    ]) {
+      const r = parseCardText(cardLines.join('\n'));
+      expect(r.company, `no company guess for ${cardLines[0]}`).toBeUndefined();
       expect(r.first_name?.value).toBe('Priya');
       expect(r.last_name?.value).toBe('Nair');
     }
@@ -100,6 +114,10 @@ describe('parseCardText', () => {
     expect(isPersonLine('Priya Nair', 'info')).toBe(false);
     expect(isPersonLine('Enrich Spaces', 'info')).toBe(false); // no signal either way
     expect(isPersonLine('Enrich Spaces', '')).toBe(false);
+    expect(isNameShaped('Priya Nair')).toBe(true);
+    expect(isNameShaped('Enrich Spaces')).toBe(true);
+    expect(isNameShaped('ENRICH')).toBe(false);
+    expect(isNameShaped('Chennai 600118')).toBe(false);
   });
 
   it('cross-checks name and company against the email domain', () => {
@@ -178,6 +196,30 @@ describe('parseCardText', () => {
     expect(r.last_name?.value).toBe('Balaraman');
   });
 
+  it('repairs the company spelling from the website, keeping word breaks', () => {
+    expect(repairCompanySpelling('Ennich Spaces', 'enrichspaces')).toBe('Enrich Spaces');
+    expect(repairCompanySpelling('ENNICH SPACES', 'enrichspaces')).toBe('ENRICH SPACES');
+    expect(repairCompanySpelling('Enrich Spaces', 'enrichspaces')).toBe('Enrich Spaces');
+    expect(repairCompanySpelling('Priya Nair', 'enrichspaces')).toBe('Priya Nair');
+    expect(repairCompanySpelling('Enrich Spaces', '')).toBe('Enrich Spaces');
+  });
+
+  it('fixes a misread logo from the printed website', () => {
+    const r = parseCardText([
+      'Ennich Spaces',
+      'Preeti Balaraman',
+      'preeti@enrichspaces.co.in',
+      'www.enrichspaces.co.in',
+      '+91 99406 42190',
+    ].join('\n'));
+
+    expect(r.company?.value).toBe('Enrich Spaces');
+    expect(r.company?.confidence).toBe(0.75);
+    expect(r.company?.reason).toMatch(/website/i);
+    expect(r.first_name?.value).toBe('Preeti');
+    expect(r.last_name?.value).toBe('Balaraman');
+  });
+
   it('never stores the person as the company', () => {
     // A card with nothing but a name and a public mailbox: no company to find.
     const r = parseCardText(['Priya Nair', 'priya.nair@gmail.com', '+91 98400 12345'].join('\n'));
@@ -185,6 +227,125 @@ describe('parseCardText', () => {
     expect(r.company).toBeUndefined();
     expect(r.first_name?.value).toBe('Priya');
     expect(r.last_name?.value).toBe('Nair');
+  });
+
+  it('reads names with initials, and single letters do not become the company', () => {
+    const r = parseCardText([
+      'VR Foods',
+      'V Rakesh Reddy',
+      'Purchase Manager',
+      'v.rakesh@vrfoods.in',
+      '+91 98400 12345',
+    ].join('\n'));
+
+    expect(r.company?.value).toBe('VR Foods');
+    expect(r.first_name?.value).toBe('V Rakesh');
+    expect(r.last_name?.value).toBe('Reddy');
+    expect(r.job_title?.value).toBe('Purchase Manager');
+  });
+
+  it('reads dotted initials in the middle of a name', () => {
+    const r = parseCardText([
+      'Christian R.S. Arokiaswamy',
+      'christian@arokia.in',
+      '+91 98400 12346',
+    ].join('\n'));
+
+    expect(r.first_name?.value).toBe('Christian R.S.');
+    expect(r.last_name?.value).toBe('Arokiaswamy');
+  });
+
+  it('keeps every distinct number: comma-joined and two places', () => {
+    const r = parseCardText([
+      'Priya Nair',
+      'M: +91 98400 12345, +91 98410 54321',
+      'T: +91 44 2812 3456',
+      'priya@enrichspaces.co.in',
+    ].join('\n'));
+
+    expect(r.phone?.value).toBe('+91 98400 12345');
+    expect(r.phone2?.value).toBe('+91 98410 54321');
+    expect(r.phone3?.value).toBe('+91 44 2812 3456');
+  });
+
+  it('defaults a bare 10-digit mobile to India only with Indian context', () => {
+    const withContext = parseCardText([
+      'Priya Nair',
+      'M: +91 98400 12345',
+      'T: 98410 54321',
+      'priya@enrichspaces.co.in',
+    ].join('\n'));
+    expect(withContext.phone2?.value).toBe('+91 9841054321');
+
+    const printed = parseCardText([
+      'Priya Nair',
+      '98410 54321',
+      'Chennai, India',
+    ].join('\n'));
+    expect(printed.phone?.value).toBe('+91 9841054321');
+
+    // A German card keeps its bare number untouched.
+    const german = parseCardText([
+      'Lea Koch',
+      'Tel 0151 2345678',
+      'lea.koch@nordsaat.de',
+    ].join('\n'));
+    expect(german.phone?.value).toBe('0151 2345678');
+  });
+
+  it('reads the street address with a 6-digit pincode', () => {
+    const r = parseCardText([
+      'Enrich Spaces',
+      'Preeti Balaraman',
+      'First Door, 3/4, East Coast Rd.',
+      'Neelankarai, Chennai 600118',
+      'preeti@enrichspaces.co.in',
+      '+91 99406 42190',
+    ].join('\n'));
+
+    expect(r.address?.value).toBe('First Door, 3/4, East Coast Rd., Neelankarai, Chennai 600118');
+    expect(r.address?.confidence).toBeGreaterThanOrEqual(0.6);
+    expect(r.company?.value).toBe('Enrich Spaces');
+    expect(r.first_name?.value).toBe('Preeti');
+  });
+
+  it('reads a street address without a pincode, flagged for checking', () => {
+    const r = parseCardText([
+      'Nordsaat GmbH',
+      'Am Schwabeplan 8, 39164 Magdeburg, Germany',
+    ].join('\n'));
+
+    expect(r.address?.value).toBe('Am Schwabeplan 8, 39164 Magdeburg, Germany');
+    expect(r.address?.reason).toMatch(/postcode/i);
+  });
+
+  it('recognises founder, proprietor and lead titles as roles', () => {
+    const founder = parseCardText([
+      'FieldFirst UK',
+      'Amelia Hughes',
+      'Founder & CEO',
+      'amelia@fieldfirst.co.uk',
+    ].join('\n'));
+    expect(founder.job_title?.value).toBe('Founder & CEO');
+    expect(founder.first_name?.value).toBe('Amelia');
+
+    const dealer = parseCardText([
+      'Cauvery Fertilisers',
+      'Mohan Gowda',
+      'Proprietor',
+      'mohan@cauvery.in',
+    ].join('\n'));
+    expect(dealer.job_title?.value).toBe('Proprietor');
+    expect(dealer.company?.value).toBe('Cauvery Fertilisers');
+
+    const lead = parseCardText([
+      'Greenline Agritech',
+      'James Carter',
+      'Product Lead',
+      'james@greenline.co.uk',
+    ].join('\n'));
+    expect(lead.job_title?.value).toBe('Product Lead');
+    expect(lead.first_name?.value).toBe('James');
   });
 
   it('Ageas card: merged columns split, mobile wins, India from the dialling code', () => {

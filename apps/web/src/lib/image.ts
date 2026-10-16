@@ -211,3 +211,67 @@ export function placement(c: FrameCheck): Placement {
   if (c.ink > 0.55) return 'none';
   return 'ok';
 }
+
+/** Index of the sharpest frame — burst capture keeps this one. Pure. */
+export function pickSharpest(frames: Array<{ data: Uint8ClampedArray; w: number; h: number }>): number {
+  let best = 0;
+  let bestScore = -1;
+  frames.forEach((f, i) => {
+    const s = sharpness(f.data, f.w, f.h);
+    if (s > bestScore) { bestScore = s; best = i; }
+  });
+  return best;
+}
+
+/** Blown-out white with almost no print: specular glare, not paper. Pure. */
+export function isGlare(data: Uint8ClampedArray, w: number, h: number): boolean {
+  const n = Math.max(1, w * h);
+  let hot = 0;
+  let ink = 0;
+  for (let i = 0; i < n; i++) {
+    const g = 0.299 * data[i * 4]! + 0.587 * data[i * 4 + 1]! + 0.114 * data[i * 4 + 2]!;
+    if (g >= 250) hot++;
+    else if (Math.abs(g - 235) > 40) ink++;
+  }
+  return hot / n > 0.12 && ink / n < 0.02;
+}
+
+/** Grab n frames gapMs apart from the live video, return the sharpest crop. */
+export async function burstCrop(
+  src: HTMLVideoElement, crop: { x: number; y: number; w: number; h: number }, n = 3, gapMs = 220,
+): Promise<HTMLCanvasElement> {
+  const shots: HTMLCanvasElement[] = [];
+  for (let i = 0; i < n; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, gapMs));
+    if (!src.videoWidth) break;
+    try {
+      const c = document.createElement('canvas');
+      c.width = Math.max(2, Math.round(crop.w));
+      c.height = Math.max(2, Math.round(crop.h));
+      c.getContext('2d')!.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, c.width, c.height);
+      shots.push(c);
+    } catch {
+      break;
+    }
+  }
+  if (shots.length <= 1) return shots[0] ?? blankBurstCanvas();
+  let best = shots[0]!;
+  let bestScore = -1;
+  const t = document.createElement('canvas');
+  t.width = 80;
+  t.height = 50;
+  const tctx = t.getContext('2d', { willReadFrequently: true })!;
+  for (const s of shots) {
+    tctx.drawImage(s, 0, 0, 80, 50);
+    const sc = sharpness(tctx.getImageData(0, 0, 80, 50).data, 80, 50);
+    if (sc > bestScore) { bestScore = sc; best = s; }
+  }
+  return best;
+}
+
+function blankBurstCanvas(): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = 2;
+  c.height = 2;
+  return c;
+}

@@ -134,12 +134,19 @@ LEGAL_SUFFIX_RE = re.compile(
 
 JOB_TITLE_RE = re.compile(
     r"(?i)\b("
-    r"ceo|cto|cfo|coo|cmo|cio|chief|president|vice\s+president|vp|"
+    r"ceo|cto|cfo|coo|cmo|cio|chief|chairman|chairwoman|evp|svp|avp|"
+    r"president|presidente|président|vice\s+president|vp|"
     r"managing\s+director|director|directrice|directeur|direttore|diretor|director[ae]|"
-    r"manager|management|head\s+of|lead|leader|owner|founder|co-?founder|partner|"
-    r"geschaftsfuhrer|geschäftsführer|geschaeftsfuehrer|inhaber|leiter(?:in)?|prokurist(?:in)?|vertrieb(?:sleiter)?|"
-    r"responsable|responsabile|responsavel|respons[áa]vel|gerente|jefe|encargado|"
-    r"zaakvoerder|bestuurder|inkoper|verkoopleider|directeur|"
+    r"manager|management|head\s+of|lead|team\s+leader|leader|owner|proprietor|founder|co-?founder|partner|"
+    r"geschaftsfuhrer|geschäftsführer|geschaeftsfuehrer|gründer|vorstand|inhaber|leiter(?:in)?|prokurist(?:in)?|vertrieb(?:sleiter)?|"
+    r"responsable|responsabile|responsavel|respons[áa]vel|gerente|jefe|encargado|fondateur|gérant|commercial|comptable|"
+    r"zaakvoerder|bestuurder|oprichter|eigenaar|inkoper|verkoper|adviseur|verkoopleider|directeur|"
+    r"fundador|fondatore|titolare|amministratore|consulente|presidente|sócio|socio|propietario|proprietário|proprietario|vendedor|comercial|contable|"
+    r"supervisor|foreman|coordinator|administrator|secretary|treasurer|trustee|governor|assistant|associate|"
+    r"dealer|distributor|retailer|wholesaler|supplier|vendor|contractor|builder|merchant|trader|farmer|freelancer|"
+    r"accountant|auditor|banker|broker|agent|advisor|adviser|analyst|designer|developer|architect|doctor|nurse|lawyer|advocate|"
+    r"writer|editor|journalist|photographer|artist|musician|actor|driver|coach|trainer|teacher|professor|lecturer|instructor|researcher|scientist|"
+    r"receptionist|clerk|cashier|intern|trainee|apprentice|agronom|agronomo|"
     r"sales|vendas|ventas|vendite|vente[s]?|verkauf|verkoop|marketing|"
     r"purchasing|procurement|einkauf|acquisti|achats|compras|"
     r"engineer|ingenieur|ing[ée]nieur|ingegnere|ingeniero|consultant|berater(?:in)?|"
@@ -173,12 +180,14 @@ STREET_RE = re.compile(
     r"calle|c\/|avenida|plaza|paseo|carrer|camino|"                      # ES
     r"straat|laan|plein|kade|dijk|singel|weg|"                           # NL
     r"rua|avenida|travessa|largo|praca|pra[çc]a|"                        # PT
-    r"street|st\.|road|rd\.|lane|drive|park|square|suite|floor|unit"     # EN
+    r"street|st\.|road|rd\.|lane|drive|park|square|suite|floor|unit|"    # EN
+    r"nagar|marg|gali|colony|layout|enclave|vihar|puram|cross|main|plot|highway"  # IN
     r")(?![a-z])"
 )
 
 # postcode + town, per country shape
 POSTCODE_RES: dict[str, re.Pattern[str]] = {
+    "IN": re.compile(r"\b[1-9]\d{5}\b"),  # Indian PIN: six digits, never leading zero
     "NL": re.compile(r"\b\d{4}\s?[A-Z]{2}\b"),
     "PT": re.compile(r"\b\d{4}-\d{3}\b"),
     "GB": re.compile(r"\b[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}\b"),
@@ -304,6 +313,7 @@ def _looks_mobile(e164: str) -> bool:
         ("+351", r"^9"),           # PT
         ("+32", r"^4"),            # BE
         ("+44", r"^7"),            # UK
+        ("+91", r"^[6-9]"),        # IN
     ):
         if e164.startswith(cc):
             return bool(re.match(pattern, e164[len(cc):]))
@@ -451,6 +461,53 @@ def _bigram_sim(a: str, b: str) -> float:
     return 2 * hit / total if total else 0.0
 
 
+def _edit_distance(a: str, b: str) -> int:
+    """Plain Levenshtein distance — for single-slip OCR repairs."""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        diag, prev[0] = prev[0], i
+        for j, cb in enumerate(b, 1):
+            tmp = prev[j]
+            prev[j] = min(prev[j] + 1, prev[j - 1] + 1, diag + (ca != cb))
+            diag = tmp
+    return prev[len(b)]
+
+
+def _repair_company_spelling(line: str, base: str) -> str:
+    """Fix OCR slips in a company line against the website domain.
+
+    Each long word missing from the domain takes its closest domain substring
+    (one slip, two for long words), keeping case pattern and position.
+    """
+    if not base or _domain_score(line, base) >= 1.0:
+        return line
+    changed = False
+    out: list[str] = []
+    for tok in re.split(r"(\s+)", line):
+        if not re.search(r"[A-Za-z]", tok) or len(tok) < 4:
+            out.append(tok)
+            continue
+        wl = tok.lower()
+        if wl in base:
+            out.append(tok)
+            continue
+        allow = 2 if len(wl) >= 7 else 1
+        best, best_dist = "", 10**9
+        for length in range(max(4, len(wl) - 2), len(wl) + 3):
+            for i in range(max(0, len(base) - length) + 1):
+                sub = base[i:i + length]
+                d = _edit_distance(wl, sub)
+                if d < best_dist:
+                    best_dist, best = d, sub
+        if best_dist > allow or not best:
+            out.append(tok)
+            continue
+        changed = True
+        letters = re.sub(r"[^A-Za-z]", "", tok)
+        out.append(best.upper() if letters and letters == letters.upper() else best.capitalize())
+    return "".join(out) if changed else line
+
+
 def _domain_score(text: str, base: str) -> float:
     """How much a card line agrees with the email domain (0–1)."""
     if not base or len(base) < 2:
@@ -469,17 +526,22 @@ def _domain_score(text: str, base: str) -> float:
     return sim if sim >= 0.55 else 0.0
 
 
+def _is_name_shaped(text: str) -> bool:
+    """2–4 plain words — ambiguous between a person and a company without other signals."""
+    words = _clean(text).split()
+    return 2 <= len(words) <= 4 and all(
+        re.fullmatch(r"[A-Za-z][A-Za-z'’.\-]*", w) for w in words
+    )
+
+
 def _looks_like_person(text: str, local: str) -> bool:
     """A name-shaped line matching the email local part belongs to the person."""
-    words = _clean(text).split()
-    if not (2 <= len(words) <= 4):
-        return False
-    if not all(re.fullmatch(r"[A-Za-z][A-Za-z'’.\-]*", w) for w in words):
+    if not _is_name_shaped(text):
         return False
     local_sq = _squash(local)
     if not local_sq:
         return False
-    return any(len(_squash(w)) >= 3 and _squash(w) in local_sq for w in words)
+    return any(len(_squash(w)) >= 3 and _squash(w) in local_sq for w in _clean(text).split())
 
 
 def find_email(lines: Sequence[Line]) -> Optional[tuple[str, float, int]]:
@@ -551,16 +613,28 @@ def find_company(
         for i, line in enumerate(lines):
             if i in skip or EMAIL_RE.search(line.text) or URL_RE.search(line.text):
                 continue
-            if _bigram_sim(_squash(line.text), base) >= 0.55:
-                return _clean(line.text), fuzzy_conf, i, why
+            if _bigram_sim(_squash(line.text), base) < 0.55:
+                continue
+            text = _clean(line.text)
+            if from_site:
+                # The logo read is often the misread one — the website spells it right.
+                fixed = _repair_company_spelling(text, base)
+                if fixed != text:
+                    return fixed, 0.75, i, "site-spelling-fixed"
+            return text, fuzzy_conf, i, why
 
-    # Fall back to the biggest line that is not the person.
+    # Fall back to the biggest line that is not the person. A public mailbox poisons
+    # this step either way, so name-shaped lines abstain entirely rather than coin-flip.
+    email_public = bool(mail_host and is_free_mail_domain(mail_host))
     local = email.split("@", 1)[0] if email and "@" in email else ""
     ranked = _by_prominence(lines, skip)
     for i, line in ranked:
         if _is_contact_line(line.text) or JOB_TITLE_RE.search(line.text):
             continue
-        if _looks_like_person(line.text, local):
+        if email_public:
+            if _is_name_shaped(line.text):
+                continue
+        elif _looks_like_person(line.text, local):
             continue
         return _clean(line.text), 0.5, i, "largest-remaining"
     return None
@@ -613,10 +687,11 @@ def find_name(
         if website else ""
     )
     mail_host = email.split("@", 1)[1].strip().lower() if email and "@" in email else ""
+    email_public = bool(mail_host and is_free_mail_domain(mail_host))
     base = ""
     if web_host and not is_free_mail_domain(web_host):
         base = domain_base_of(web_host)
-    if not base and mail_host and not is_free_mail_domain(mail_host):
+    if not base and not email_public:
         base = domain_base_of(mail_host)
 
     candidates: list[tuple[int, Line]] = []
@@ -624,12 +699,18 @@ def find_name(
         text = line.text
         if _is_contact_line(text) or LEGAL_SUFFIX_RE.search(text):
             continue
-        if base and _domain_score(text, base) >= 0.75:
-            continue
         if re.search(r"\d", text) or JOB_TITLE_RE.search(text) or STREET_RE.search(text):
             continue
         words = [w for w in _clean(text).split() if _norm(w) not in HONORIFICS]
         if not (2 <= len(words) <= 4):
+            continue
+        # Person proof first: a line matching the email local part is the person even
+        # when it also contains the domain ("Arokiaswamy" in christian@arokia.in).
+        local_hits = sum(
+            1 for w in words if len(_squash(w)) >= 3 and _squash(w) in local
+        ) if local else 0
+        # Cross-check: a line that IS the web or email domain is the company, never the person.
+        if local_hits == 0 and base and _domain_score(text, base) >= 0.75:
             continue
         candidates.append((i, line))
 
@@ -646,6 +727,9 @@ def find_name(
                 best = (matches, i, line)
         if best is not None:
             matches, i, line = best
+            # A public mailbox only whispers — same pick, less certainty.
+            if email_public:
+                return _clean(line.text), 0.8 if matches >= 2 else 0.75, i, "matches-email"
             return _clean(line.text), 0.95 if matches >= 2 else 0.88, i, "matches-email"
 
     i, line = candidates[0]
@@ -833,7 +917,7 @@ def parse_vcard(payload: str) -> dict[str, str]:
 
 Role = Literal[
     "first_name", "last_name", "full_name", "company", "job_title",
-    "email", "phone", "mobile", "website", "address", "city", "country", "notes", "unknown",
+    "email", "phone", "phone2", "phone3", "mobile", "website", "address", "city", "country", "notes", "unknown",
 ]
 
 _ROLE_WORDS: list[tuple[Role, tuple[str, ...]]] = [
@@ -844,6 +928,8 @@ _ROLE_WORDS: list[tuple[Role, tuple[str, ...]]] = [
     ("company", ("company", "organisation", "organization", "employer", "firm", "account", "firma", "unternehmen", "entreprise", "societe", "empresa", "azienda", "bedrijf")),
     ("email", ("email", "e mail", "mail", "courriel", "correo", "correio")),
     ("mobile", ("mobile", "cell", "cellphone", "handy", "movil", "cellulare", "telemovel", "gsm", "portable")),
+    ("phone2", ("second phone", "phone 2", "phone2", "alt phone", "other phone", "additional phone", "second number", "landline", "office phone", "work phone", "desk phone", "festnetz", "zweites telefon")),
+    ("phone3", ("third phone", "phone 3", "phone3", "alt phone 2", "other phone 2")),
     ("phone", ("phone", "telephone", "tel", "telefon", "telefono", "telefoon", "number", "nummer", "numero")),
     ("website", ("website", "web", "site", "url", "homepage", "webseite", "sitio", "sito")),
     ("address", ("address", "street", "adresse", "strasse", "direccion", "indirizzo", "adres", "morada", "endereco")),
@@ -925,6 +1011,10 @@ class _Card:
     phone_reason: Optional[str] = None
     mobile: Optional[str] = None
     mobile_conf: float = 0.0
+    phone2: Optional[str] = None
+    phone2_conf: float = 0.0
+    phone3: Optional[str] = None
+    phone3_conf: float = 0.0
     name: Optional[str] = None
     name_conf: float = 0.0
     name_why: str = ""
@@ -962,9 +1052,16 @@ def read_card(lines: Sequence[Line], language: Optional[str] = None) -> _Card:
     hits = [h for h in find_phones(lines) if h.kind != "fax"]
     for h in hits:
         used.add(h.line_index)
+    # A bare 10-digit mobile starting 6–9 is Indian when the card says so: a +91
+    # sibling, or India printed on it. Otherwise the digits stay as printed.
+    india_hint = any(
+        len(re.sub(r"\D", "", h.raw)) > 10 and re.sub(r"\D", "", h.raw).startswith("91")
+        for h in hits
+    ) or any(re.search(r"(?i)\bindia\b", line.text) for line in lines)
+    cc = calling_code or ("91" if india_hint else None)
     numbers = []
     for h in hits:
-        value, international = normalise_phone(h.raw, calling_code)
+        value, international = normalise_phone(h.raw, cc)
         if value:
             numbers.append((h, value, international))
 
@@ -987,13 +1084,33 @@ def read_card(lines: Sequence[Line], language: Optional[str] = None) -> _Card:
             card.phone_reason = "No country code on the card — check the dialling code"
         card.phone_conf = _blend(certainty, hit.ocr_confidence)
 
+        # Every further distinct number gets its own slot so none is lost.
+        seen = {re.sub(r"\D", "", value)}
+        extras: list[tuple[str, float]] = []
+        for h, v, _ in numbers:
+            d = re.sub(r"\D", "", v)
+            if not d or v == value or d in seen:
+                continue
+            seen.add(d)
+            extras.append((v, _blend(0.7, h.ocr_confidence)))
+        if len(extras) > 0:
+            card.phone2, card.phone2_conf = extras[0]
+        if len(extras) > 1:
+            card.phone3, card.phone3_conf = extras[1]
+
     got_name = find_name(lines, card.email, used, card.website)
     if got_name:
         card.name, certainty, idx, card.name_why = got_name
         used.add(idx)
         card.name_conf = _blend(certainty, lines[idx].confidence)
 
-    got_company = find_company(lines, card.email, card.website, used)
+    got_company = find_company(
+        lines, card.email,
+        # Only a printed website counts as website evidence — the email-guessed one
+        # would be circular (it came from the same domain).
+        card.website if card.website_why == "on-the-card" else None,
+        used,
+    )
     if got_company:
         card.company, certainty, idx, card.company_why = got_company
         used.add(idx)
@@ -1036,6 +1153,7 @@ _REASONS = {
     "largest-remaining": "No legal suffix on the card, so this is a guess at the company",
     "domain-match": "Taken from the web address",
     "site-domain-match": "Matches the website address",
+    "site-spelling-fixed": "Spelling fixed from the website address",
     "email-domain": "Guessed from the email address",
     "web-address": "Worked out from the web address, not printed on the card",
     "phone-prefix": "Worked out from the dialling code",
@@ -1111,6 +1229,12 @@ def extract_fields(
             prefers_mobile = "mobil" in _norm(spec.ai_hint) or "mobile" in _norm(spec.ai_hint)
             value = card.mobile if (prefers_mobile and card.mobile) else card.phone
             _put(out, spec.key, value or "", card.phone_conf, card.phone_reason)
+        elif role == "phone2" and card.phone2:
+            _put(out, spec.key, card.phone2, card.phone2_conf,
+                 "Another number from the same card — check which is which")
+        elif role == "phone3" and card.phone3:
+            _put(out, spec.key, card.phone3, card.phone3_conf,
+                 "Another number from the same card — check which is which")
         elif role in ("full_name",) and card.name:
             _put(out, spec.key, card.name, card.name_conf, _REASONS.get(card.name_why))
         elif role in ("first_name", "last_name") and card.name:

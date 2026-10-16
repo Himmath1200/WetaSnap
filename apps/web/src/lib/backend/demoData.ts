@@ -133,6 +133,8 @@ const DEFAULT_FIELDS: [string, string, FieldDefinition['type'], boolean][] = [
   ['first_name', 'First name', 'text', true], ['last_name', 'Last name', 'text', true], ['company', 'Company', 'text', false],
   ['job_title', 'Job title', 'text', false], ['email', 'Email', 'email', false], ['phone', 'Phone', 'phone', false],
   ['website', 'Website', 'link', false], ['country', 'Country', 'text', false],
+  ['address', 'Address', 'text', false],
+  ['phone2', 'Second phone', 'phone', false], ['phone3', 'Third phone', 'phone', false],
 ];
 const TAG_SETS: [string, TagColour][][] = [
   [['Hot prospect', 'red'], ['Dealer', 'blue'], ['Follow up', 'amber'], ['Existing customer', 'green']],

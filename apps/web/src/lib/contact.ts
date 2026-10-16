@@ -20,6 +20,8 @@ export function leadToVCard(l: Lead, defs: FieldDefinition[], eventName?: string
     v(l, 'job_title') && `TITLE:${esc(v(l, 'job_title'))}`,
     v(l, 'email') && `EMAIL;TYPE=WORK:${esc(v(l, 'email'))}`,
     v(l, 'phone') && `TEL;TYPE=CELL:${esc(v(l, 'phone'))}`,
+    v(l, 'phone2') && `TEL;TYPE=WORK:${esc(v(l, 'phone2'))}`,
+    v(l, 'phone3') && `TEL;TYPE=WORK:${esc(v(l, 'phone3'))}`,
     v(l, 'website') && `URL:${esc(v(l, 'website'))}`,
     (v(l, 'address') || v(l, 'country')) && `ADR;TYPE=WORK:;;${esc(v(l, 'address'))};;;;${esc(v(l, 'country'))}`,
     note && `NOTE:${esc(note)}`,

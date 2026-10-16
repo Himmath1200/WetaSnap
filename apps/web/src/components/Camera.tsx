@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { CameraOff, SwitchCamera } from 'lucide-preact';
-import { analyseFrame, frameRect, motion, placement, sharpness } from '../lib/image';
+import { CameraOff, SwitchCamera, Zap, ZapOff } from 'lucide-preact';
+import { analyseFrame, burstCrop, frameRect, isGlare, motion, placement, sharpness } from '../lib/image';
 import { t } from '../lib/i18n';
 
 export interface CameraHandle { capture: () => void }
 
 interface Props {
   active: boolean;
-  onCapture: (video: HTMLVideoElement, crop: { x: number; y: number; w: number; h: number }) => void;
+  onCapture: (shot: HTMLCanvasElement) => void;
   handle?: (h: CameraHandle) => void;
   autoCapture?: boolean;
 }
@@ -39,8 +39,10 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(() => localStorage.getItem('wetasnap-camera'));
-  const [hint, setHint] = useState<'find' | 'blank' | 'far' | 'hold' | 'blur' | 'ready'>('find');
+  const [hint, setHint] = useState<'find' | 'blank' | 'far' | 'hold' | 'blur' | 'glare' | 'ready'>('find');
   const [flash, setFlash] = useState(false);
+  const [torch, setTorch] = useState(false);
+  const [torchOk, setTorchOk] = useState(false);
   const onCap = useRef(onCapture);
   onCap.current = onCapture; // the auto-capture interval must always call the latest handler
 
@@ -50,7 +52,8 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
     setFlash(true);
     setTimeout(() => setFlash(false), 180);
     navigator.vibrate?.(30);
-    onCap.current(v, frameRect(v.videoWidth, v.videoHeight));
+    // Burst: 3 frames ~220ms apart, keep the sharpest — handshake blur is the top misread cause.
+    void burstCrop(v, frameRect(v.videoWidth, v.videoHeight)).then((shot) => onCap.current(shot));
   };
   useEffect(() => handle?.({ capture }));
 
@@ -74,6 +77,7 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
           await video.current.play().catch(() => {});
         }
         setError(null);
+        setTorchOk(!!(stream.getVideoTracks()[0]?.getCapabilities?.() as { torch?: boolean } | undefined)?.torch);
         const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
         setDevices(all);
       } catch (e) {
@@ -123,6 +127,7 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
       if (where !== 'ok') { steady = 0; setHint(where === 'none' ? 'find' : where); return; }
       if (!still) { steady = 0; setHint('hold'); return; }
       if (sharp < SHARP_MIN) { steady = 0; setHint('blur'); return; }
+      if (isGlare(px, SAMPLE_W, SAMPLE_H)) { steady = 0; setHint('glare'); return; }
       steady++;
       setHint('ready');
       if (steady >= STEADY_FRAMES) { steady = 0; cooldown = 12; code = false; capture(); }
@@ -138,12 +143,21 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
       </div>
     );
 
+  async function setTorchOn(on: boolean) {
+    const tr = (video.current?.srcObject as MediaStream | null)?.getVideoTracks()[0];
+    try {
+      await tr?.applyConstraints({ advanced: [{ torch: on } as Record<string, unknown>] });
+      setTorch(on);
+    } catch { /* torch unsupported on this camera */ }
+  }
+
   const hintText = {
     find: t('Place the card inside the frame'),
     blank: t('Nothing to read yet — a card, badge or QR code, please'),
     far: t('Move closer so the card fills the frame'),
     hold: t('Hold steady…'),
     blur: t('Too blurry — move a little closer or add light'),
+    glare: t('Too shiny — tilt the card a little'),
     ready: t('Capturing…'),
   }[hint];
 
@@ -158,9 +172,15 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
           ))}
         </div>
       </div>
-      <p class={`absolute inset-x-0 bottom-4 mx-auto w-fit rounded-full px-3 py-1 text-xs font-semibold backdrop-blur ${hint === 'blur' ? 'bg-amber-400/90 text-amber-950' : 'bg-black/50 text-white'}`}>{hintText}</p>
+      <p class={`absolute inset-x-0 bottom-4 mx-auto w-fit rounded-full px-3 py-1 text-xs font-semibold backdrop-blur ${hint === 'blur' || hint === 'glare' ? 'bg-amber-400/90 text-amber-950' : 'bg-black/50 text-white'}`}>{hintText}</p>
+      <div class="absolute top-3 right-3 flex items-center gap-2">
+      {torchOk && (
+        <button class="flex size-11 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur" onClick={() => void setTorchOn(!torch)} aria-label={t('Flash')}>
+          {torch ? <Zap class="size-5" /> : <ZapOff class="size-5" />}
+        </button>
+      )}
       {devices.length > 1 && (
-        <label class="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-black/50 py-1 pr-1 pl-2.5 text-white backdrop-blur">
+        <label class="flex items-center gap-1 rounded-full bg-black/50 py-1 pr-1 pl-2.5 text-white backdrop-blur">
           <SwitchCamera class="size-4" />
           <select class="max-w-40 bg-transparent py-1 text-xs font-medium outline-none" aria-label={t('Camera')} value={deviceId ?? ''}
             onChange={(e) => { const id = e.currentTarget.value; localStorage.setItem('wetasnap-camera', id); setDeviceId(id || null); }}>
@@ -169,6 +189,7 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
           </select>
         </label>
       )}
+      </div>
       {flash && <div class="absolute inset-0 bg-surface/70" />}
     </div>
   );

@@ -138,18 +138,27 @@ export default function ScanV2() {
     });
   }
 
-  function addBack(blob: Blob) {
+  async function addBack(blob: Blob) {
     setBackPhoto(blob);
     setBackThumb(URL.createObjectURL(blob));
     setCapturingBack(false);
     setAdjust(null);
     setMode('review');
     toast(t('Back of the card added'), 'success', 1500);
+    // Back often carries the address / QR — fill what the front left empty, never overwrite.
+    try {
+      const r = await readOffline(blob, s.company?.default_language ?? 'en', { silent: true });
+      setDraft((d) => {
+        const fields = { ...d.fields };
+        for (const [k, v] of Object.entries(r)) if (!fields[k]?.value?.trim()) fields[k] = { ...v, by: 'offline' };
+        return { ...d, fields };
+      });
+    } catch { /* front values stand */ }
   }
 
   /** Warped + cleaned scan → the review form (front) or the back slot. */
   async function onAdjustDone(blob: Blob) {
-    if (adjust?.back) { addBack(blob); return; }
+    if (adjust?.back) { await addBack(blob); return; }
     setAdjust(null);
     await startReview(blob, 'camera');
   }
@@ -230,6 +239,24 @@ export default function ScanV2() {
     return () => window.removeEventListener('keydown', h);
   });
 
+  const [retrying, setRetrying] = useState(false);
+  async function retryRead() {
+    if (!photo || retrying) return;
+    const token = ++readToken.current;
+    setRetrying(true);
+    setRead('reading');
+    try {
+      const r = await readOffline(photo, s.company?.default_language ?? 'en');
+      if (token !== readToken.current) return;
+      fillFromRead(r, 'offline');
+      setRead('offline');
+    } catch {
+      if (token === readToken.current) setRead('pending');
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   const draftAsLead = (): Lead => newLead(draft, source);
 
   async function onShare() {
@@ -256,6 +283,11 @@ export default function ScanV2() {
           <p class="text-sm font-bold">{t('Review & save')}</p>
           <ReadBadge state={read} />
         </div>
+        {(read === 'pending' || read === 'offline') && photo && (
+          <button class="btn-secondary ml-auto min-h-10 shrink-0 px-3 text-xs" disabled={retrying || read === 'reading'} onClick={() => void retryRead()}>
+            {retrying ? <Spinner class="size-4" /> : <RotateCcw class="size-4" />}{t('Re-read')}
+          </button>
+        )}
       </div>
       <div class="flex-1 overflow-y-auto px-4 py-4">
         <div class="mb-4 flex flex-wrap gap-2">
