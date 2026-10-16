@@ -330,18 +330,77 @@ export function domainScoreOf(line: string, base: string): number {
   return sim >= 0.55 ? sim : 0;
 }
 
+/** Plain Levenshtein distance — for single-slip OCR repairs. Pure. */
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j]!;
+      prev[j] = Math.min(prev[j]! + 1, prev[j - 1]! + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = tmp;
+    }
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * Repairs OCR slips in a company line against the website domain ("Ennich Spaces"
+ * + enrichspaces.co.in → "Enrich Spaces"). Each long word missing from the domain
+ * takes its closest domain substring (one slip, two for long words), keeping the
+ * word's case pattern and position — the printed word breaks survive, only letters
+ * change. Returns the line untouched when nothing is worth fixing. Pure: unit-tested.
+ */
+export function repairCompanySpelling(line: string, base: string): string {
+  if (!base || domainScoreOf(line, base) >= 1) return line;
+  let changed = false;
+  const out = line.split(/(\s+)/).map((tok) => {
+    if (!/[A-Za-z]/.test(tok) || tok.length < 4) return tok;
+    const wl = tok.toLowerCase();
+    if (base.includes(wl)) return tok;
+    const allow = wl.length >= 7 ? 2 : 1;
+    let best = '';
+    let bestDist = Infinity;
+    for (let len = Math.max(4, wl.length - 2); len <= wl.length + 2; len++) {
+      for (let i = 0; i + len <= base.length; i++) {
+        const sub = base.slice(i, i + len);
+        const d = editDistance(wl, sub);
+        if (d < bestDist) { bestDist = d; best = sub; }
+      }
+    }
+    if (bestDist > allow || !best) return tok;
+    changed = true;
+    return /^[A-Z]+$/.test(tok.replace(/[^A-Za-z]/g, '')) ? best.toUpperCase()
+      : best.charAt(0).toUpperCase() + best.slice(1);
+  });
+  return changed ? out.join('') : line;
+}
+
+/**
+ * Name-shaped: 2–4 plain words ("Priya Nair", "Enrich Spaces"). Shared by the
+ * person guard below — a public mailbox says nothing, so with gmail & friends
+ * any name-shaped line is ambiguous and the company fallback abstains instead of
+ * guessing. Pure: unit-tested.
+ */
+export function isNameShaped(line: string): boolean {
+  const words = line.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 4
+    && words.every((w) => /^[A-Za-z][\p{L}'’.-]*$/u.test(w));
+}
+
 /**
  * A name-shaped line that also matches the email local part ("Priya Nair" next to
  * priya.nair@…) belongs to the person — the company fallback must not steal it
- * before pickName runs. Pure: unit-tested.
+ * before pickName runs. Only meaningful for company mail: with a public mailbox
+ * the local part could be either side, so callers must check that first.
+ * Pure: unit-tested.
  */
 export function isPersonLine(line: string, emailLocal: string): boolean {
-  const words = line.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > 4) return false;
-  if (!words.every((w) => /^[A-Za-z][\p{L}'’.-]*$/u.test(w))) return false;
+  if (!isNameShaped(line)) return false;
   const local = squashForSim(emailLocal);
   if (!local) return false;
-  return words.some((w) => {
+  return line.split(/\s+/).some((w) => {
     const sq = squashForSim(w);
     return sq.length >= 3 && local.includes(sq);
   });
@@ -441,31 +500,37 @@ function extractEmail(text: string): { email: string; repaired: boolean } | null
 }
 
 /** Best line for the person's name: 2 words and a lone initial beat logo fragments and debris. */
-function pickName(lines: string[], used: Set<string>, emailLocal: string, domainBase = ''): string | null {
+function pickName(lines: string[], used: Set<string>, emailLocal: string, domainBase = '', emailPublic = false): string | null {
   let best: string | null = null;
   let bestScore = -1;
   lines.forEach((l, idx) => {
     if (used.has(l) || /[@\d]/.test(l) || COMPANY.test(l) || TITLE.test(l)) return;
-    // Cross-check: a line that IS the email domain is the company, never the person.
-    if (domainBase && domainScoreOf(l, domainBase) >= 0.75) return;
     const stripped = l.replace(/^((dr|prof|mr|mrs|ms|ing|dipl)\.?\s+)+/i, '');
     const words = stripped.split(/\s+/).filter(Boolean);
     if (words.length < 2 || words.length > 4) return;
     if (!words.every((w) => /^[A-Za-z][\p{L}'’.-]*$/u.test(w))) return;
     if (stripped.replace(/[^A-Za-z]/g, '').length < 3) return;
+    // Person proof first: a line matching the email local part is the person even
+    // when it also contains the domain ("Arokiaswamy" in christian@arokia.in).
+    let m = 0;
+    if (emailLocal) {
+      const el = squashForSim(emailLocal);
+      for (const w of words) {
+        const sq = squashForSim(w);
+        if (sq.length >= 3 && (el.includes(sq) || bigramSim(sq, el) >= 0.7)) m++;
+      }
+    }
+    // Cross-check: a line that IS the email domain is the company, never the person.
+    if (m === 0 && domainBase && domainScoreOf(l, domainBase) >= 0.75) return;
     let s = 0;
     if (/^[A-Z]/.test(words[0]!)) s += 2;
     if (words.length === 2) s += 2;
     else if (words.length === 3) s += 1;
     if (/^[A-Z]\.?$/.test(words[words.length - 1]!)) s += 2; // a lone initial: "Jayakumar P"
     if (emailLocal) {
-      const el = squashForSim(emailLocal);
-      let m = 0;
-      for (const w of words) {
-        const sq = squashForSim(w);
-        if (sq.length >= 3 && (el.includes(sq) || bigramSim(sq, el) >= 0.7)) m++;
-      }
-      s += Math.min(m, 2) * 2;
+      // A public mailbox only whispers: companyname@gmail.com and personname@gmail.com
+      // look identical, so its local part may break a shape tie but never outvote shape.
+      s += emailPublic ? (m > 0 ? 1 : 0) : Math.min(m, 2) * 2;
     }
     if (idx <= 2) s += 1; // the name sits near the top, under the logo
     if (s > bestScore) { bestScore = s; best = stripped; }
@@ -624,21 +689,29 @@ export function parseCardText(text: string): ReadResult {
   // belongs to the name fields (this is the swap the other way round).
   const emailLocal = email?.split('@')[0] ?? '';
   const emailDomain = email?.split('@')[1] ?? '';
-  const domainBase = emailDomain && !isFreeMailDomain(emailDomain) ? domainBaseOf(emailDomain) : '';
+  const emailPublic = !!emailDomain && isFreeMailDomain(emailDomain);
+  const domainBase = emailDomain && !emailPublic ? domainBaseOf(emailDomain) : '';
   const webHost = webPrinted?.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] ?? '';
   const siteBase = webHost && !isFreeMailDomain(webHost) ? domainBaseOf(webHost) : '';
   let company = hard[0] ?? soft[0] ?? null;
   let companyWhy: 'suffix' | 'site' | 'domain' | 'top' | null = company ? 'suffix' : null;
   if (!company) {
-    const cands = lines.filter((l) =>
-      !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l) && !isPersonLine(l, emailLocal));
-    const agree = (base: string) => cands
+    const cands = lines.filter((l) => !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l));
+    const agreeIn = (pool: string[], base: string) => pool
       .map((l) => ({ l, s: domainScoreOf(l, base) }))
       .sort((a, b) => b.s - a.s)
       .find((r) => r.s >= 0.55)?.l ?? null;
-    const siteHit = siteBase ? agree(siteBase) : null;
-    const mailHit = !siteHit && domainBase ? agree(domainBase) : null;
-    company = siteHit ?? mailHit ?? cands[0] ?? null;
+    // The website is independent evidence — consulted over every candidate, even
+    // name-shaped ones the email step below must abstain on.
+    const siteHit = siteBase ? agreeIn(cands, siteBase) : null;
+    // Email evidence only when the mailbox belongs to a company. A public mailbox
+    // poisons this step either way (companyname@gmail.com and personname@gmail.com
+    // look identical), so name-shaped lines abstain entirely rather than coin-flip.
+    const screened = emailPublic
+      ? cands.filter((l) => !isNameShaped(l))
+      : cands.filter((l) => !isPersonLine(l, emailLocal));
+    const mailHit = !siteHit && domainBase ? agreeIn(screened, domainBase) : null;
+    company = siteHit ?? mailHit ?? screened[0] ?? null;
     companyWhy = siteHit ? 'site' : mailHit ? 'domain' : company ? 'top' : null;
   }
   if (company && lines.includes(company)) {
@@ -652,11 +725,21 @@ export function parseCardText(text: string): ReadResult {
   }
   if (company) {
     const hardWon = hard.includes(company) || (company.includes(' ') && hard.some((h) => company!.includes(h)));
-    const conf = hardWon ? 0.85 : companyWhy === 'site' ? 0.8 : companyWhy === 'domain' ? 0.75 : 0.5;
-    const reason = hardWon ? undefined
+    let value = company;
+    let conf = hardWon ? 0.85 : companyWhy === 'site' ? 0.8 : companyWhy === 'domain' ? 0.75 : 0.5;
+    let reason = hardWon ? undefined
       : companyWhy === 'site' ? 'Matches the website address'
       : companyWhy === 'domain' ? 'Matches the email address' : 'Taken from the top of the card';
-    out.company = mark(company, conf, reason);
+    if (!hardWon && companyWhy === 'site' && siteBase) {
+      // The logo read is often the misread one — the website domain spells it right.
+      const fixed = repairCompanySpelling(company, siteBase);
+      if (fixed !== company) {
+        value = fixed;
+        conf = 0.75;
+        reason = 'Spelling fixed from the website address';
+      }
+    }
+    out.company = mark(value, conf, reason);
     used.add(company);
   }
 
@@ -671,15 +754,16 @@ export function parseCardText(text: string): ReadResult {
 
   // Name: scored, not first-match — "ayakumar P" (lowercased by a misread) still beats debris.
   // “Dr. Katharina Vogel” → the honorific is dropped, “Katharina” / “Vogel”.
-  const nameLine = pickName(lines, used, emailLocal, siteBase || domainBase);
+  const nameLine = pickName(lines, used, emailLocal, siteBase || domainBase, emailPublic);
   if (nameLine) {
     const [first, last] = splitName(nameLine);
     if (first && last) {
       out.first_name = mark(first, 0.75);
       out.last_name = mark(last, 0.75);
     }
-  } else if (email) {
-    // Last resort: many company addresses are first.last@…
+  } else if (email && !emailPublic) {
+    // Last resort: many company addresses are first.last@… — but never from a
+    // public mailbox, where the local part could be either side.
     const local = email.split('@')[0]!;
     const m = local.match(/^([a-z]+)[._-]([a-z]+)$/i);
     if (m) {

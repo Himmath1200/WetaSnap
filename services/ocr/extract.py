@@ -451,6 +451,53 @@ def _bigram_sim(a: str, b: str) -> float:
     return 2 * hit / total if total else 0.0
 
 
+def _edit_distance(a: str, b: str) -> int:
+    """Plain Levenshtein distance — for single-slip OCR repairs."""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        diag, prev[0] = prev[0], i
+        for j, cb in enumerate(b, 1):
+            tmp = prev[j]
+            prev[j] = min(prev[j] + 1, prev[j - 1] + 1, diag + (ca != cb))
+            diag = tmp
+    return prev[len(b)]
+
+
+def _repair_company_spelling(line: str, base: str) -> str:
+    """Fix OCR slips in a company line against the website domain.
+
+    Each long word missing from the domain takes its closest domain substring
+    (one slip, two for long words), keeping case pattern and position.
+    """
+    if not base or _domain_score(line, base) >= 1.0:
+        return line
+    changed = False
+    out: list[str] = []
+    for tok in re.split(r"(\s+)", line):
+        if not re.search(r"[A-Za-z]", tok) or len(tok) < 4:
+            out.append(tok)
+            continue
+        wl = tok.lower()
+        if wl in base:
+            out.append(tok)
+            continue
+        allow = 2 if len(wl) >= 7 else 1
+        best, best_dist = "", 10**9
+        for length in range(max(4, len(wl) - 2), len(wl) + 3):
+            for i in range(max(0, len(base) - length) + 1):
+                sub = base[i:i + length]
+                d = _edit_distance(wl, sub)
+                if d < best_dist:
+                    best_dist, best = d, sub
+        if best_dist > allow or not best:
+            out.append(tok)
+            continue
+        changed = True
+        letters = re.sub(r"[^A-Za-z]", "", tok)
+        out.append(best.upper() if letters and letters == letters.upper() else best.capitalize())
+    return "".join(out) if changed else line
+
+
 def _domain_score(text: str, base: str) -> float:
     """How much a card line agrees with the email domain (0–1)."""
     if not base or len(base) < 2:
@@ -469,17 +516,22 @@ def _domain_score(text: str, base: str) -> float:
     return sim if sim >= 0.55 else 0.0
 
 
+def _is_name_shaped(text: str) -> bool:
+    """2–4 plain words — ambiguous between a person and a company without other signals."""
+    words = _clean(text).split()
+    return 2 <= len(words) <= 4 and all(
+        re.fullmatch(r"[A-Za-z][A-Za-z'’.\-]*", w) for w in words
+    )
+
+
 def _looks_like_person(text: str, local: str) -> bool:
     """A name-shaped line matching the email local part belongs to the person."""
-    words = _clean(text).split()
-    if not (2 <= len(words) <= 4):
-        return False
-    if not all(re.fullmatch(r"[A-Za-z][A-Za-z'’.\-]*", w) for w in words):
+    if not _is_name_shaped(text):
         return False
     local_sq = _squash(local)
     if not local_sq:
         return False
-    return any(len(_squash(w)) >= 3 and _squash(w) in local_sq for w in words)
+    return any(len(_squash(w)) >= 3 and _squash(w) in local_sq for w in _clean(text).split())
 
 
 def find_email(lines: Sequence[Line]) -> Optional[tuple[str, float, int]]:
@@ -551,16 +603,28 @@ def find_company(
         for i, line in enumerate(lines):
             if i in skip or EMAIL_RE.search(line.text) or URL_RE.search(line.text):
                 continue
-            if _bigram_sim(_squash(line.text), base) >= 0.55:
-                return _clean(line.text), fuzzy_conf, i, why
+            if _bigram_sim(_squash(line.text), base) < 0.55:
+                continue
+            text = _clean(line.text)
+            if from_site:
+                # The logo read is often the misread one — the website spells it right.
+                fixed = _repair_company_spelling(text, base)
+                if fixed != text:
+                    return fixed, 0.75, i, "site-spelling-fixed"
+            return text, fuzzy_conf, i, why
 
-    # Fall back to the biggest line that is not the person.
+    # Fall back to the biggest line that is not the person. A public mailbox poisons
+    # this step either way, so name-shaped lines abstain entirely rather than coin-flip.
+    email_public = bool(mail_host and is_free_mail_domain(mail_host))
     local = email.split("@", 1)[0] if email and "@" in email else ""
     ranked = _by_prominence(lines, skip)
     for i, line in ranked:
         if _is_contact_line(line.text) or JOB_TITLE_RE.search(line.text):
             continue
-        if _looks_like_person(line.text, local):
+        if email_public:
+            if _is_name_shaped(line.text):
+                continue
+        elif _looks_like_person(line.text, local):
             continue
         return _clean(line.text), 0.5, i, "largest-remaining"
     return None
@@ -608,6 +672,8 @@ def find_name(
     """
     skip = set(skip)
     local = _squash(email.split("@", 1)[0]) if email and "@" in email else ""
+    mail_host = email.split("@", 1)[1].strip().lower() if email and "@" in email else ""
+    email_public = bool(mail_host and is_free_mail_domain(mail_host))
     web_host = (
         re.sub(r"^https?://(www\.)?", "", website, flags=re.IGNORECASE).split("/")[0]
         if website else ""
@@ -624,12 +690,18 @@ def find_name(
         text = line.text
         if _is_contact_line(text) or LEGAL_SUFFIX_RE.search(text):
             continue
-        if base and _domain_score(text, base) >= 0.75:
-            continue
         if re.search(r"\d", text) or JOB_TITLE_RE.search(text) or STREET_RE.search(text):
             continue
         words = [w for w in _clean(text).split() if _norm(w) not in HONORIFICS]
         if not (2 <= len(words) <= 4):
+            continue
+        # Person proof first: a line matching the email local part is the person even
+        # when it also contains the domain ("Arokiaswamy" in christian@arokia.in).
+        local_hits = sum(
+            1 for w in words if len(_squash(w)) >= 3 and _squash(w) in local
+        ) if local else 0
+        # Cross-check: a line that IS the email domain is the company, never the person.
+        if local_hits == 0 and base and _domain_score(text, base) >= 0.75:
             continue
         candidates.append((i, line))
 
@@ -646,6 +718,9 @@ def find_name(
                 best = (matches, i, line)
         if best is not None:
             matches, i, line = best
+            # A public mailbox only whispers — same pick, less certainty.
+            if email_public:
+                return _clean(line.text), 0.8 if matches >= 2 else 0.75, i, "matches-email"
             return _clean(line.text), 0.95 if matches >= 2 else 0.88, i, "matches-email"
 
     i, line = candidates[0]
@@ -993,7 +1068,13 @@ def read_card(lines: Sequence[Line], language: Optional[str] = None) -> _Card:
         used.add(idx)
         card.name_conf = _blend(certainty, lines[idx].confidence)
 
-    got_company = find_company(lines, card.email, card.website, used)
+    got_company = find_company(
+        lines, card.email,
+        # Only a printed website counts as website evidence — the email-guessed one
+        # would be circular (it came from the same domain).
+        card.website if card.website_why == "on-the-card" else None,
+        used,
+    )
     if got_company:
         card.company, certainty, idx, card.company_why = got_company
         used.add(idx)
@@ -1036,6 +1117,7 @@ _REASONS = {
     "largest-remaining": "No legal suffix on the card, so this is a guess at the company",
     "domain-match": "Taken from the web address",
     "site-domain-match": "Matches the website address",
+    "site-spelling-fixed": "Spelling fixed from the website address",
     "email-domain": "Guessed from the email address",
     "web-address": "Worked out from the web address, not printed on the card",
     "phone-prefix": "Worked out from the dialling code",
