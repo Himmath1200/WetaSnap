@@ -348,6 +348,140 @@ def find_phones(lines: Sequence[Line]) -> list[PhoneHit]:
 # --------------------------------------------------------------------------
 
 
+# Public mailbox providers: somebody@gmail.com says nothing about their company, so the
+# website guess (and only the website guess) must ignore these. Global + regional free
+# mail, kept in sync with FREE_MAIL_DOMAINS in apps/web/src/lib/offlineReader.ts.
+FREE_MAIL_DOMAINS: frozenset[str] = frozenset({
+    # Global giants.
+    "gmail.com", "googlemail.com",
+    "yahoo.com", "ymail.com", "rocketmail.com",
+    "outlook.com", "hotmail.com", "live.com", "msn.com",
+    "icloud.com", "me.com", "mac.com",
+    "aol.com", "aim.com",
+    "proton.me", "protonmail.com", "pm.me",
+    "tutanota.com", "tutanota.de",
+    "zoho.com", "zohomail.com",
+    "mail.com", "email.com", "inbox.com", "usa.com", "post.com",
+    "fastmail.com", "fastmail.fm",
+    "hushmail.com",
+    # Regional Yahoo / Microsoft variants.
+    "yahoo.fr", "yahoo.de", "yahoo.es", "yahoo.it", "yahoo.co.uk", "yahoo.ca",
+    "yahoo.com.au", "yahoo.co.in", "yahoo.in", "yahoo.com.br", "yahoo.com.mx",
+    "yahoo.co.jp", "yahoo.se",
+    "hotmail.fr", "hotmail.de", "hotmail.es", "hotmail.it", "hotmail.co.uk",
+    "hotmail.ca", "hotmail.com.au", "hotmail.com.br",
+    "live.fr", "live.de", "live.co.uk", "live.ca", "live.com.au", "live.nl",
+    "outlook.fr", "outlook.de", "outlook.es",
+    "aol.fr", "aol.de", "aol.co.uk",
+    # German free mail.
+    "web.de", "gmx.de", "gmx.net", "gmx.com", "gmx.at", "gmx.ch",
+    "t-online.de", "freenet.de", "arcor.de", "1und1.de", "posteo.de", "mailbox.org",
+    # French free mail.
+    "orange.fr", "wanadoo.fr", "free.fr", "sfr.fr", "laposte.net", "neuf.fr",
+    # Italian free mail.
+    "libero.it", "virgilio.it", "tiscali.it", "alice.it", "tim.it", "email.it",
+    # Spanish / Portuguese free mail.
+    "terra.es", "telefonica.net", "latinmail.com", "mixmail.com", "sapo.pt",
+    # Dutch / Belgian free mail.
+    "planet.nl", "hetnet.nl", "home.nl", "upcmail.nl", "ziggo.nl", "kpnmail.nl",
+    "skynet.be", "telenet.be",
+    # British / Irish free mail.
+    "btinternet.com", "sky.com", "virgin.net", "virginmedia.com", "ntlworld.com",
+    "blueyonder.co.uk", "talk21.com", "eircom.net",
+    # Nordic free mail.
+    "spray.se", "telia.com", "luukku.com", "mail.dk", "online.no",
+    # Polish / Czech free mail.
+    "wp.pl", "o2.pl", "interia.pl", "onet.pl", "op.pl", "gazeta.pl",
+    "seznam.cz", "email.cz", "centrum.cz",
+    # North American ISP mail.
+    "comcast.net", "verizon.net", "att.net", "sbcglobal.net", "bellsouth.net",
+    "charter.net", "cox.net", "earthlink.net", "juno.com",
+    "rogers.com", "shaw.ca", "telus.net", "bell.net", "sympatico.ca", "videotron.ca",
+    # Australia / New Zealand ISP mail.
+    "bigpond.com", "bigpond.net.au", "optusnet.com.au", "iinet.net.au",
+    "xtra.co.nz",
+    # Russian / CIS free mail.
+    "yandex.ru", "yandex.com", "ya.ru", "mail.ru", "inbox.ru", "list.ru", "bk.ru",
+    "rambler.ru",
+    # Asian free mail.
+    "qq.com", "163.com", "126.com", "sina.com", "sohu.com", "yeah.net", "139.com",
+    "foxmail.com", "naver.com", "daum.net", "hanmail.net", "nate.com",
+    "rediffmail.com", "docomo.ne.jp", "ezweb.ne.jp", "nifty.com",
+    # Latin American free mail.
+    "uol.com.br", "bol.com.br", "terra.com.br", "ig.com.br", "globo.com",
+    # African / Middle Eastern free mail.
+    "webmail.co.za", "mweb.co.za", "walla.co.il", "walla.com", "maktoob.com",
+    "mynet.com", "tut.by",
+})
+
+
+def is_free_mail_domain(domain: str) -> bool:
+    """True for gmail.com and friends — never a company website."""
+    return domain.strip().lower().rstrip(".") in FREE_MAIL_DOMAINS
+
+
+_SECOND_LEVEL = frozenset({"co", "com", "org", "net", "edu", "gov", "ac", "ne", "or", "go"})
+
+
+def domain_base_of(domain: str) -> str:
+    """The company behind an email domain ("enrichspaces.co.in" -> "enrichspaces")."""
+    labels = [p for p in domain.strip().lower().rstrip(".").split(".") if p]
+    if len(labels) < 2:
+        return ""
+    tld = labels[-1]
+    rest = labels[:-2] if len(labels) > 2 and labels[-2] in _SECOND_LEVEL and len(tld) == 2 else labels[:-1]
+    base = re.sub(r"[^a-z0-9]+", "", rest[-1] if rest else "")
+    return base if len(base) >= 2 else ""
+
+
+def _bigram_sim(a: str, b: str) -> float:
+    """Dice similarity over character bigrams — one OCR slip still matches."""
+    if a == b:
+        return 1.0
+    if len(a) < 2 or len(b) < 2:
+        return 0.0
+    left = [a[i:i + 2] for i in range(len(a) - 1)]
+    right = [b[i:i + 2] for i in range(len(b) - 1)]
+    total = len(left) + len(right)
+    hit = 0
+    for p in left:
+        if p in right:
+            right.remove(p)
+            hit += 1
+    return 2 * hit / total if total else 0.0
+
+
+def _domain_score(text: str, base: str) -> float:
+    """How much a card line agrees with the email domain (0–1)."""
+    if not base or len(base) < 2:
+        return 0.0
+    sq = _squash(text)
+    if not sq or len(sq) < 3:
+        return 0.0
+    if sq == base:
+        return 1.0
+    if len(sq) >= 4 and len(base) >= 4 and (sq in base or base in sq):
+        return 0.85
+    for w in re.split(r"[^a-z0-9]+", text.lower()):
+        if len(w) >= 4 and (w == base or base in w or w in base):
+            return 0.8
+    sim = _bigram_sim(sq, base)
+    return sim if sim >= 0.55 else 0.0
+
+
+def _looks_like_person(text: str, local: str) -> bool:
+    """A name-shaped line matching the email local part belongs to the person."""
+    words = _clean(text).split()
+    if not (2 <= len(words) <= 4):
+        return False
+    if not all(re.fullmatch(r"[A-Za-z][A-Za-z'’.\-]*", w) for w in words):
+        return False
+    local_sq = _squash(local)
+    if not local_sq:
+        return False
+    return any(len(_squash(w)) >= 3 and _squash(w) in local_sq for w in words)
+
+
 def find_email(lines: Sequence[Line]) -> Optional[tuple[str, float, int]]:
     """(email, ocr confidence, line index). Repairs the spaces OCR leaves around @."""
     for i, line in enumerate(lines):
@@ -369,7 +503,10 @@ def find_website(lines: Sequence[Line], email: Optional[str] = None) -> Optional
             url = raw if raw.lower().startswith("http") else "https://" + raw
             return url, line.confidence, i
     if email and "@" in email:
-        return "https://" + email.split("@", 1)[1], 0.5, -1
+        host = email.split("@", 1)[1].strip().lower()
+        # A public mailbox (gmail, yahoo, proton, …) is not a company website.
+        if host and not is_free_mail_domain(host):
+            return "https://" + host, 0.5, -1
     return None
 
 
@@ -388,25 +525,42 @@ def find_company(
         if LEGAL_SUFFIX_RE.search(line.text) and len(_norm(line.text)) > 3:
             return _clean(line.text), 0.93, i, "legal-suffix"
 
-    # The domain usually is the company: mueller-technik.de -> "Müller Technik"
-    domain = ""
+    # The domain usually is the company: mueller-technik.de -> "Müller Technik".
+    # A printed website outranks the email (0.9 beats 0.85) — it is harder evidence.
+    web_host = ""
     if website:
-        domain = re.sub(r"^https?://(www\.)?", "", website, flags=re.IGNORECASE).split("/")[0]
-    elif email and "@" in email:
-        domain = email.split("@", 1)[1]
-    base = _squash(domain.split(".")[0]) if domain else ""
-    if base and len(base) >= 4:
+        web_host = re.sub(r"^https?://(www\.)?", "", website, flags=re.IGNORECASE).split("/")[0]
+    mail_host = email.split("@", 1)[1].strip().lower() if email and "@" in email else ""
+    base, from_site = "", False
+    if web_host and not is_free_mail_domain(web_host):
+        base, from_site = domain_base_of(web_host), True
+    if not base and mail_host and not is_free_mail_domain(mail_host):
+        base, from_site = domain_base_of(mail_host), False
+    if base:
+        hit_conf = 0.9 if from_site else 0.85
+        fuzzy_conf = 0.85 if from_site else 0.8
+        why = "site-domain-match" if from_site else "domain-match"
         for i, line in enumerate(lines):
             if i in skip or EMAIL_RE.search(line.text) or URL_RE.search(line.text):
                 continue
             squashed = _squash(line.text)
-            if squashed and (squashed == base or (len(squashed) >= 4 and (squashed in base or base in squashed))):
-                return _clean(line.text), 0.85, i, "domain-match"
+            if squashed == base or (
+                len(squashed) >= 4 and len(base) >= 4 and (squashed in base or base in squashed)
+            ):
+                return _clean(line.text), hit_conf, i, why
+        for i, line in enumerate(lines):
+            if i in skip or EMAIL_RE.search(line.text) or URL_RE.search(line.text):
+                continue
+            if _bigram_sim(_squash(line.text), base) >= 0.55:
+                return _clean(line.text), fuzzy_conf, i, why
 
     # Fall back to the biggest line that is not the person.
+    local = email.split("@", 1)[0] if email and "@" in email else ""
     ranked = _by_prominence(lines, skip)
     for i, line in ranked:
         if _is_contact_line(line.text) or JOB_TITLE_RE.search(line.text):
+            continue
+        if _looks_like_person(line.text, local):
             continue
         return _clean(line.text), 0.5, i, "largest-remaining"
     return None
@@ -444,19 +598,33 @@ def find_name(
     lines: Sequence[Line],
     email: Optional[str] = None,
     skip: Iterable[int] = (),
+    website: Optional[str] = None,
 ) -> Optional[tuple[str, float, int, str]]:
     """(full name, certainty, line index, why).
 
     Largest line near the top wins, and the email local part is the tie-breaker:
-    anna.schmidt@… next to "Anna Schmidt" is as certain as this gets.
+    anna.schmidt@… next to "Anna Schmidt" is as certain as this gets. A line that
+    IS the web or email domain is the company, never the person.
     """
     skip = set(skip)
     local = _squash(email.split("@", 1)[0]) if email and "@" in email else ""
+    web_host = (
+        re.sub(r"^https?://(www\.)?", "", website, flags=re.IGNORECASE).split("/")[0]
+        if website else ""
+    )
+    mail_host = email.split("@", 1)[1].strip().lower() if email and "@" in email else ""
+    base = ""
+    if web_host and not is_free_mail_domain(web_host):
+        base = domain_base_of(web_host)
+    if not base and mail_host and not is_free_mail_domain(mail_host):
+        base = domain_base_of(mail_host)
 
     candidates: list[tuple[int, Line]] = []
     for i, line in _by_prominence(lines, skip):
         text = line.text
         if _is_contact_line(text) or LEGAL_SUFFIX_RE.search(text):
+            continue
+        if base and _domain_score(text, base) >= 0.75:
             continue
         if re.search(r"\d", text) or JOB_TITLE_RE.search(text) or STREET_RE.search(text):
             continue
@@ -819,7 +987,7 @@ def read_card(lines: Sequence[Line], language: Optional[str] = None) -> _Card:
             card.phone_reason = "No country code on the card — check the dialling code"
         card.phone_conf = _blend(certainty, hit.ocr_confidence)
 
-    got_name = find_name(lines, card.email, used)
+    got_name = find_name(lines, card.email, used, card.website)
     if got_name:
         card.name, certainty, idx, card.name_why = got_name
         used.add(idx)
@@ -830,6 +998,17 @@ def read_card(lines: Sequence[Line], language: Optional[str] = None) -> _Card:
         card.company, certainty, idx, card.company_why = got_company
         used.add(idx)
         card.company_conf = _blend(certainty, lines[idx].confidence)
+
+    # Swap guard: a fallback company that IS the person's full name was stolen from
+    # the name fields — drop it rather than store it twice. A legal suffix or a
+    # domain match is never a person, so only the pure fallback is suspect.
+    if (
+        card.company_why == "largest-remaining"
+        and card.company
+        and card.name
+        and _squash(card.company) == _squash(card.name)
+    ):
+        card.company, card.company_conf, card.company_why = None, 0.0, ""
 
     got_title = find_job_title(lines, used)
     if got_title:
@@ -856,6 +1035,7 @@ _REASONS = {
     "largest-near-top": "Read from the biggest line on the card — check the spelling",
     "largest-remaining": "No legal suffix on the card, so this is a guess at the company",
     "domain-match": "Taken from the web address",
+    "site-domain-match": "Matches the website address",
     "email-domain": "Guessed from the email address",
     "web-address": "Worked out from the web address, not printed on the card",
     "phone-prefix": "Worked out from the dialling code",

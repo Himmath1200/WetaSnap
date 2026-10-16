@@ -37,7 +37,7 @@ async function getWorker(language: string) {
       const T = await import('tesseract.js');
       const worker = await T.createWorker(langs);
       await worker.setParameters({
-        tessedit_pageseg_mode: '6', // PSM.SINGLE_BLOCK: a card is one block of text, not a page
+        tessedit_pageseg_mode: T.PSM.SINGLE_BLOCK, // a card is one block of text, not a page
         preserve_interword_spaces: '1', // keeps the gutter between two columns as extra spaces
         user_defined_dpi: '300', // phone photos carry no DPI tag; the 70 dpi default mis-scales small print
       });
@@ -144,6 +144,80 @@ function rebuildText(data: TesseractData): string {
 }
 
 const EMAIL = /[\w.+-]+@[\w-]+(\.[\w-]+)+/;
+
+/**
+ * Public mailbox providers: somebody@gmail.com says nothing about their company, so the
+ * website guess (and only the website guess — the name fallback still uses the local part)
+ * must ignore these. Global + regional free mail, kept in sync with FREE_MAIL_DOMAINS in
+ * services/ocr/extract.py. Pure.
+ */
+const FREE_MAIL_DOMAINS: ReadonlySet<string> = new Set([
+  // Global giants.
+  'gmail.com', 'googlemail.com',
+  'yahoo.com', 'ymail.com', 'rocketmail.com',
+  'outlook.com', 'hotmail.com', 'live.com', 'msn.com',
+  'icloud.com', 'me.com', 'mac.com',
+  'aol.com', 'aim.com',
+  'proton.me', 'protonmail.com', 'pm.me',
+  'tutanota.com', 'tutanota.de',
+  'zoho.com', 'zohomail.com',
+  'mail.com', 'email.com', 'inbox.com', 'usa.com', 'post.com',
+  'fastmail.com', 'fastmail.fm',
+  'hushmail.com',
+  // Regional Yahoo / Microsoft variants.
+  'yahoo.fr', 'yahoo.de', 'yahoo.es', 'yahoo.it', 'yahoo.co.uk', 'yahoo.ca',
+  'yahoo.com.au', 'yahoo.co.in', 'yahoo.in', 'yahoo.com.br', 'yahoo.com.mx',
+  'yahoo.co.jp', 'yahoo.se',
+  'hotmail.fr', 'hotmail.de', 'hotmail.es', 'hotmail.it', 'hotmail.co.uk',
+  'hotmail.ca', 'hotmail.com.au', 'hotmail.com.br',
+  'live.fr', 'live.de', 'live.co.uk', 'live.ca', 'live.com.au', 'live.nl',
+  'outlook.fr', 'outlook.de', 'outlook.es',
+  'aol.fr', 'aol.de', 'aol.co.uk',
+  // German free mail.
+  'web.de', 'gmx.de', 'gmx.net', 'gmx.com', 'gmx.at', 'gmx.ch',
+  't-online.de', 'freenet.de', 'arcor.de', '1und1.de', 'posteo.de', 'mailbox.org',
+  // French free mail.
+  'orange.fr', 'wanadoo.fr', 'free.fr', 'sfr.fr', 'laposte.net', 'neuf.fr',
+  // Italian free mail.
+  'libero.it', 'virgilio.it', 'tiscali.it', 'alice.it', 'tim.it', 'email.it',
+  // Spanish / Portuguese free mail.
+  'terra.es', 'telefonica.net', 'latinmail.com', 'mixmail.com', 'sapo.pt',
+  // Dutch / Belgian free mail.
+  'planet.nl', 'hetnet.nl', 'home.nl', 'upcmail.nl', 'ziggo.nl', 'kpnmail.nl',
+  'skynet.be', 'telenet.be',
+  // British / Irish free mail.
+  'btinternet.com', 'sky.com', 'virgin.net', 'virginmedia.com', 'ntlworld.com',
+  'blueyonder.co.uk', 'talk21.com', 'eircom.net',
+  // Nordic free mail.
+  'spray.se', 'telia.com', 'luukku.com', 'mail.dk', 'online.no',
+  // Polish / Czech free mail.
+  'wp.pl', 'o2.pl', 'interia.pl', 'onet.pl', 'op.pl', 'gazeta.pl',
+  'seznam.cz', 'email.cz', 'centrum.cz',
+  // North American ISP mail.
+  'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net', 'bellsouth.net',
+  'charter.net', 'cox.net', 'earthlink.net', 'juno.com',
+  'rogers.com', 'shaw.ca', 'telus.net', 'bell.net', 'sympatico.ca', 'videotron.ca',
+  // Australia / New Zealand ISP mail.
+  'bigpond.com', 'bigpond.net.au', 'optusnet.com.au', 'iinet.net.au',
+  'xtra.co.nz',
+  // Russian / CIS free mail.
+  'yandex.ru', 'yandex.com', 'ya.ru', 'mail.ru', 'inbox.ru', 'list.ru', 'bk.ru',
+  'rambler.ru',
+  // Asian free mail.
+  'qq.com', '163.com', '126.com', 'sina.com', 'sohu.com', 'yeah.net', '139.com',
+  'foxmail.com', 'naver.com', 'daum.net', 'hanmail.net', 'nate.com',
+  'rediffmail.com', 'docomo.ne.jp', 'ezweb.ne.jp', 'nifty.com',
+  // Latin American free mail.
+  'uol.com.br', 'bol.com.br', 'terra.com.br', 'ig.com.br', 'globo.com',
+  // African / Middle Eastern free mail.
+  'webmail.co.za', 'mweb.co.za', 'walla.co.il', 'walla.com', 'maktoob.com',
+  'mynet.com', 'tut.by',
+]);
+
+/** True for gmail.com and friends — never a company website. Pure: unit-tested. */
+export function isFreeMailDomain(domain: string): boolean {
+  return FREE_MAIL_DOMAINS.has(domain.trim().toLowerCase().replace(/\.+$/, ''));
+}
 const PHONE_CHARS = /(\+?\d[\d\s()./-]{7,}\d)/;
 const WEB = /\b((?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})(?:\/\S*)?\b/i;
 const COMPANY = /\b(GmbH|AG|KG|UG|SAS|SARL|S\.?r\.?l\.?|S\.?p\.?A\.?|SL|S\.?A\.?|B\.?V\.?|N\.?V\.?|Lda|Ltd|Limited|LLC|LLP|Inc|Corp|Pvt|OPC|KG|AB|OY|A\/S|ApS|Co\.?|Group|Holding|Insurance|Assurance|Life|Bank|Finance|Financial|Technolog(?:y|ies)|Solutions?|Services?|Systems?|Software|Consulting|Enterprises?|Industr(?:y|ies)|Logistics|Trading|Capital|Partners|Ventures|Labs?|Saatgut|Agritech)\b/i;
@@ -220,26 +294,57 @@ function bigramSim(a: string, b: string): number {
 }
 
 /**
- * The domain is usually the company ("nordsaat.de" → "NORDSAAT"). Exact containment first,
- * then a bigram similarity so one misread letter still matches. Only used when no legal
- * suffix or company-like line won, so it can only refine the fallback guess, never overrule one.
+ * The company behind an email domain ("enrichspaces.co.in" → "enrichspaces").
+ * Multi-part country suffixes (co.uk, co.in, com.au, …) are dropped, then the last
+ * remaining label wins, so mail.company.com still resolves to the company.
+ * Pure: unit-tested.
  */
-function matchDomain(lines: string[], used: Set<string>, email: string | null, website: string | null): { line: string; confidence: number; reason?: string } | null {
-  const host = (email?.split('@')[1] ?? website?.replace(/^https?:\/\/(www\.)?/i, '').split('/')[0] ?? '').toLowerCase();
-  const parts = host.split('.').filter(Boolean);
-  if (parts.length < 2) return null;
-  const base = squashForSim(parts.length > 2 ? parts.slice(0, -1).join(' ') : parts[0]!);
-  if (base.length < 4) return null;
-  let fuzzy: { line: string; sim: number } | null = null;
-  for (const l of lines) {
-    if (used.has(l) || /[@\d]/.test(l) || TITLE.test(l)) continue;
-    const sq = squashForSim(l);
-    if (sq.length < 4) continue;
-    if (sq === base || sq.includes(base) || base.includes(sq)) return { line: l, confidence: 0.75 };
-    const sim = bigramSim(sq, base);
-    if (sim >= 0.55 && (!fuzzy || sim > fuzzy.sim)) fuzzy = { line: l, sim };
+const SECOND_LEVEL = new Set(['co', 'com', 'org', 'net', 'edu', 'gov', 'ac', 'ne', 'or', 'go']);
+export function domainBaseOf(domain: string): string {
+  const labels = domain.trim().toLowerCase().replace(/\.+$/, '').split('.').filter(Boolean);
+  if (labels.length < 2) return '';
+  const tld = labels[labels.length - 1]!;
+  const rest = labels.length > 2 && SECOND_LEVEL.has(labels[labels.length - 2]!) && tld.length === 2
+    ? labels.slice(0, -2)
+    : labels.slice(0, -1);
+  const base = (rest[rest.length - 1] ?? '').replace(/[^a-z0-9]/g, '');
+  return base.length >= 2 ? base : '';
+}
+
+/**
+ * How much a card line agrees with the email domain (0–1): exact and containment
+ * first, then bigram similarity so one OCR slip ("Ennich Spaces") still matches.
+ * This is the name↔company cross-check — a line that IS the domain is the company,
+ * never the person. Pure: unit-tested.
+ */
+export function domainScoreOf(line: string, base: string): number {
+  if (!base || base.length < 2) return 0;
+  const sq = squashForSim(line);
+  if (!sq || sq.length < 3) return 0;
+  if (sq === base) return 1;
+  if (sq.length >= 4 && base.length >= 4 && (sq.includes(base) || base.includes(sq))) return 0.85;
+  for (const w of line.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 4)) {
+    if (w === base || base.includes(w) || w.includes(base)) return 0.8;
   }
-  return fuzzy ? { line: fuzzy.line, confidence: 0.6, reason: 'Taken from the web address' } : null;
+  const sim = bigramSim(sq, base);
+  return sim >= 0.55 ? sim : 0;
+}
+
+/**
+ * A name-shaped line that also matches the email local part ("Priya Nair" next to
+ * priya.nair@…) belongs to the person — the company fallback must not steal it
+ * before pickName runs. Pure: unit-tested.
+ */
+export function isPersonLine(line: string, emailLocal: string): boolean {
+  const words = line.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 4) return false;
+  if (!words.every((w) => /^[A-Za-z][\p{L}'’.-]*$/u.test(w))) return false;
+  const local = squashForSim(emailLocal);
+  if (!local) return false;
+  return words.some((w) => {
+    const sq = squashForSim(w);
+    return sq.length >= 3 && local.includes(sq);
+  });
 }
 
 /**
@@ -336,11 +441,13 @@ function extractEmail(text: string): { email: string; repaired: boolean } | null
 }
 
 /** Best line for the person's name: 2 words and a lone initial beat logo fragments and debris. */
-function pickName(lines: string[], used: Set<string>, emailLocal: string): string | null {
+function pickName(lines: string[], used: Set<string>, emailLocal: string, domainBase = ''): string | null {
   let best: string | null = null;
   let bestScore = -1;
   lines.forEach((l, idx) => {
     if (used.has(l) || /[@\d]/.test(l) || COMPANY.test(l) || TITLE.test(l)) return;
+    // Cross-check: a line that IS the email domain is the company, never the person.
+    if (domainBase && domainScoreOf(l, domainBase) >= 0.75) return;
     const stripped = l.replace(/^((dr|prof|mr|mrs|ms|ing|dipl)\.?\s+)+/i, '');
     const words = stripped.split(/\s+/).filter(Boolean);
     if (words.length < 2 || words.length > 4) return;
@@ -470,12 +577,16 @@ export function parseCardText(text: string): ReadResult {
 
   // Website, or the email's domain when the card only prints an address.
   const webLine = lines.find((l) => !l.includes('@') && WEB.test(l) && /(www\.|https?:|\.(com|de|fr|it|es|nl|pt|eu|se|dk|no|fi|at|ch|be|ie|in|co\.uk|net|org))/i.test(l));
-  const web = webLine?.match(WEB)?.[1];
-  if (web) {
-    out.website = mark(web.startsWith('http') ? web : `https://${web}`, 0.8);
+  const webPrinted = webLine?.match(WEB)?.[1] ?? null;
+  if (webPrinted) {
+    out.website = mark(webPrinted.startsWith('http') ? webPrinted : `https://${webPrinted}`, 0.8);
     used.add(webLine!);
   } else if (email) {
-    out.website = mark(`https://${email.split('@')[1]}`, 0.45, 'Guessed from the email address');
+    // A public mailbox (gmail, yahoo, proton, …) is not a company website — leave it blank.
+    const domain = email.split('@')[1] ?? '';
+    if (domain && !isFreeMailDomain(domain)) {
+      out.website = mark(`https://${domain}`, 0.45, 'Guessed from the email address');
+    }
   }
 
   // Country: printed on the card first, otherwise worked out from the dialling code.
@@ -506,8 +617,30 @@ export function parseCardText(text: string): ReadResult {
   }
   hard.sort((a, b) => b.length - a.length);
   soft.sort((a, b) => b.length - a.length);
-  let company = hard[0] ?? soft[0]
-    ?? lines.find((l) => !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l));
+  // Name↔company cross-check from the email domain ("enrichspaces.co.in" → "enrichspaces"):
+  // a public mailbox says nothing, but a company domain arbitrates. A printed website
+  // arbitrates even better — it outranks the email (0.8 beats 0.75). The fallback below
+  // prefers a line that agrees with either — and never the person's own name line, which
+  // belongs to the name fields (this is the swap the other way round).
+  const emailLocal = email?.split('@')[0] ?? '';
+  const emailDomain = email?.split('@')[1] ?? '';
+  const domainBase = emailDomain && !isFreeMailDomain(emailDomain) ? domainBaseOf(emailDomain) : '';
+  const webHost = webPrinted?.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] ?? '';
+  const siteBase = webHost && !isFreeMailDomain(webHost) ? domainBaseOf(webHost) : '';
+  let company = hard[0] ?? soft[0] ?? null;
+  let companyWhy: 'suffix' | 'site' | 'domain' | 'top' | null = company ? 'suffix' : null;
+  if (!company) {
+    const cands = lines.filter((l) =>
+      !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l) && !isPersonLine(l, emailLocal));
+    const agree = (base: string) => cands
+      .map((l) => ({ l, s: domainScoreOf(l, base) }))
+      .sort((a, b) => b.s - a.s)
+      .find((r) => r.s >= 0.55)?.l ?? null;
+    const siteHit = siteBase ? agree(siteBase) : null;
+    const mailHit = !siteHit && domainBase ? agree(domainBase) : null;
+    company = siteHit ?? mailHit ?? cands[0] ?? null;
+    companyWhy = siteHit ? 'site' : mailHit ? 'domain' : company ? 'top' : null;
+  }
   if (company && lines.includes(company)) {
     // A letterhead often splits the name over two lines: “NORDSAAT” above “Saatgut GmbH”.
     const above = lines[lines.indexOf(company) - 1];
@@ -519,8 +652,11 @@ export function parseCardText(text: string): ReadResult {
   }
   if (company) {
     const hardWon = hard.includes(company) || (company.includes(' ') && hard.some((h) => company!.includes(h)));
-    out.company = mark(company, hard[0] !== undefined || soft.length ? (hardWon ? 0.8 : 0.5) : 0.5,
-      hardWon ? undefined : 'Taken from the top of the card');
+    const conf = hardWon ? 0.85 : companyWhy === 'site' ? 0.8 : companyWhy === 'domain' ? 0.75 : 0.5;
+    const reason = hardWon ? undefined
+      : companyWhy === 'site' ? 'Matches the website address'
+      : companyWhy === 'domain' ? 'Matches the email address' : 'Taken from the top of the card';
+    out.company = mark(company, conf, reason);
     used.add(company);
   }
 
@@ -535,7 +671,7 @@ export function parseCardText(text: string): ReadResult {
 
   // Name: scored, not first-match — "ayakumar P" (lowercased by a misread) still beats debris.
   // “Dr. Katharina Vogel” → the honorific is dropped, “Katharina” / “Vogel”.
-  const nameLine = pickName(lines, used, email?.split('@')[0] ?? '');
+  const nameLine = pickName(lines, used, emailLocal, siteBase || domainBase);
   if (nameLine) {
     const [first, last] = splitName(nameLine);
     if (first && last) {
@@ -551,6 +687,15 @@ export function parseCardText(text: string): ReadResult {
       out.first_name = mark(cap(m[1]!), 0.4, 'Guessed from the email address');
       out.last_name = mark(cap(m[2]!), 0.4, 'Guessed from the email address');
     }
+  }
+
+  // Swap guard: a fallback company that IS the person's full name ("Priya Nair" next to
+  // priya.nair@…) was stolen from the name fields — drop it rather than store it twice.
+  // Only the pure fallback is suspect: a legal suffix or a domain match is never a person.
+  if (companyWhy === 'top' && out.company && out.first_name?.value && out.last_name?.value) {
+    const co = squashForSim(out.company.value);
+    const nm = squashForSim(`${out.first_name.value} ${out.last_name.value}`);
+    if (co && co === nm) delete out.company;
   }
 
   return out;

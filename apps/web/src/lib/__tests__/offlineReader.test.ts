@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCardText } from '../offlineReader';
+import { domainBaseOf, domainScoreOf, isFreeMailDomain, isPersonLine, parseCardText } from '../offlineReader';
 
 /**
  * The parser turns the lines an OCR engine read into card fields. The samples below are real
@@ -54,6 +54,137 @@ describe('parseCardText', () => {
     expect(r.first_name?.value).toBe('Camille');
     expect(r.last_name?.value).toBe('Dubois');
     expect(r.first_name?.confidence).toBeLessThan(0.6); // a guess, and it says so
+  });
+
+  it('never guesses the website from a public mailbox', () => {
+    for (const domain of [
+      'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'ymail.com',
+      'outlook.com', 'hotmail.com', 'hotmail.de', 'live.com', 'msn.com',
+      'icloud.com', 'me.com', 'aol.com', 'proton.me', 'protonmail.com', 'pm.me',
+      'tutanota.com', 'gmx.de', 'web.de', 't-online.de', 'orange.fr', 'free.fr',
+      'libero.it', 'yandex.ru', 'mail.ru', 'qq.com', '163.com', 'naver.com',
+      'rediffmail.com', 'uol.com.br', 'sapo.pt', 'zoho.com', 'mail.com',
+      'bigpond.com', 'seznam.cz', 'wp.pl', 'walla.co.il',
+    ]) {
+      const r = parseCardText(['Priya Nair', `priya.nair@${domain}`, '+91 98400 12345'].join('\n'));
+      expect(r.email?.value).toBe(`priya.nair@${domain}`);
+      expect(r.website, `no website from ${domain}`).toBeUndefined();
+      // And the name line is not stolen as the company either.
+      expect(r.company, `no company from ${domain}`).toBeUndefined();
+      // The name fallback still uses the local part — only the website guess is blocked.
+      expect(r.first_name?.value).toBe('Priya');
+      expect(r.last_name?.value).toBe('Nair');
+    }
+  });
+
+  it('isFreeMailDomain matches case-insensitively and ignores trailing dots', () => {
+    expect(isFreeMailDomain('GMail.COM')).toBe(true);
+    expect(isFreeMailDomain('gmail.com.')).toBe(true);
+    expect(isFreeMailDomain('nordsaat.de')).toBe(false);
+    expect(isFreeMailDomain('mygmail.com')).toBe(false); // a company domain, not Google's
+    expect(isFreeMailDomain('')).toBe(false);
+  });
+
+  it('resolves the company behind an email domain', () => {
+    expect(domainBaseOf('enrichspaces.co.in')).toBe('enrichspaces');
+    expect(domainBaseOf('nordsaat.de')).toBe('nordsaat');
+    expect(domainBaseOf('harvestanalytics.co.uk')).toBe('harvestanalytics');
+    expect(domainBaseOf('mail.company.com')).toBe('company');
+    expect(domainBaseOf('gmail.com')).toBe('gmail');
+    expect(domainBaseOf('invalid')).toBe('');
+    expect(domainScoreOf('Enrich Spaces', 'enrichspaces')).toBe(1);
+    expect(domainScoreOf('NORDSAAT Saatgut GmbH', 'nordsaat')).toBeGreaterThanOrEqual(0.8);
+    expect(domainScoreOf('Ennich Spaces', 'enrichspaces')).toBeGreaterThanOrEqual(0.55); // one OCR slip
+    expect(domainScoreOf('Priya Nair', 'enrichspaces')).toBe(0);
+    expect(isPersonLine('Priya Nair', 'priya.nair')).toBe(true);
+    expect(isPersonLine('Priya Nair', 'info')).toBe(false);
+    expect(isPersonLine('Enrich Spaces', 'info')).toBe(false); // no signal either way
+    expect(isPersonLine('Enrich Spaces', '')).toBe(false);
+  });
+
+  it('cross-checks name and company against the email domain', () => {
+    // No legal suffix anywhere: the domain decides which line is the company…
+    const r = parseCardText([
+      'Enrich Spaces',
+      'Preeti Balaraman',
+      'preeti@enrichspaces.co.in',
+      '+91 99406 42190',
+    ].join('\n'));
+
+    expect(r.company?.value).toBe('Enrich Spaces');
+    expect(r.company?.confidence).toBeGreaterThanOrEqual(0.7);
+    expect(r.company?.reason).toMatch(/email/i);
+    expect(r.first_name?.value).toBe('Preeti');
+    expect(r.last_name?.value).toBe('Balaraman');
+  });
+
+  it('prefers the domain line even when the name comes first', () => {
+    const r = parseCardText([
+      'Preeti Balaraman',
+      'Enrich Spaces',
+      'preeti@enrichspaces.co.in',
+      '+91 99406 42190',
+    ].join('\n'));
+
+    expect(r.company?.value).toBe('Enrich Spaces');
+    expect(r.first_name?.value).toBe('Preeti');
+    expect(r.last_name?.value).toBe('Balaraman');
+  });
+
+  it('a printed website outranks the email domain', () => {
+    const r = parseCardText([
+      'Enrich Spaces',
+      'Preeti Balaraman',
+      'preeti@enrichspaces.co.in',
+      'www.enrichspaces.co.in',
+      '+91 99406 42190',
+    ].join('\n'));
+
+    expect(r.website?.value).toBe('https://www.enrichspaces.co.in');
+    expect(r.company?.value).toBe('Enrich Spaces');
+    expect(r.company?.confidence).toBe(0.8);
+    expect(r.company?.reason).toMatch(/website/i);
+    expect(r.first_name?.value).toBe('Preeti');
+    expect(r.last_name?.value).toBe('Balaraman');
+  });
+
+  it('the website decides even with a public mailbox', () => {
+    const r = parseCardText([
+      'Enrich Spaces',
+      'Preeti Balaraman',
+      'preeti.balaraman@gmail.com',
+      'www.enrichspaces.co.in',
+      '+91 99406 42190',
+    ].join('\n'));
+
+    expect(r.website?.value).toBe('https://www.enrichspaces.co.in');
+    expect(r.company?.value).toBe('Enrich Spaces');
+    expect(r.company?.confidence).toBe(0.8);
+    expect(r.first_name?.value).toBe('Preeti');
+    expect(r.last_name?.value).toBe('Balaraman');
+  });
+
+  it('still matches the company with one OCR slip in its name', () => {
+    const r = parseCardText([
+      'Ennich Spaces',
+      'Preeti Balaraman',
+      'preeti@enrichspaces.co.in',
+      '+91 99406 42190',
+    ].join('\n'));
+
+    expect(r.company?.value).toBe('Ennich Spaces');
+    expect(r.company?.reason).toMatch(/email/i);
+    expect(r.first_name?.value).toBe('Preeti');
+    expect(r.last_name?.value).toBe('Balaraman');
+  });
+
+  it('never stores the person as the company', () => {
+    // A card with nothing but a name and a public mailbox: no company to find.
+    const r = parseCardText(['Priya Nair', 'priya.nair@gmail.com', '+91 98400 12345'].join('\n'));
+
+    expect(r.company).toBeUndefined();
+    expect(r.first_name?.value).toBe('Priya');
+    expect(r.last_name?.value).toBe('Nair');
   });
 
   it('Ageas card: merged columns split, mobile wins, India from the dialling code', () => {

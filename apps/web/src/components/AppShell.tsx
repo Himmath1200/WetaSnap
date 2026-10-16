@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
-import { Building2, Camera, ScanLine, ChevronDown, CloudOff, CreditCard, Download, Gauge, Globe, LifeBuoy, List, LogOut, Monitor, Moon, RefreshCw, ScrollText, Settings, ShieldCheck, Sun, UserCircle2, Users, Wifi, WifiOff } from 'lucide-preact';
+import { Building2, Camera, ScanLine, ScanSearch, ChevronDown, CloudOff, CreditCard, Download, Gauge, Globe, LifeBuoy, List, LogOut, Monitor, Moon, RefreshCw, ScrollText, Settings, ShieldCheck, Sun, UserCircle2, Users, Wifi, WifiOff } from 'lucide-preact';
 import { doorForRole, linkFor, readPath, signInPath } from '../lib/portal';
 import { useStore, toast } from '../lib/store';
 import { config, endSession, session, setEvent } from '../lib/session';
@@ -25,11 +25,13 @@ interface NavItem { href: string; label: string; icon: typeof Camera }
 const NAV: Record<Role, NavItem[]> = {
   staff: [
     { href: '/scan', label: 'Scan', icon: Camera },
+    { href: '/scan-v2', label: 'Pro scan', icon: ScanSearch },
     { href: '/my-leads', label: 'My leads', icon: List },
   ],
   client_admin: [
     { href: '/leads', label: 'Leads', icon: List },
     { href: '/scan', label: 'Scan', icon: Camera },
+    { href: '/scan-v2', label: 'Pro scan', icon: ScanSearch },
     { href: '/team', label: 'Team', icon: Users },
     { href: '/settings', label: 'Settings', icon: Settings },
     { href: '/my-leads', label: 'My leads', icon: ScanLine },
@@ -84,7 +86,7 @@ export function AppShell({ children }: { children: ComponentChildren }) {
   // Console links carry the /super-admin prefix; company links do not.
   const nav = NAV[role].map((n) => ({ ...n, href: linkFor(role, n.href) }));
   const event = cfg.events.find((e) => e.id === s.event_id);
-  const isScan = readPath(path).here === '/scan';
+  const isScan = readPath(path).here === '/scan' || readPath(path).here === '/scan-v2';
   // Phones get the first four; the rest live in the menu sheet.
   const barNav = nav.slice(0, 4);
 

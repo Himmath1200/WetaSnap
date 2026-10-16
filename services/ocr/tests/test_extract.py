@@ -203,6 +203,154 @@ def test_spanish_card_guesses_the_website_from_the_email():
     assert "email" in (out["website"].reason or "").lower()
 
 
+@pytest.mark.parametrize("domain", [
+    "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "ymail.com",
+    "outlook.com", "hotmail.com", "hotmail.de", "live.com", "msn.com",
+    "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com", "pm.me",
+    "tutanota.com", "gmx.de", "web.de", "t-online.de", "orange.fr", "free.fr",
+    "libero.it", "yandex.ru", "mail.ru", "qq.com", "163.com", "naver.com",
+    "rediffmail.com", "uol.com.br", "sapo.pt", "zoho.com", "mail.com",
+    "bigpond.com", "seznam.cz", "wp.pl", "walla.co.il",
+])
+def test_public_mailbox_is_never_guessed_as_the_website(domain: str):
+    lines = card([
+        ("Priya Nair", 34),
+        ("Sales Manager", 20),
+        (f"priya.nair@{domain}", 20),
+        ("+91 98400 12345", 20),
+    ])
+    out = read(lines, language="en")
+    assert out["email"].value == f"priya.nair@{domain}"
+    assert "website" not in out, f"no website from {domain}"
+    # The name still comes from the card — only the website guess is blocked.
+    assert out["first_name"].value == "Priya"
+    assert out["last_name"].value == "Nair"
+
+
+def test_is_free_mail_domain_matches_case_insensitively():
+    from extract import is_free_mail_domain
+    assert is_free_mail_domain("GMail.COM")
+    assert is_free_mail_domain("gmail.com.")
+    assert not is_free_mail_domain("nordsaat.de")
+    assert not is_free_mail_domain("mygmail.com")  # a company domain, not Google's
+    assert not is_free_mail_domain("")
+
+
+def test_domain_base_and_score():
+    from extract import _domain_score, domain_base_of
+    assert domain_base_of("enrichspaces.co.in") == "enrichspaces"
+    assert domain_base_of("nordsaat.de") == "nordsaat"
+    assert domain_base_of("harvestanalytics.co.uk") == "harvestanalytics"
+    assert domain_base_of("mail.company.com") == "company"
+    assert domain_base_of("invalid") == ""
+    assert _domain_score("Enrich Spaces", "enrichspaces") == 1.0
+    assert _domain_score("NORDSAAT Saatgut GmbH", "nordsaat") >= 0.8
+    assert _domain_score("Ennich Spaces", "enrichspaces") >= 0.55  # one OCR slip
+    assert _domain_score("Priya Nair", "enrichspaces") == 0.0
+
+
+def test_domain_cross_check_resolves_company_without_a_legal_suffix():
+    lines = card([
+        ("Enrich Spaces", 34),
+        ("Preeti Balaraman", 30),
+        ("preeti@enrichspaces.co.in", 20),
+        ("+91 99406 42190", 20),
+    ])
+    out = read(lines, language="en")
+    assert out["company"].value == "Enrich Spaces"
+    assert out["first_name"].value == "Preeti"
+    assert out["last_name"].value == "Balaraman"
+
+
+def test_domain_cross_check_holds_when_the_name_comes_first():
+    lines = card([
+        ("Preeti Balaraman", 34),
+        ("Enrich Spaces", 30),
+        ("preeti@enrichspaces.co.in", 20),
+        ("+91 99406 42190", 20),
+    ])
+    out = read(lines, language="en")
+    assert out["company"].value == "Enrich Spaces"
+    assert out["first_name"].value == "Preeti"
+    assert out["last_name"].value == "Balaraman"
+
+
+def test_person_is_never_stored_as_the_company():
+    lines = card([
+        ("Priya Nair", 34),
+        ("priya.nair@gmail.com", 20),
+        ("+91 98400 12345", 20),
+    ])
+    out = read(lines, language="en")
+    assert "company" not in out
+    assert out["first_name"].value == "Priya"
+    assert out["last_name"].value == "Nair"
+
+
+def test_company_still_matches_with_one_ocr_slip_in_its_name():
+    lines = card([
+        ("Ennich Spaces", 34),
+        ("Preeti Balaraman", 30),
+        ("preeti@enrichspaces.co.in", 20),
+        ("+91 99406 42190", 20),
+    ])
+    out = read(lines, language="en")
+    assert out["company"].value == "Ennich Spaces"
+    assert out["first_name"].value == "Preeti"
+    assert out["last_name"].value == "Balaraman"
+
+
+def test_printed_website_outranks_the_email_domain():
+    lines = card([
+        ("Enrich Spaces", 34),
+        ("Preeti Balaraman", 30),
+        ("preeti@enrichspaces.co.in", 20),
+        ("www.enrichspaces.co.in", 20),
+        ("+91 99406 42190", 20),
+    ])
+    out = read(lines, language="en")
+    assert out["website"].value == "https://www.enrichspaces.co.in"
+    assert out["company"].value == "Enrich Spaces"
+    assert out["first_name"].value == "Preeti"
+    assert out["last_name"].value == "Balaraman"
+
+
+def test_website_decides_even_with_a_public_mailbox():
+    lines = card([
+        ("Enrich Spaces", 34),
+        ("Preeti Balaraman", 30),
+        ("preeti.balaraman@gmail.com", 20),
+        ("www.enrichspaces.co.in", 20),
+        ("+91 99406 42190", 20),
+    ])
+    out = read(lines, language="en")
+    assert out["website"].value == "https://www.enrichspaces.co.in"
+    assert out["company"].value == "Enrich Spaces"
+    assert out["first_name"].value == "Preeti"
+    assert out["last_name"].value == "Balaraman"
+
+
+def test_website_domain_scores_above_the_email_domain():
+    from extract import find_company
+    lines = card([
+        ("Enrich Spaces", 34),
+        ("Preeti Balaraman", 30),
+        ("preeti@enrichspaces.co.in", 20),
+        ("www.enrichspaces.co.in", 20),
+        ("+91 99406 42190", 20),
+    ])
+    used = {2, 3, 4}  # email, website and phone lines, as read_card would mark them
+    value, certainty, _, why = find_company(lines, "preeti@enrichspaces.co.in",
+                                            "https://www.enrichspaces.co.in", used)
+    assert value == "Enrich Spaces"
+    assert certainty == 0.9
+    assert why == "site-domain-match"
+    value, certainty, _, why = find_company(lines, "preeti@enrichspaces.co.in", None, used)
+    assert value == "Enrich Spaces"
+    assert certainty == 0.85
+    assert why == "domain-match"
+
+
 def test_dutch_card_keeps_the_surname_particle():
     out = read(DUTCH, language="nl")
     assert out["first_name"].value == "Sanne"

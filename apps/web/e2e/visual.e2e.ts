@@ -42,7 +42,7 @@ const SCREENS: Record<Portal, State[]> = {
   ],
   staff: [
     { name: 'scan', path: '/scan' },
-    { name: 'scan-review', path: '/scan', open: async (p) => {
+    { name: 'scan-v2', path: '/scan-v2' },    { name: 'scan-review', path: '/scan', open: async (p) => {
       await p.locator('input[type=file]').first().setInputFiles(await printedCardFile(p));
       await p.getByText('Review & save').waitFor({ timeout: 15_000 });
     } },
@@ -65,6 +65,7 @@ const SCREENS: Record<Portal, State[]> = {
     { name: 'import', path: '/leads', open: btn(/Import leads from Excel|^Import$/), dialog: true },
     { name: 'import-history', path: '/leads', open: btn('Import history'), dialog: true },
     { name: 'scan', path: '/scan' },
+    { name: 'scan-v2', path: '/scan-v2' },
     { name: 'my-leads', path: '/my-leads' },
     { name: 'team', path: '/team' },
     { name: 'invite-dialog', path: '/team', open: btn('Invite person'), dialog: true },

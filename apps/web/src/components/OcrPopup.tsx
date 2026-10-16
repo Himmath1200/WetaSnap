@@ -63,10 +63,10 @@ export function OcrPopup() {
             <p class="truncate text-xs font-bold">{t('What the scanner read')}</p>
             <p class="truncate text-[11px] text-muted">{entry.source}</p>
           </div>
-          <button class="flex size-9 items-center justify-center rounded-lg hover:bg-subtle" onClick={copy} aria-label={t('Copy raw text')}>
+          <button class="flex size-11 items-center justify-center rounded-lg hover:bg-subtle" onClick={copy} aria-label={t('Copy raw text')}>
             <Copy class="size-4" />
           </button>
-          <button class="flex size-9 items-center justify-center rounded-lg hover:bg-subtle" onClick={() => setOpen(false)} aria-label={t('Close')}>
+          <button class="flex size-11 items-center justify-center rounded-lg hover:bg-subtle" onClick={() => setOpen(false)} aria-label={t('Close')}>
             <X class="size-4" />
           </button>
         </header>
