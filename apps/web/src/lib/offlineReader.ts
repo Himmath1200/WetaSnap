@@ -735,7 +735,9 @@ export function parseCardText(text: string): ReadResult {
   }
 
   // Website, or the email's domain when the card only prints an address.
-  const webLine = lines.find((l) => !l.includes('@') && WEB.test(l) && /(www\.|https?:|\.(com|de|fr|it|es|nl|pt|eu|se|dk|no|fi|at|ch|be|ie|in|co\.uk|net|org))/i.test(l));
+  // Note: the check is “no email address”, not “no @” — OCR debris such as
+  // “@&: www.wetano.com” carries a stray @ next to the real URL.
+  const webLine = lines.find((l) => !EMAIL.test(l) && WEB.test(l) && /(www\.|https?:|\.(com|de|fr|it|es|nl|pt|eu|se|dk|no|fi|at|ch|be|ie|in|co\.uk|net|org))/i.test(l));
   const webPrinted = webLine?.match(WEB)?.[1] ?? null;
   if (webPrinted) {
     out.website = mark(webPrinted.startsWith('http') ? webPrinted : `https://${webPrinted}`, 0.8);
@@ -749,10 +751,11 @@ export function parseCardText(text: string): ReadResult {
   }
 
   // Country: printed on the card first, otherwise worked out from the dialling code.
+  // Printed beats guessed — the word is right there, so it is not uncertain.
   const countryLine = lines.find((l) => COUNTRY.test(l));
   if (countryLine) {
     const foundCountry = countryLine.match(COUNTRY)![0];
-    out.country = mark(foundCountry.charAt(0).toUpperCase() + foundCountry.slice(1), 0.7);
+    out.country = mark(foundCountry.charAt(0).toUpperCase() + foundCountry.slice(1), 0.9);
     used.add(countryLine);
   } else if (out.phone) {
     const hit = CC_COUNTRY.find(([cc]) => out.phone!.value.replace(/\D/g, '').startsWith(cc));
@@ -809,12 +812,36 @@ export function parseCardText(text: string): ReadResult {
     companyWhy = siteHit ? 'site' : mailHit ? 'domain' : company ? 'top' : null;
   }
   if (company && lines.includes(company)) {
-    // A letterhead often splits the name over two lines: “NORDSAAT” above “Saatgut GmbH”.
-    const above = lines[lines.indexOf(company) - 1];
-    if (above && !used.has(above) && above.split(/\s+/).length <= 3 && !/[@\d]/.test(above)
-      && !TITLE.test(above) && !COMPANY.test(above) && above === above.toUpperCase()) {
+    // A letterhead often splits the name over two lines: “NORDSAAT” above “Saatgut GmbH”,
+    // or a CamelCase brand (“WeTano”) above “Solutions Private Limited”. The brand line
+    // carries no legal suffix, so the suffix search leaves it behind — prepend it when it
+    // is short, unused, not the person, and either all-caps or agreeing with the domain.
+    // Two-column cards put the right-column header between brand and legal name
+    // (“WeTano” / “Headquarters” / “Solutions Private Limited”), so look past one
+    // skippable header line when the direct neighbour does not qualify.
+    const idx = lines.indexOf(company);
+    const base = siteBase || domainBase;
+    const brandLike = (cand: string) =>
+      cand && !used.has(cand) && cand.split(/\s+/).length <= 3 && !/[@\d]/.test(cand)
+      && !TITLE.test(cand) && !COMPANY.test(cand) && !isPersonLine(cand, emailLocal)
+      // A location header ("Headquarters") is never the brand — it only sits between it and the legal name.
+      && !/headquarters|head office|registered|corporate|branch/i.test(cand)
+      && (cand === cand.toUpperCase()
+        || (base !== '' && domainScoreOf(cand, base) >= 0.75)
+        || /^[A-Z][A-Za-z]+$/.test(cand));
+    const above = lines[idx - 1];
+    if (above && brandLike(above)) {
       company = `${above} ${company}`;
       used.add(above);
+      used.add(lines[idx]!);
+    } else if (idx >= 2 && above && /headquarters|^[^\p{L}\d]+/iu.test(above)) {
+      const higher = lines[idx - 2]!;
+      if (higher && brandLike(higher)) {
+        company = `${higher} ${company}`;
+        used.add(above);
+        used.add(higher);
+        used.add(lines[idx]!);
+      }
     }
   }
   if (company) {
@@ -838,11 +865,12 @@ export function parseCardText(text: string): ReadResult {
   }
 
   // Job title. Stray glyphs from the card's rules land on this line ("Manager ©/C/Ar.").
+  // A TITLE match on its own line is read, not guessed — no "please check" for it.
   const titleLine = lines.find((l) => TITLE.test(l) && !used.has(l));
   if (titleLine) {
     let title = clean(titleLine).replace(/\s*[©®™]+$/u, '').replace(/\s+[•·|_—–\-=:;.]+$/u, '');
     if (title.split(/\s+/).length >= 3) title = title.replace(/\s[A-Za-z]\.?$/u, '').replace(/\s[A-Za-z]{2}\.$/u, '');
-    out.job_title = mark(title, 0.7);
+    out.job_title = mark(title, 0.85);
     used.add(titleLine);
   }
 
@@ -852,8 +880,18 @@ export function parseCardText(text: string): ReadResult {
   if (nameLine) {
     const [first, last] = splitName(nameLine);
     if (first && last) {
-      out.first_name = mark(first, 0.75);
-      out.last_name = mark(last, 0.75);
+      // A name the email address confirms (“Janakiraman” in janakiraman@…) is read,
+      // not guessed — no “please check” for it. A public mailbox only whispers
+      // (companyname@gmail.com and personname@gmail.com look identical), so it
+      // never confirms.
+      const el = squashForSim(emailLocal);
+      const confirmed = !emailPublic && el !== '' && nameLine.split(/\s+/).some((w) => {
+        const sq = squashForSim(w);
+        return sq.length >= 3 && el.includes(sq);
+      });
+      const conf = confirmed ? 0.9 : 0.75;
+      out.first_name = mark(first, conf);
+      out.last_name = mark(last, conf);
     }
   } else if (email && !emailPublic) {
     // Last resort: many company addresses are first.last@… — but never from a
@@ -877,12 +915,13 @@ export function parseCardText(text: string): ReadResult {
   }
 
   // Address: street + postcode lines, joined in card order. A 6-digit PIN anchors an
-  // address on its own; a 5-digit postcode needs a street marker or comma beside it
-  // (so years and order numbers never qualify), and fax lines are never addresses.
+  // address on its own (certain enough to not flag); a 5-digit postcode needs a street
+  // marker or comma beside it (so years and order numbers never qualify), and fax
+  // lines are never addresses.
   const PINCODE = /\b[1-9]\d{5}\b/;
   const POSTCODE5 = /\b\d{5}\b/;
   const STREET = /\b(stra[sß]e|strasse|str\.|platz|weg|gasse|allee|ring|ufer|rue|avenue|av\.|boulevard|bd\.|impasse|chemin|place|quai|route|via|viale|piazza|corso|vicolo|largo|calle|avenida|plaza|paseo|carrer|camino|straat|laan|plein|kade|dijk|singel|weg|rua|travessa|praca|praça|street|st\.|road|rd\.|lane|drive|park|square|suite|floor|unit|nagar|marg|gali|colony|layout|enclave|vihar|puram|cross|main|plot|highway)(?![A-Za-z])/i;
-  const addrLines = lines.filter((l) => {
+  const scored = lines.filter((l) => {
     // The country line often IS the address tail — it stays eligible here.
     if ((used.has(l) && l !== countryLine) || l.includes('@') || FAX.test(l)) return false;
     let s = 0;
@@ -891,12 +930,27 @@ export function parseCardText(text: string): ReadResult {
     if (STREET.test(l)) s += 2;
     if (/\d/.test(l)) s += 1;
     return s >= 3;
-  }).slice(0, 3);
-  if (addrLines.length) {
-    const hasPin = addrLines.some((l) => PINCODE.test(l));
-    out.address = mark(addrLines.join(', '), hasPin ? 0.7 : 0.55,
+  });
+  // A locality line ("Queenspark, Saligramam") carries no postcode, street word or
+  // digits, so it never scores — yet right above a PIN line it is the address head.
+  // Pull in up to two such comma lines above the first hit.
+  const addrLines = [...scored];
+  if (scored.length) {
+    const top = lines.indexOf(scored[0]!);
+    for (let i = top - 1; i >= Math.max(0, top - 2) && addrLines.length < 3; i--) {
+      const l = lines[i]!;
+      if ((used.has(l) && l !== countryLine) || l.includes('@') || FAX.test(l)) break;
+      if (/[@\d]/.test(l) || TITLE.test(l) || COMPANY.test(l) || !l.includes(',')) break;
+      if (isPersonLine(l, emailLocal)) break;
+      addrLines.unshift(l);
+    }
+  }
+  const picked = addrLines.slice(0, 3);
+  if (picked.length) {
+    const hasPin = picked.some((l) => PINCODE.test(l));
+    out.address = mark(picked.map((l) => l.replace(/,\s*$/, '')).join(', '), hasPin ? 0.85 : 0.55,
       hasPin ? undefined : 'No postcode on the card — check the address');
-    addrLines.forEach((l) => used.add(l));
+    picked.forEach((l) => used.add(l));
   }
 
   return out;
