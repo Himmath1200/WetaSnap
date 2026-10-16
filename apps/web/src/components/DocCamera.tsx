@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CameraOff, SwitchCamera, Zap, ZapOff } from 'lucide-preact';
-import { motion, sharpness } from '../lib/image';
+import { burstCrop, motion, sharpness } from '../lib/image';
 import { detectCard, engineState, onEngineState, quadsClose, warmEngine, type Quad } from '../lib/scanEngine';
 import { t } from '../lib/i18n';
 
@@ -52,36 +52,8 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
     setFlash(true);
     setTimeout(() => setFlash(false), 180);
     navigator.vibrate?.(30);
-    // Burst: 3 frames ~200ms apart, keep the sharpest (hand barely moves between frames).
-    void (async () => {
-      const frames: HTMLCanvasElement[] = [];
-      for (let i = 0; i < 3; i++) {
-        if (i > 0) await new Promise((r) => setTimeout(r, 200));
-        const vv = video.current;
-        if (!vv?.videoWidth) break;
-        const c = document.createElement('canvas');
-        c.width = vv.videoWidth;
-        c.height = vv.videoHeight;
-        try {
-          c.getContext('2d')!.drawImage(vv, 0, 0);
-          frames.push(c);
-        } catch { break; }
-      }
-      if (!frames.length) return;
-      let best = frames[0]!;
-      if (frames.length > 1) {
-        const t = document.createElement('canvas');
-        t.width = 80; t.height = 50;
-        const tctx = t.getContext('2d', { willReadFrequently: true })!;
-        let bestScore = -1;
-        for (const f of frames) {
-          tctx.drawImage(f, 0, 0, 80, 50);
-          const sc = sharpness(tctx.getImageData(0, 0, 80, 50).data, 80, 50);
-          if (sc > bestScore) { bestScore = sc; best = f; }
-        }
-      }
-      shot.current({ canvas: best, quad: quadRef.current });
-    })();
+    // Same burst as the classic camera — full frame here (the warp crops later), not the ID-1 guide.
+    void burstCrop(v).then((best) => shot.current({ canvas: best, quad: quadRef.current }));
   };
 
   // Start / stop the stream.

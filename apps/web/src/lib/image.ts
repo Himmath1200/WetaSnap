@@ -236,19 +236,20 @@ export function isGlare(data: Uint8ClampedArray, w: number, h: number): boolean 
   return hot / n > 0.12 && ink / n < 0.02;
 }
 
-/** Grab n frames gapMs apart from the live video, return the sharpest crop. */
+/** Grab n frames gapMs apart from the live video, return the sharpest. No crop = full frame. */
 export async function burstCrop(
-  src: HTMLVideoElement, crop: { x: number; y: number; w: number; h: number }, n = 3, gapMs = 220,
+  src: HTMLVideoElement, crop?: { x: number; y: number; w: number; h: number }, n = 3, gapMs = 220,
 ): Promise<HTMLCanvasElement> {
   const shots: HTMLCanvasElement[] = [];
   for (let i = 0; i < n; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, gapMs));
     if (!src.videoWidth) break;
+    const r = crop ?? { x: 0, y: 0, w: src.videoWidth, h: src.videoHeight };
     try {
       const c = document.createElement('canvas');
-      c.width = Math.max(2, Math.round(crop.w));
-      c.height = Math.max(2, Math.round(crop.h));
-      c.getContext('2d')!.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, c.width, c.height);
+      c.width = Math.max(2, Math.round(r.w));
+      c.height = Math.max(2, Math.round(r.h));
+      c.getContext('2d')!.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
       shots.push(c);
     } catch {
       break;
