@@ -173,7 +173,7 @@ async function preprocessForOcr(photo: Blob, opts?: { bw?: boolean }): Promise<B
   }
 }
 
-interface TesseractWord { text: string; confidence: number }
+interface TesseractWord { text: string; confidence: number; bbox?: { x0: number; y0: number; x1: number; y1: number } }
 interface TesseractLine { text: string; confidence: number; words?: TesseractWord[] }
 interface TesseractData { text?: string; lines?: TesseractLine[] }
 
@@ -188,20 +188,40 @@ function cleanToken(t: string) {
 }
 
 /**
+ * Join a line's words back into text, keeping a two-column card's gutter. The gutter only
+ * survives as position — a gap wider than the type is tall is a column break, not a word
+ * space — and parseCardText splits the columns on it, so the brand line stays the brand line.
+ */
+function joinGutter(words: TesseractWord[]): string {
+  const tall = words.reduce((h, w) => (w.bbox ? Math.max(h, w.bbox.y1 - w.bbox.y0) : h), 0);
+  let out = '';
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]!;
+    const prev = words[i - 1];
+    if (prev) {
+      const gap = w.bbox && prev.bbox ? w.bbox.x0 - prev.bbox.x1 : 0;
+      out += tall > 0 && gap > tall ? '  ' : ' ';
+    }
+    out += cleanToken(w.text);
+  }
+  return out;
+}
+
+/**
  * Rebuild lines from Tesseract's words, dropping what the engine was unsure of and what is
  * decoration rather than text. Falls back to plain text when no word boxes came back.
  */
-function rebuildText(data: TesseractData): string {
+export function rebuildText(data: TesseractData): string {
   const lines = data?.lines;
   if (!lines?.length) return data?.text ?? '';
   const out: string[] = [];
   for (const line of lines) {
-    const words = line.words?.length
-      ? line.words.filter((w) => !WEAK_WORD(w)).map((w) => cleanToken(w.text))
-      : [cleanToken(line.text)];
-    const kept = words.filter((t) => t && !DECORATION.test(t));
+    const source = line.words?.length
+      ? line.words.filter((w) => !WEAK_WORD(w))
+      : [{ text: line.text, confidence: line.confidence }];
+    const kept = source.filter((w) => cleanToken(w.text) && !DECORATION.test(cleanToken(w.text)));
     if (!kept.length) continue;
-    const joined = kept.join(' ').trim();
+    const joined = joinGutter(kept).trim();
     if (!/[A-Za-z0-9@+]/u.test(joined)) continue; // a rule or underline, not a line of text
     out.push(joined);
   }

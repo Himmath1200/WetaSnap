@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { domainBaseOf, domainScoreOf, isFreeMailDomain, isNameShaped, isPersonLine, parseCardText, repairCompanySpelling } from '../offlineReader';
+import { domainBaseOf, domainScoreOf, isFreeMailDomain, isNameShaped, isPersonLine, parseCardText, rebuildText, repairCompanySpelling } from '../offlineReader';
 
 /**
  * The parser turns the lines an OCR engine read into card fields. The samples below are real
@@ -317,6 +317,30 @@ describe('parseCardText', () => {
 
     expect(r.address?.value).toBe('Am Schwabeplan 8, 39164 Magdeburg, Germany');
     expect(r.address?.reason).toMatch(/postcode/i);
+  });
+
+  it('keeps the two-column gutter when lines are rebuilt from Tesseract word boxes', () => {
+    // The WeTano card: the brand sits in the left column with "Headquarters" in the right,
+    // and the address continues in the right column beside the legal name. Word boxes are
+    // the only place the gutter survives, so the rebuild must not flatten it.
+    const w = (text: string, x0: number, x1: number, y: number) =>
+      ({ text, confidence: 92, bbox: { x0, y0: y, x1, y1: y + 34 } });
+    const text = rebuildText({
+      lines: [
+        { text: 'Janakiraman Sridhar', confidence: 92, words: [w('Janakiraman', 40, 190, 20), w('Sridhar', 200, 290, 20)] },
+        { text: 'Founder & Director', confidence: 92, words: [w('Founder', 40, 120, 60), w('&', 128, 148, 60), w('Director', 156, 240, 60)] },
+        { text: 'WeTano (© Headquarters', confidence: 92, words: [w('WeTano', 40, 130, 280), w('(©', 320, 350, 280), w('Headquarters', 360, 480, 280)] },
+        { text: 'Solutions Private Limited Queenspark, Saligramam,', confidence: 92, words: [w('Solutions', 40, 130, 330), w('Private', 140, 210, 330), w('Limited', 220, 300, 330), w('Queenspark,', 360, 470, 330), w('Saligramam,', 480, 590, 330)] },
+        { text: 'Chennai-600093. India.', confidence: 92, words: [w('Chennai-600093.', 360, 500, 370), w('India.', 510, 570, 370)] },
+      ],
+    });
+
+    const r = parseCardText(text);
+    expect(r.company?.value).toBe('WeTano Solutions Private Limited');
+    expect(r.address?.value).toBe('Queenspark, Saligramam, Chennai-600093. India.');
+    expect(r.first_name?.value).toBe('Janakiraman');
+    expect(r.last_name?.value).toBe('Sridhar');
+    expect(r.job_title?.value).toBe('Founder & Director');
   });
 
   it('recognises founder, proprietor and lead titles as roles', () => {

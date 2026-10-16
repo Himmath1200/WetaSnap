@@ -284,7 +284,7 @@ export default function ScanV2() {
           <ReadBadge state={read} />
         </div>
         {(read === 'pending' || read === 'offline') && photo && (
-          <button class="btn-secondary ml-auto min-h-10 shrink-0 px-3 text-xs" disabled={retrying || read === 'reading'} onClick={() => void retryRead()}>
+          <button class="btn-secondary ml-auto min-h-10 shrink-0 px-3 text-xs" disabled={retrying} onClick={() => void retryRead()}>
             {retrying ? <Spinner class="size-4" /> : <RotateCcw class="size-4" />}{t('Re-read')}
           </button>
         )}

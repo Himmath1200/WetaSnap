@@ -66,13 +66,13 @@ export async function readWithOcr(image: Buffer, mime: string, fields: FieldSpec
       return null;
     }
     const body = await res.json() as { fields: ReadFields; engine: string; raw_text?: string };
-    const fields = body.fields ?? {};
+    const found = body.fields ?? {};
     return {
-      fields,
+      fields: found,
       engine: body.engine ?? 'ocr',
       text: typeof body.raw_text === 'string' && body.raw_text.trim()
         ? body.raw_text
-        : Object.values(fields).map((f) => f.value).join('\n'),
+        : Object.values(found).map((f) => f.value).join('\n'),
       ms: Date.now() - started,
     };
   } catch (e) {
