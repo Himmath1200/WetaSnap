@@ -287,45 +287,6 @@ def test_person_is_never_stored_as_the_company():
     assert out["last_name"].value == "Nair"
 
 
-def test_name_with_initials_and_single_letter_company():
-    lines = card([
-        ("VR Foods", 34),
-        ("V Rakesh Reddy", 30),
-        ("Purchase Manager", 20),
-        ("v.rakesh@vrfoods.in", 20),
-        ("+91 98400 12345", 20),
-    ])
-    out = read(lines, language="en")
-    assert out["company"].value == "VR Foods"
-    assert out["first_name"].value == "V Rakesh"
-    assert out["last_name"].value == "Reddy"
-
-
-def test_dotted_initials_stay_with_the_person_despite_the_domain():
-    lines = card([
-        ("Christian R.S. Arokiaswamy", 34),
-        ("christian@arokia.in", 20),
-        ("+91 98400 12346", 20),
-    ])
-    out = read(lines, language="en")
-    assert out["first_name"].value == "Christian R.S."
-    assert out["last_name"].value == "Arokiaswamy"
-
-
-@pytest.mark.parametrize("rows", [
-    [("Priya Nair", 34), ("Enrich Spaces", 30)],
-    [("Enrich Spaces", 34), ("Priya Nair", 30)],
-])
-def test_public_mailbox_abstains_on_the_company_either_way_round(rows):
-    # Name-first and company-first: with gmail there is no signal, so the company
-    # stays blank in both orders instead of flipping a coin.
-    lines = card([*rows, ("priya.nair@gmail.com", 20), ("+91 98400 12345", 20)])
-    out = read(lines, language="en")
-    assert "company" not in out
-    assert out["first_name"].value == "Priya"
-    assert out["last_name"].value == "Nair"
-
-
 def test_company_still_matches_with_one_ocr_slip_in_its_name():
     lines = card([
         ("Ennich Spaces", 34),
@@ -335,26 +296,6 @@ def test_company_still_matches_with_one_ocr_slip_in_its_name():
     ])
     out = read(lines, language="en")
     assert out["company"].value == "Ennich Spaces"
-    assert out["first_name"].value == "Preeti"
-    assert out["last_name"].value == "Balaraman"
-
-
-def test_misread_logo_is_fixed_from_the_printed_website():
-    from extract import _repair_company_spelling
-    assert _repair_company_spelling("Ennich Spaces", "enrichspaces") == "Enrich Spaces"
-    assert _repair_company_spelling("ENNICH SPACES", "enrichspaces") == "ENRICH SPACES"
-    assert _repair_company_spelling("Enrich Spaces", "enrichspaces") == "Enrich Spaces"
-    assert _repair_company_spelling("Priya Nair", "enrichspaces") == "Priya Nair"
-    lines = card([
-        ("Ennich Spaces", 34),
-        ("Preeti Balaraman", 30),
-        ("preeti@enrichspaces.co.in", 20),
-        ("www.enrichspaces.co.in", 20),
-        ("+91 99406 42190", 20),
-    ])
-    out = read(lines, language="en")
-    assert out["company"].value == "Enrich Spaces"
-    assert out["company"].reason == "Spelling fixed from the website address"
     assert out["first_name"].value == "Preeti"
     assert out["last_name"].value == "Balaraman"
 

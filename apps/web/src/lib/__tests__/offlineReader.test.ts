@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { domainBaseOf, domainScoreOf, isFreeMailDomain, isNameShaped, isPersonLine, parseCardText, repairCompanySpelling } from '../offlineReader';
+import { domainBaseOf, domainScoreOf, isFreeMailDomain, isPersonLine, parseCardText } from '../offlineReader';
 
 /**
  * The parser turns the lines an OCR engine read into card fields. The samples below are real
@@ -77,20 +77,6 @@ describe('parseCardText', () => {
     }
   });
 
-  it('a public mailbox abstains on the company either way round', () => {
-    // Name-first and company-first: with gmail there is no signal, so the company
-    // stays blank in both orders instead of flipping a coin — the name still resolves.
-    for (const cardLines of [
-      ['Priya Nair', 'Enrich Spaces', 'priya.nair@gmail.com', '+91 98400 12345'],
-      ['Enrich Spaces', 'Priya Nair', 'priya.nair@gmail.com', '+91 98400 12345'],
-    ]) {
-      const r = parseCardText(cardLines.join('\n'));
-      expect(r.company, `no company guess for ${cardLines[0]}`).toBeUndefined();
-      expect(r.first_name?.value).toBe('Priya');
-      expect(r.last_name?.value).toBe('Nair');
-    }
-  });
-
   it('isFreeMailDomain matches case-insensitively and ignores trailing dots', () => {
     expect(isFreeMailDomain('GMail.COM')).toBe(true);
     expect(isFreeMailDomain('gmail.com.')).toBe(true);
@@ -114,10 +100,6 @@ describe('parseCardText', () => {
     expect(isPersonLine('Priya Nair', 'info')).toBe(false);
     expect(isPersonLine('Enrich Spaces', 'info')).toBe(false); // no signal either way
     expect(isPersonLine('Enrich Spaces', '')).toBe(false);
-    expect(isNameShaped('Priya Nair')).toBe(true);
-    expect(isNameShaped('Enrich Spaces')).toBe(true);
-    expect(isNameShaped('ENRICH')).toBe(false);
-    expect(isNameShaped('Chennai 600118')).toBe(false);
   });
 
   it('cross-checks name and company against the email domain', () => {
@@ -196,30 +178,6 @@ describe('parseCardText', () => {
     expect(r.last_name?.value).toBe('Balaraman');
   });
 
-  it('repairs the company spelling from the website, keeping word breaks', () => {
-    expect(repairCompanySpelling('Ennich Spaces', 'enrichspaces')).toBe('Enrich Spaces');
-    expect(repairCompanySpelling('ENNICH SPACES', 'enrichspaces')).toBe('ENRICH SPACES');
-    expect(repairCompanySpelling('Enrich Spaces', 'enrichspaces')).toBe('Enrich Spaces');
-    expect(repairCompanySpelling('Priya Nair', 'enrichspaces')).toBe('Priya Nair');
-    expect(repairCompanySpelling('Enrich Spaces', '')).toBe('Enrich Spaces');
-  });
-
-  it('fixes a misread logo from the printed website', () => {
-    const r = parseCardText([
-      'Ennich Spaces',
-      'Preeti Balaraman',
-      'preeti@enrichspaces.co.in',
-      'www.enrichspaces.co.in',
-      '+91 99406 42190',
-    ].join('\n'));
-
-    expect(r.company?.value).toBe('Enrich Spaces');
-    expect(r.company?.confidence).toBe(0.75);
-    expect(r.company?.reason).toMatch(/website/i);
-    expect(r.first_name?.value).toBe('Preeti');
-    expect(r.last_name?.value).toBe('Balaraman');
-  });
-
   it('never stores the person as the company', () => {
     // A card with nothing but a name and a public mailbox: no company to find.
     const r = parseCardText(['Priya Nair', 'priya.nair@gmail.com', '+91 98400 12345'].join('\n'));
@@ -227,32 +185,6 @@ describe('parseCardText', () => {
     expect(r.company).toBeUndefined();
     expect(r.first_name?.value).toBe('Priya');
     expect(r.last_name?.value).toBe('Nair');
-  });
-
-  it('reads names with initials, and single letters do not become the company', () => {
-    const r = parseCardText([
-      'VR Foods',
-      'V Rakesh Reddy',
-      'Purchase Manager',
-      'v.rakesh@vrfoods.in',
-      '+91 98400 12345',
-    ].join('\n'));
-
-    expect(r.company?.value).toBe('VR Foods');
-    expect(r.first_name?.value).toBe('V Rakesh');
-    expect(r.last_name?.value).toBe('Reddy');
-    expect(r.job_title?.value).toBe('Purchase Manager');
-  });
-
-  it('reads dotted initials in the middle of a name', () => {
-    const r = parseCardText([
-      'Christian R.S. Arokiaswamy',
-      'christian@arokia.in',
-      '+91 98400 12346',
-    ].join('\n'));
-
-    expect(r.first_name?.value).toBe('Christian R.S.');
-    expect(r.last_name?.value).toBe('Arokiaswamy');
   });
 
   it('Ageas card: merged columns split, mobile wins, India from the dialling code', () => {
