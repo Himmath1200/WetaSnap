@@ -343,6 +343,31 @@ describe('parseCardText', () => {
     expect(r.job_title?.value).toBe('Founder & Director');
   });
 
+  it('uses the printed type size and the bottom band when Tesseract supplies boxes', () => {
+    // Body print, a big name, then a two-line address in the bottom band carrying neither a
+    // postcode nor a street word — nothing the text alone can score.
+    const text = ['Semi Verdi S.r.l.', 'Marco Bianchi', 'Sales Manager', 'Via Roma', 'Zona Nord'].join('\n');
+    const boxes = [
+      { top: 0.05, height: 0.06 },
+      { top: 0.2, height: 0.16 },
+      { top: 0.42, height: 0.06 },
+      { top: 0.72, height: 0.06 },
+      { top: 0.82, height: 0.06 },
+    ];
+    const r = parseCardText(text, boxes);
+    expect(r.first_name?.value).toBe('Marco');
+    expect(r.address?.value).toBe('Via Roma, Zona Nord');
+    expect(r.address?.reason).toMatch(/postcode/i);
+  });
+
+  it('takes the biggest line in the top half as the company when nothing else decides it', () => {
+    const text = ['value through partnership', 'Nova Chemicals', 'Priya Nair'].join('\n');
+    const boxes = [{ top: 0.02, height: 0.05 }, { top: 0.3, height: 0.18 }, { top: 0.6, height: 0.09 }];
+    const r = parseCardText(text, boxes);
+    expect(r.company?.value).toBe('Nova Chemicals');
+    expect(r.first_name?.value).toBe('Priya');
+  });
+
   it('recognises founder, proprietor and lead titles as roles', () => {
     const founder = parseCardText([
       'FieldFirst UK',
