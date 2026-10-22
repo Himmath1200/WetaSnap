@@ -28,7 +28,7 @@ interface Adjust { canvas: HTMLCanvasElement; quad: Quad | null; back: boolean }
 
 /**
  * SCAN-V2 · Pro scanner (staff home alternative). The capture path is the only
- * thing that differs from Scan.tsx: live edge detection → corner true-up →
+ * thing that differs from Scan.tsx: live corner detection → corner true-up →
  * perspective warp → the shared clean-up. From the review form on (reading,
  * filling, saving) the two scanners run the exact same code path shape.
  */

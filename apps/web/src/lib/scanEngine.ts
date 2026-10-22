@@ -1,28 +1,16 @@
 /**
- * SCAN-V2 · Pro document scanner engine (jscanify + OpenCV).
+ * SCAN-V2 · Pro document scanner engine (DocAligner + plain-canvas warp).
  *
- * The classic scanner (lib/scan.ts) crops axis-aligned and never warps perspective.
- * This engine does the CamScanner-style path instead: find the card's four corners,
- * warp the perspective flat with jscanify's `extractPaper`, then hand the flat card
- * to the SAME clean-up (`autoEnhance`) and the SAME reading flow
- * (local OCR → cloud → on-device) as the classic scanner.
+ * The classic scanner (lib/scan.ts) crops axis-aligned and never warps
+ * perspective. This engine does the CamScanner-style path instead: find the
+ * card's four corners with a small ONNX model (lib/docAligner.ts), flatten the
+ * perspective with our own homography, then hand the flat card to the SAME
+ * clean-up (`autoEnhance`) and the SAME reading flow as the classic scanner.
  *
- * Detection is two-stage, because jscanify alone takes the *biggest* contour —
- * on a busy background (hand, ceiling lights, furniture) that is rarely the card:
- * 1. quadrilateral search: approximate every contour to a polygon, keep convex
- *    4-point quads, and score each by real edge support along its perimeter
- *    (sampled on the Canny map), card-like proportions and size;
- * 2. jscanify's own biggest-contour quad competes as one more candidate with the
- *    same scoring, so a clean table-top still detects exactly as before.
- * The best quad wins only when it is genuinely supported — otherwise null, and
- * the UI keeps guiding instead of auto-capturing garbage.
- *
- * Weight discipline (§8.1): neither jscanify's wrapper (~8 KB) nor OpenCV (~8 MB) may
- * enter the first download. Both load lazily, only when the Pro scanner opens:
- * the wrapper via a dynamic import (its own chunk, cached by the PWA) and OpenCV
- * via a `<script>` from the CDN (never bundled, never precached — it would blow
- * the 2 MB installed budget on its own). First open needs internet once; after
- * that the browser cache serves it. Offline on first open falls back to /scan.
+ * Geometry is ours on purpose: the warp is a dozen lines of bilinear sampling,
+ * which keeps OpenCV (8 MB of CDN JavaScript, unreachable offline) out of the
+ * app entirely. Everything in this file that is not canvas work is pure and
+ * unit-tested.
  */
 
 export interface Pt { x: number; y: number }
@@ -31,26 +19,6 @@ export interface Quad { tl: Pt; tr: Pt; br: Pt; bl: Pt }
 
 export type EngineState = 'idle' | 'loading' | 'ready' | 'error';
 
-const OPENCV_URL = 'https://docs.opencv.org/4.7.0/opencv.js';
-const LOAD_TIMEOUT_MS = 45_000;
-/** Live detection runs on a thumbnail this wide — fast enough for 2 fps on phones. */
-export const DETECT_W = 320;
-
-/** Minimal shape of the jscanify browser build (jscanify/client). */
-export interface JScanify {
-  findPaperContour(img: unknown): { delete(): void } | null;
-  getCornerPoints(contour: unknown): {
-    topLeftCorner?: Pt; topRightCorner?: Pt; bottomLeftCorner?: Pt; bottomRightCorner?: Pt;
-  };
-  highlightPaper(image: CanvasImageSource, options?: { color?: string; thickness?: number }): HTMLCanvasElement;
-  extractPaper(
-    image: CanvasImageSource, resultWidth: number, resultHeight: number,
-    cornerPoints?: { topLeftCorner: Pt; topRightCorner: Pt; bottomLeftCorner: Pt; bottomRightCorner: Pt },
-  ): HTMLCanvasElement | null;
-}
-
-let cvPromise: Promise<void> | null = null;
-let scannerPromise: Promise<JScanify> | null = null;
 let state: EngineState = 'idle';
 const listeners = new Set<(s: EngineState) => void>();
 
@@ -61,79 +29,24 @@ export const onEngineState = (l: (s: EngineState) => void) => {
   return () => { listeners.delete(l); };
 };
 
-const getCv = (): any => (window as unknown as { cv?: any }).cv;
-
-/** Loads OpenCV once and waits until its runtime really answers. */
-function loadOpenCv(): Promise<void> {
-  if (!cvPromise) {
-    setState('loading');
-    cvPromise = new Promise<void>((resolve, reject) => {
-      const fail = (e: unknown) => {
-        setState('error');
-        reject(e instanceof Error ? e : new Error('The scanner engine could not load.'));
-      };
-      try {
-        const cv = getCv();
-        if (cv?.Mat && cv?.imread) { setState('ready'); resolve(); return; }
-        if (document.querySelector(`script[data-opencv]`)) {
-          // Another attempt is already fetching — just wait for it.
-          waitForCv().then(resolve, fail);
-          return;
-        }
-        const s = document.createElement('script');
-        s.src = OPENCV_URL;
-        s.async = true;
-        s.dataset.opencv = '1';
-        const timer = setTimeout(() => fail(new Error('The scanner engine took too long to load. Check your connection and try again.')), LOAD_TIMEOUT_MS);
-        s.onload = () => {
-          // The script tag loads the Emscripten runtime; the API arrives a moment later.
-          waitForCv().then(
-            () => { clearTimeout(timer); setState('ready'); resolve(); },
-            (e) => { clearTimeout(timer); fail(e); },
-          );
-        };
-        s.onerror = () => { clearTimeout(timer); fail(new Error('The scanner engine could not be downloaded. Check your connection and try again.')); };
-        document.head.appendChild(s);
-      } catch (e) { fail(e); }
-    });
-    // A failure must be retryable (airplane mode toggled back on, …).
-    void cvPromise.catch(() => { cvPromise = null; scannerPromise = null; });
+/** Loads the detector once and tracks it for the UI. Retries after a failure. */
+async function ensureEngine(): Promise<void> {
+  if (state === 'ready') return;
+  if (state !== 'loading') setState('loading');
+  const { loadAligner } = await import('./docAligner');
+  try {
+    await loadAligner();
+    setState('ready');
+  } catch (e) {
+    // lib/docAligner drops its cached promise on failure, so the next call retries.
+    setState('error');
+    throw e;
   }
-  return cvPromise;
 }
 
-function waitForCv(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const t0 = Date.now();
-    const tick = () => {
-      const cv = getCv();
-      if (cv?.Mat && cv?.imread && cv?.findContours) { resolve(); return; }
-      if (Date.now() - t0 > 20_000) { reject(new Error('The scanner engine started but never became ready. Reload and try again.')); return; }
-      setTimeout(tick, 60);
-    };
-    tick();
-  });
-}
-
-/** The jscanify wrapper chunk loads only here — never in the first download. */
-async function loadScanner(): Promise<JScanify> {
-  if (!scannerPromise) {
-    scannerPromise = (async () => {
-      await loadOpenCv();
-      const mod = (await import('jscanify/client')) as unknown as
-        { default?: new () => JScanify } & { jscanify?: new () => JScanify };
-      const Ctor = mod.default ?? (mod as unknown as new () => JScanify);
-      if (typeof Ctor !== 'function') throw new Error('The scanner engine loaded an unexpected module.');
-      return new Ctor();
-    })();
-    void scannerPromise.catch(() => { scannerPromise = null; });
-  }
-  return scannerPromise;
-}
-
-/** Warm the engine in the background while the person aims the camera. */
+/** Warm the model in the background while the person aims the camera. */
 export function warmEngine() {
-  void loadScanner().catch(() => { /* the screen surfaces the error state */ });
+  void ensureEngine().catch(() => { /* the screen surfaces the error state */ });
 }
 
 // ------------------------------------------------------------ pure geometry
@@ -192,7 +105,7 @@ export function outputSizeFor(q: Quad): { w: number; h: number } {
 }
 
 /**
- * Orders four unordered contour vertices as tl/tr/br/bl (sums-and-differences:
+ * Orders four unordered vertices as tl/tr/br/bl (sums-and-differences:
  * tl minimises x+y, br maximises it, tr minimises y−x, bl maximises it).
  * Pure: unit-tested.
  */
@@ -216,204 +129,125 @@ export function quadAspect(q: Quad): number {
   return Math.max(wPts, hPts) / Math.max(1, Math.min(wPts, hPts));
 }
 
+// ------------------------------------------------------------ pure warp
+
 /**
- * Fraction of the quad's perimeter actually backed by an edge pixel (3×3
- * neighbourhood on the Canny map, sampled every 2 px). A real card boundary
- * scores high; a phantom quad across clutter scores low — even when both are
- * convex and card-sized. Pure: unit-tested.
+ * Homography that maps the `w`×`h` output rectangle onto the quad in the source
+ * image, as 8 row-major coefficients [a b c d e f g h]:
+ *   u = (a x + b y + c) / (g x + h y + 1),  v = (d x + e y + f) / (g x + h y + 1)
+ * Null when the quad is degenerate. Pure: unit-tested.
  */
-export function edgeSupport(q: Quad, edge: Uint8Array | Uint8ClampedArray, w: number, h: number): number {
-  const segs: Array<[Pt, Pt]> = [[q.tl, q.tr], [q.tr, q.br], [q.br, q.bl], [q.bl, q.tl]];
-  let hits = 0;
-  let samples = 0;
-  for (const [a, b] of segs) {
-    const len = dist(a, b);
-    const n = Math.max(1, Math.floor(len / 2));
-    for (let i = 0; i <= n; i++) {
-      const x = Math.round(a.x + ((b.x - a.x) * i) / n);
-      const y = Math.round(a.y + ((b.y - a.y) * i) / n);
-      samples++;
-      let hit = false;
-      for (let dy = -1; dy <= 1 && !hit; dy++) {
-        const yy = y + dy;
-        if (yy < 0 || yy >= h) continue;
-        for (let dx = -1; dx <= 1; dx++) {
-          const xx = x + dx;
-          if (xx < 0 || xx >= w) continue;
-          if (edge[yy * w + xx]) { hit = true; break; }
-        }
-      }
-      if (hit) hits++;
+export function homography(q: Quad, w: number, h: number): number[] | null {
+  const dst: Array<[number, number]> = [[0, 0], [w, 0], [w, h], [0, h]];
+  const src = [q.tl, q.tr, q.br, q.bl];
+  const A: number[][] = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = dst[i]!;
+    const { x: u, y: v } = src[i]!;
+    A.push([x, y, 1, 0, 0, 0, -x * u, -y * u, u]);
+    A.push([0, 0, 0, x, y, 1, -x * v, -y * v, v]);
+  }
+  // Gaussian elimination with partial pivoting on the 8×9 augmented matrix.
+  for (let col = 0; col < 8; col++) {
+    let pivot = col;
+    for (let r = col + 1; r < 8; r++) if (Math.abs(A[r]![col]!) > Math.abs(A[pivot]![col]!)) pivot = r;
+    const p = A[pivot]![col]!;
+    if (Math.abs(p) < 1e-9) return null;
+    [A[col], A[pivot]] = [A[pivot]!, A[col]!];
+    const row = A[col]!;
+    for (let k = col; k <= 8; k++) row[k] = row[k]! / p;
+    for (let r = 0; r < 8; r++) {
+      if (r === col) continue;
+      const f = A[r]![col]!;
+      if (!f) continue;
+      for (let k = col; k <= 8; k++) A[r]![k] = A[r]![k]! - f * row[k]!;
     }
   }
-  return samples ? hits / samples : 0;
-}
-
-/** A quad needs this much of its outline on real edges (occlusion-tolerant). */
-export const QUAD_MIN_SUPPORT = 0.3;
-/** …and this total score to win. */
-export const QUAD_MIN_SCORE = 0.42;
-
-/**
- * 0–1 score: mostly edge support, then card-like proportions (peaks at ID-1
- * 1.586, tolerant either orientation), then a preference for reasonably large.
- * Pure: unit-tested.
- */
-export function scoreQuad(q: Quad, w: number, h: number, edge: Uint8Array | Uint8ClampedArray): number {
-  const support = edgeSupport(q, edge, w, h);
-  const aspectScore = Math.exp(-(((quadAspect(q) - 1.62) / 0.8) ** 2));
-  const areaScore = Math.min(1, quadArea(q) / (w * h) / 0.25);
-  return 0.65 * support + 0.2 * aspectScore + 0.15 * areaScore;
-}
-
-// ------------------------------------------------------------ jscanify + OpenCV calls
-
-function toQuad(raw: { topLeftCorner?: Pt; topRightCorner?: Pt; bottomLeftCorner?: Pt; bottomRightCorner?: Pt }): Quad | null {
-  if (!raw.topLeftCorner || !raw.topRightCorner || !raw.bottomLeftCorner || !raw.bottomRightCorner) return null;
-  return { tl: raw.topLeftCorner, tr: raw.topRightCorner, br: raw.bottomRightCorner, bl: raw.bottomLeftCorner };
+  return A.map((row) => row[8]!);
 }
 
 /**
- * Best supported quad on the thumbnail: polygon-approximated quads plus
- * jscanify's biggest-contour quad, all scored on the same Canny map.
- * Returns null when nothing is genuinely supported. Frees every Mat it makes.
+ * Perspective warps `src` (already at `sw`×`sh`) so the quad fills a `w`×`h`
+ * canvas. Bilinear sampling with edge clamping — no OpenCV, no WebGL.
+ * Pure aside from the returned ImageData. Unit-tested.
  */
-function bestQuad(cv: any, scanner: JScanify, img: any, tw: number, th: number): Quad | null {
-  const gray = new cv.Mat();
-  const blurred = new cv.Mat();
-  const edges = new cv.Mat();
-  const contours = new cv.MatVector();
-  const hierarchy = new cv.Mat();
-  try {
-    cv.cvtColor(img, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
-    cv.Canny(blurred, edges, 75, 200);
-    // findContours destroys its input — copy the edge map for scoring first.
-    const edge = Uint8Array.from(edges.data as Uint8Array);
-    cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-
-    const cands: Quad[] = [];
-    const frame = tw * th;
-    for (let i = 0; i < contours.size(); i++) {
-      const c = contours.get(i);
-      try {
-        const area = cv.contourArea(c);
-        if (area < frame * 0.02 || area > frame * 0.97) continue;
-        const peri = cv.arcLength(c, true);
-        if (peri <= 0) continue;
-        const approx = new cv.Mat();
-        try {
-          cv.approxPolyDP(c, approx, 0.02 * peri, true);
-          if (approx.rows !== 4 || !cv.isContourConvex(approx)) continue;
-          const d = approx.data32S as Int32Array;
-          const q = orderQuadPoints([
-            { x: d[0]!, y: d[1]! }, { x: d[2]!, y: d[3]! },
-            { x: d[4]!, y: d[5]! }, { x: d[6]!, y: d[7]! },
-          ]);
-          if (quadIsSane(q, tw, th)) cands.push(q);
-        } finally {
-          approx.delete();
-        }
-      } finally {
-        c.delete();
+export function warpPixels(
+  src: ImageData, sw: number, sh: number, q: Quad, w: number, h: number,
+): ImageData {
+  const m = homography(q, w, h);
+  const out = new ImageData(w, h);
+  const s = src.data;
+  const d = out.data;
+  if (!m) return out;
+  const [a, b, c, e, f, g2, i, j] = m as [number, number, number, number, number, number, number, number];
+  for (let y = 0; y < h; y++) {
+    const py = y + 0.5;
+    for (let x = 0; x < w; x++) {
+      const px = x + 0.5;
+      const den = i * px + j * py + 1;
+      if (Math.abs(den) < 1e-12) continue;
+      const u = Math.min(sw - 1, Math.max(0, (a * px + b * py + c) / den));
+      const v = Math.min(sh - 1, Math.max(0, (e * px + f * py + g2) / den));
+      const x0 = Math.floor(u);
+      const y0 = Math.floor(v);
+      const x1 = Math.min(sw - 1, x0 + 1);
+      const y1 = Math.min(sh - 1, y0 + 1);
+      const fx = u - x0;
+      const fy = v - y0;
+      const o = (y * w + x) * 4;
+      for (let ch = 0; ch < 4; ch++) {
+        const p00 = s[(y0 * sw + x0) * 4 + ch]!;
+        const p10 = s[(y0 * sw + x1) * 4 + ch]!;
+        const p01 = s[(y1 * sw + x0) * 4 + ch]!;
+        const p11 = s[(y1 * sw + x1) * 4 + ch]!;
+        d[o + ch] = (p00 * (1 - fx) + p10 * fx) * (1 - fy) + (p01 * (1 - fx) + p11 * fx) * fy;
       }
     }
-
-    // jscanify's own answer competes as one more candidate — never the only one.
-    try {
-      const contour = scanner.findPaperContour(img) as unknown as { delete(): void } | null;
-      if (contour) {
-        try {
-          const q = toQuad(scanner.getCornerPoints(contour));
-          if (q && quadIsSane(q, tw, th)) cands.push(q);
-        } finally {
-          try { contour.delete(); } catch { /* best effort */ }
-        }
-      }
-    } catch { /* the polygon search stands on its own */ }
-
-    let best: Quad | null = null;
-    let bestScore = QUAD_MIN_SCORE;
-    for (const q of cands) {
-      if (edgeSupport(q, edge, tw, th) < QUAD_MIN_SUPPORT) continue;
-      const s = scoreQuad(q, tw, th, edge);
-      if (s > bestScore) { bestScore = s; best = q; }
-    }
-    return best;
-  } finally {
-    try { hierarchy.delete(); } catch { /* best effort */ }
-    try { contours.delete(); } catch { /* best effort */ }
-    try { edges.delete(); } catch { /* best effort */ }
-    try { blurred.delete(); } catch { /* best effort */ }
-    try { gray.delete(); } catch { /* best effort */ }
   }
+  return out;
 }
 
-/** Draws the source onto a thumbnail and finds the card in it — cheap enough for live use. */
-async function detectOnThumb(scanner: JScanify, src: CanvasImageSource, sw: number, sh: number): Promise<{ quad: Quad; tw: number; th: number } | null> {
-  const k = Math.min(1, DETECT_W / Math.max(sw, sh));
-  const tw = Math.max(2, Math.round(sw * k));
-  const th = Math.max(2, Math.round(sh * k));
-  const t = document.createElement('canvas');
-  t.width = tw;
-  t.height = th;
-  t.getContext('2d')!.drawImage(src, 0, 0, tw, th);
-  const cv = getCv();
-  const img = cv.imread(t);
-  try {
-    const quad = bestQuad(cv, scanner, img, tw, th);
-    if (!quad) return null;
-    return { quad, tw, th };
-  } finally {
-    try { img.delete(); } catch { /* best effort */ }
-  }
-}
+// ------------------------------------------------------------ model calls
 
 /**
- * Finds the card in a full-resolution frame. Returns corners in full-resolution
- * pixels, or null when nothing card-shaped is there. Never throws for "no card".
+ * Finds the card in a frame. Returns corners in the frame's pixel space, or
+ * null when nothing believable is there. Never throws for "no card"; throws
+ * only when the detector cannot load at all.
  */
 export async function detectCard(src: CanvasImageSource, sw: number, sh: number): Promise<Quad | null> {
-  const scanner = await loadScanner();
-  const found = await detectOnThumb(scanner, src, sw, sh);
+  await ensureEngine();
+  const { detectCorners } = await import('./docAligner');
+  const found = await detectCorners(src, sw, sh);
   if (!found) return null;
-  return scaleQuad(found.quad, sw / found.tw, sh / found.th);
+  // The model's channel order is fixed, but re-deriving order from geometry makes
+  // a rotated or mirrored frame harmless.
+  const ordered = orderQuadPoints([found.tl, found.tr, found.br, found.bl]);
+  return quadIsSane(ordered, sw, sh) ? ordered : null;
 }
 
 /**
- * Warps the quad flat (perspective correction). Falls back to the caller's
- * corners when detection is off, and returns null when no card is found.
- * Uses `extractPaper` — the warp is the point of this scanner.
+ * Warps the quad flat (perspective correction). Uses the given corners when the
+ * editor already has them — that path needs no model at all — otherwise detects.
+ * Returns null when there is no believable card.
  */
 export async function extractCard(
   src: CanvasImageSource, sw: number, sh: number, corners?: Quad | null,
 ): Promise<{ canvas: HTMLCanvasElement; quad: Quad } | null> {
-  const scanner = await loadScanner();
   let quad = corners ?? null;
   if (!quad) quad = await detectCard(src, sw, sh);
   if (!quad || !quadIsSane(quad, sw, sh)) return null;
   const { w, h } = outputSizeFor(quad);
-  try {
-    const canvas = scanner.extractPaper(src, w, h, {
-      topLeftCorner: quad.tl, topRightCorner: quad.tr,
-      bottomLeftCorner: quad.bl, bottomRightCorner: quad.br,
-    });
-    if (!canvas) return null;
-    return { canvas, quad };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Still-image preview with the detected outline drawn on it (uses
- * `highlightPaper`). For the "look what the scanner sees" step in the editor.
- */
-export async function highlightStill(src: CanvasImageSource): Promise<HTMLCanvasElement | null> {
-  try {
-    const scanner = await loadScanner();
-    return scanner.highlightPaper(src, { color: '#059669', thickness: 8 });
-  } catch {
-    return null;
-  }
+  const full = document.createElement('canvas');
+  full.width = sw;
+  full.height = sh;
+  const fctx = full.getContext('2d', { willReadFrequently: true });
+  if (!fctx) return null;
+  fctx.drawImage(src, 0, 0, sw, sh);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.putImageData(warpPixels(fctx.getImageData(0, 0, sw, sh), sw, sh, quad, w, h), 0, 0);
+  return { canvas, quad };
 }

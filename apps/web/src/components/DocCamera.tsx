@@ -20,9 +20,9 @@ const MOTION_MAX = 6;
 const SHARP_MIN = 90;
 
 /**
- * SCAN-V2 · live document camera. While the engine loads it behaves like a plain
- * viewfinder; once OpenCV + jscanify are ready it outlines the card live (CamScanner
- * style) and fires automatically when the outline sits still and sharp.
+ * SCAN-V2 · live document camera. While the detector loads it behaves like a plain
+ * viewfinder; once the Weta Snap document model is ready it outlines the card live
+ * (CamScanner style) and fires automatically when the outline sits still and sharp.
  */
 export function DocCamera({ active, autoCapture = true, onShot, handle }: Props) {
   const video = useRef<HTMLVideoElement>(null);
@@ -98,7 +98,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
     } catch { /* torch unsupported on this camera */ }
   }
 
-  // Detection loop: steadiness + sharpness from a tiny sample, corners from jscanify.
+  // Detection loop: steadiness + sharpness from a tiny sample, corners from the model.
   useEffect(() => {
     if (!active) return;
     const sample = document.createElement('canvas');
@@ -109,11 +109,13 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
     let cooldown = 0;
     let last: Quad | null = null;
     let running = true;
+    let inferring = false; // one inference at a time — a slow frame must not queue
     const id = setInterval(() => {
       void (async () => {
         const v = video.current;
         if (!v || !v.videoWidth || document.hidden || !running) return;
         if (cooldown > 0) { cooldown--; return; }
+        if (inferring) return;
         // Steadiness + sharpness on the cheap sample (same recipe as the classic camera).
         sctx.drawImage(v, 0, 0, v.videoWidth, v.videoHeight, 0, 0, SAMPLE_W, SAMPLE_H);
         let px: ImageData;
@@ -123,7 +125,8 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
         const sharp = sharpness(px.data, SAMPLE_W, SAMPLE_H);
         if (engineState() !== 'ready') { steady = 0; last = null; setQuad(null); setHint('engine'); return; }
         let found: Quad | null = null;
-        try { found = await detectCard(v, v.videoWidth, v.videoHeight); } catch { found = null; }
+        inferring = true;
+        try { found = await detectCard(v, v.videoWidth, v.videoHeight); } catch { found = null; } finally { inferring = false; }
         if (!running) return;
         if (!found) { steady = 0; last = null; setQuad(null); setHint(still ? 'find' : 'hold'); return; }
         setQuad(found);
@@ -178,7 +181,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
     : null;
 
   const hintText = {
-    engine: t('Loading the pro scanner… keep aiming'),
+    engine: t('Loading the card detector… keep aiming'),
     find: t('Point at the card on a plain background'),
     hold: t('Hold steady…'),
     blur: t('Too blurry — move a little closer or add light'),
@@ -198,7 +201,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
       )}
       {engine === 'error' && (
         <p class="absolute inset-x-4 top-3 rounded-xl bg-red-600/90 px-3 py-2 text-center text-xs font-semibold text-white">
-          {t('The pro engine needs internet once to load. You can keep aiming, or use the classic scanner.')}
+          {t('The card detector could not load. You can still upload a photo and set the corners by hand, or use the classic scanner.')}
         </p>
       )}
       <p class={`absolute inset-x-0 bottom-4 mx-auto w-fit max-w-[92%] rounded-full px-3 py-1 text-center text-xs font-semibold backdrop-blur ${hint === 'blur' ? 'bg-amber-400/90 text-amber-950' : hint === 'ready' ? 'bg-brand-500/90 text-white' : 'bg-black/50 text-white'}`}>{hintText}</p>

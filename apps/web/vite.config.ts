@@ -43,10 +43,14 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        // onnx + wasm are the Pro scanner's detector (model + ONNX Runtime, both
+        // lazy-loaded). Precached so detection still works on a cold offline launch.
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,webmanifest,onnx,wasm}'],
         // Admin-only extras stay out of the installed app; they load on demand (§8.1).
         globIgnores: ['**/exceljs*', '**/tesseract*', '**/jspdf*', '**/html2canvas*', '**/index.es*', '**/purify*'], // the API chunk stays cached — the app must work offline
-        maximumFileSizeToCacheInBytes: 3_000_000,
+        // The ORT wasm runtime alone is ~11 MB (URS §8.1 allows 2 MB installed for the
+        // core app; the Pro scanner is the one opt-in feature that exceeds it).
+        maximumFileSizeToCacheInBytes: 20_000_000,
         navigateFallback: '/index.html',
         importScripts: ['push-sw.js'], // push + notification click handling
       },

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Crop, Loader2, ScanSearch } from 'lucide-preact';
-import { detectCard, engineState, extractCard, type Pt, type Quad } from '../lib/scanEngine';
-import { applyFilter, canvasToBlob, developScan, type ScanFilter } from '../lib/scanV2';
-import { compressCard } from '../lib/image';
+import { detectCard, extractCard, type Pt, type Quad } from '../lib/scanEngine';
+import { applyFilter, developScan, type ScanFilter } from '../lib/scanV2';
 import { reportError } from '../lib/errors';
 import { t } from '../lib/i18n';
 
@@ -43,7 +42,6 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
   const [detecting, setDetecting] = useState(!initial);
   const [filter, setFilter] = useState<ScanFilter>('color');
   const [busy, setBusy] = useState(false);
-  const [noEngine, setNoEngine] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const drag = useRef<{ key: (typeof HANDLE_KEYS)[number] } | null>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -66,7 +64,8 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // No live corners (upload, or the camera never locked on): detect once.
+  // No live corners (upload, or the camera never locked on): detect once. A model
+  // that cannot load is not fatal — the inset quad is still draggable and warps.
   useEffect(() => {
     if (initial) return;
     let stop = false;
@@ -74,9 +73,7 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
       try {
         const found = await detectCard(photo, W, H);
         if (!stop && found) setQuad(found);
-      } catch {
-        if (!stop) setNoEngine(engineState() === 'error');
-      } finally {
+      } catch { /* manual corners stand */ } finally {
         if (!stop) setDetecting(false);
       }
     })();
@@ -138,15 +135,6 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
     }
   }
 
-  /** Last resort when the engine never loads (offline first open): the plain photo. */
-  async function useAsIs() {
-    setBusy(true);
-    try {
-      onDone(await compressCard(await canvasToBlob(photo)));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   // viewBox user units (0–100): percentages are not valid in polygon points.
   const poly = [quad.tl, quad.tr, quad.br, quad.bl]
@@ -227,8 +215,8 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
               try {
                 const found = await detectCard(photo, W, H);
                 if (found) setQuad(found);
-              } catch {
-                setNoEngine(true);
+              } catch (e) {
+                reportError(e, { action: 'Auto-detect the card corners', where: 'ScanV2 › CornerEditor' });
               } finally {
                 setDetecting(false);
               }
@@ -241,9 +229,6 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
 
       <div class="flex items-center gap-3 border-t border-line bg-surface px-4 py-3 pb-[env(safe-area-inset-bottom)]">
         <button class="link tap text-sm" onClick={onRetake}>{t('Retake')}</button>
-        {noEngine && (
-          <button class="btn-secondary min-h-11" disabled={busy} onClick={() => void useAsIs()}>{t('Use photo as-is')}</button>
-        )}
         <button class="btn-primary ml-auto min-w-40" disabled={busy || detecting} onClick={() => void useScan()}>
           {busy ? <Loader2 class="size-5 animate-spin" /> : t('Use scan')}
         </button>

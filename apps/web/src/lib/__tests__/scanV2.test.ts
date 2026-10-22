@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  QUAD_MIN_SCORE, QUAD_MIN_SUPPORT, edgeSupport, orderQuadPoints, outputSizeFor,
-  quadArea, quadAspect, quadIsSane, quadsClose, scaleQuad, scoreQuad, type Quad,
+  homography, orderQuadPoints, outputSizeFor, quadArea, quadAspect, quadIsSane, quadsClose,
+  scaleQuad, warpPixels, type Pt, type Quad,
 } from '../scanEngine';
 
-/** SCAN-V2: corner geometry guards — these run in Node, no OpenCV. */
+/** SCAN-V2: corner geometry + the warp — these run in Node, no canvas runtime. */
 const card = (w = 320, h = 200): Quad => ({
   tl: { x: 10, y: 10 }, tr: { x: w - 10, y: 12 }, br: { x: w - 12, y: h - 10 }, bl: { x: 12, y: h - 12 },
 });
@@ -49,53 +49,62 @@ describe('pro scanner geometry', () => {
     expect(w).toBe(1600);
     expect(h).toBe(1009); // ID-1 ratio, not a square
   });
-});
 
-/** SCAN-V2 busy backgrounds: quads earn the lock with real edge support, not size. */
-describe('pro scanner quad scoring', () => {
-  const W = 100;
-  const H = 100;
-
-  /** A Canny-style edge map with just the border of the given rect set. */
-  function edgeMap(rect: Quad): Uint8Array {
-    const e = new Uint8Array(W * H);
-    const line = (a: { x: number; y: number }, b: { x: number; y: number }) => {
-      const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y));
-      for (let i = 0; i <= n; i++) {
-        e[Math.round(a.y + ((b.y - a.y) * i) / n) * W + Math.round(a.x + ((b.x - a.x) * i) / n)] = 255;
-      }
-    };
-    line(rect.tl, rect.tr); line(rect.tr, rect.br); line(rect.br, rect.bl); line(rect.bl, rect.tl);
-    return e;
-  }
-
-  const onCard: Quad = { tl: { x: 20, y: 30 }, tr: { x: 80, y: 30 }, br: { x: 80, y: 70 }, bl: { x: 20, y: 70 } };
-  // The busy-background failure: a bigger convex quad around the card, no edges behind it.
-  const phantom: Quad = { tl: { x: 5, y: 10 }, tr: { x: 95, y: 15 }, br: { x: 90, y: 90 }, bl: { x: 8, y: 85 } };
-
-  it('orders shuffled contour vertices', () => {
+  it('orders shuffled corners', () => {
     const q = orderQuadPoints([{ x: 80, y: 70 }, { x: 20, y: 70 }, { x: 80, y: 30 }, { x: 20, y: 30 }]);
-    expect(q).toEqual(onCard);
+    expect(q).toEqual({ tl: { x: 20, y: 30 }, tr: { x: 80, y: 30 }, br: { x: 80, y: 70 }, bl: { x: 20, y: 70 } });
   });
 
   it('measures proportions orientation-free', () => {
     expect(quadAspect({ tl: { x: 0, y: 0 }, tr: { x: 856, y: 0 }, br: { x: 856, y: 540 }, bl: { x: 0, y: 540 } })).toBeCloseTo(1.585, 2);
-    expect(quadAspect(onCard)).toBeCloseTo(1.5, 2);
+  });
+});
+
+describe('pro scanner warp', () => {
+  // Node has no ImageData; the warp only ever uses width/height/data.
+  class TestImageData {
+    data: Uint8ClampedArray;
+    constructor(public width: number, public height: number) {
+      this.data = new Uint8ClampedArray(width * height * 4);
+    }
+  }
+  (globalThis as unknown as { ImageData: unknown }).ImageData ??= TestImageData;
+
+  const apply = (m: number[], x: number, y: number): Pt => {
+    const den = m[6]! * x + m[7]! * y + 1;
+    return {
+      x: (m[0]! * x + m[1]! * y + m[2]!) / den,
+      y: (m[3]! * x + m[4]! * y + m[5]!) / den,
+    };
+  };
+
+  it('maps the output rectangle onto the quad corners', () => {
+    const q: Quad = { tl: { x: 12, y: 20 }, tr: { x: 200, y: 8 }, br: { x: 214, y: 120 }, bl: { x: 4, y: 132 } };
+    const m = homography(q, 300, 190);
+    expect(m).not.toBeNull();
+    for (const [x, y, want] of [[0, 0, q.tl], [300, 0, q.tr], [300, 190, q.br], [0, 190, q.bl]] as const) {
+      const got = apply(m!, x, y);
+      expect(got.x).toBeCloseTo(want.x, 6);
+      expect(got.y).toBeCloseTo(want.y, 6);
+    }
   });
 
-  it('supports only outlines that sit on edges', () => {
-    const edges = edgeMap(onCard);
-    expect(edgeSupport(onCard, edges, W, H)).toBeGreaterThan(0.95);
-    expect(edgeSupport(phantom, edges, W, H)).toBeLessThan(0.2);
-    expect(edgeSupport(onCard, new Uint8Array(W * H), W, H)).toBe(0);
+  it('refuses a degenerate quad', () => {
+    const line: Quad = { tl: { x: 0, y: 0 }, tr: { x: 10, y: 0 }, br: { x: 20, y: 0 }, bl: { x: 5, y: 0 } };
+    expect(homography(line, 100, 100)).toBeNull();
   });
 
-  it('the supported card wins; the phantom never passes', () => {
-    const edges = edgeMap(onCard);
-    expect(edgeSupport(phantom, edges, W, H)).toBeLessThan(QUAD_MIN_SUPPORT);
-    const cardScore = scoreQuad(onCard, W, H, edges);
-    const phantomScore = scoreQuad(phantom, W, H, edges);
-    expect(cardScore).toBeGreaterThan(QUAD_MIN_SCORE);
-    expect(cardScore).toBeGreaterThan(phantomScore);
+  it('pulls a sub-rectangle out of the frame, left edge in place', () => {
+    const src = new ImageData(8, 8);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      const o = (y * 8 + x) * 4;
+      src.data[o] = x * 10; src.data[o + 1] = y * 10; src.data[o + 2] = 0; src.data[o + 3] = 255;
+    }
+    // Crop columns 2..6 out of the 8-wide frame.
+    const out = warpPixels(src, 8, 8, { tl: { x: 2, y: 0 }, tr: { x: 6, y: 0 }, br: { x: 6, y: 8 }, bl: { x: 2, y: 8 } }, 4, 8);
+    expect(out.width).toBe(4);
+    expect(out.data[0]).toBeCloseTo(25, 0); // dest x 0.5 → src x 2.5 → 25
+    expect(out.data[4]).toBeCloseTo(35, 0); // one column over
+    expect(out.data[(1 * 4 + 1) * 4 + 1]).toBeCloseTo(15, 0); // dest row 1 → src row 1.5, green ramps
   });
 });
