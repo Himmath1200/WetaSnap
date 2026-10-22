@@ -10,8 +10,12 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   server: {
-    // 0.0.0.0 so a phone on the same Wi-Fi can open the app.
-    host: '0.0.0.0',
+    // '::' = dual stack, so both IPv4 (phone on the same Wi-Fi) and IPv6
+    // (cloudflared dials [::1]) reach the app.
+    host: '::',
+    port: 5173,
+    // Fail loudly instead of drifting to 5174 — cloudflared is pointed at 5173.
+    strictPort: true,
     // Allow Cloudflare quick-tunnel hosts (each run gets a new random subdomain).
     allowedHosts: true,
     watch: {
