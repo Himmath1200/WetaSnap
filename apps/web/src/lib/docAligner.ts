@@ -115,9 +115,30 @@ export async function detectCorners(src: CanvasImageSource, sw: number, sh: numb
   const px = ctx.getImageData(0, 0, INPUT, INPUT);
   const tensor = new ort.Tensor('float32', toInput(px.data), [1, 3, INPUT, INPUT]);
   const out = await session.run({ [session.inputNames[0] ?? 'img']: tensor });
-  const heat = Object.values(out)[0]?.data;
+  const first = Object.values(out)[0];
+  const heat = first?.data;
   if (!heat) return null;
   const { pts, confidence } = cornersFromHeatmap(heat);
+  if (import.meta.env.DEV) {
+    // Temporary: is the input channel order wrong (or the threshold too high)?
+    const n = INPUT * INPUT;
+    const rgb = new Float32Array(3 * n);
+    for (let i = 0; i < n; i++) {
+      rgb[i] = px.data[i * 4]! / 255;
+      rgb[n + i] = px.data[i * 4 + 1]! / 255;
+      rgb[2 * n + i] = px.data[i * 4 + 2]! / 255;
+    }
+    const alt = await session.run({ [session.inputNames[0] ?? 'img']: new ort.Tensor('float32', rgb, [1, 3, INPUT, INPUT]) });
+    const altHeat = Object.values(alt)[0]?.data;
+    console.warn('[aligner]', {
+      outs: Object.keys(out),
+      dims: (first as { dims?: number[] })?.dims,
+      bgrPeak: confidence,
+      rgbPeak: altHeat ? cornersFromHeatmap(altHeat).confidence : null,
+      max: heat.reduce((m, v) => (v > m ? v : m), 0),
+      pts,
+    });
+  }
   if (confidence < MIN_PEAK) return null;
   const kx = sw / INPUT;
   const ky = sh / INPUT;

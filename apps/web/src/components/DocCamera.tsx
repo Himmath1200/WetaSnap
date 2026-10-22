@@ -126,7 +126,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
         if (engineState() !== 'ready') { steady = 0; last = null; setQuad(null); setHint('engine'); return; }
         let found: Quad | null = null;
         inferring = true;
-        try { found = await detectCard(v, v.videoWidth, v.videoHeight); } catch { found = null; } finally { inferring = false; }
+        try { found = await detectCard(v, v.videoWidth, v.videoHeight); } catch (e) { if (import.meta.env.DEV) console.warn('[aligner] detect failed', e); found = null; } finally { inferring = false; }
         if (!running) return;
         if (!found) { steady = 0; last = null; setQuad(null); setHint(still ? 'find' : 'hold'); return; }
         setQuad(found);
