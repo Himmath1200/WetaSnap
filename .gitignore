@@ -12,9 +12,6 @@ services/api/.env
 # What the API writes at run time
 services/api/storage/
 
-# ONNX Runtime wasm, copied from node_modules by apps/web/scripts/vendor-ort.mjs
-apps/web/public/ort/
-
 # Test and tool artefacts
 apps/web/e2e/.results/
 apps/web/e2e/.report/

@@ -20,8 +20,8 @@ const MOTION_MAX = 6;
 const SHARP_MIN = 90;
 
 /**
- * SCAN-V2 · live document camera. While the detector warms up it behaves like a plain
- * viewfinder; once the DocAligner model is ready it outlines the card live (CamScanner
+ * SCAN-V2 · live document camera. While the engine loads it behaves like a plain
+ * viewfinder; once OpenCV + jscanify are ready it outlines the card live (CamScanner
  * style) and fires automatically when the outline sits still and sharp.
  */
 export function DocCamera({ active, autoCapture = true, onShot, handle }: Props) {
@@ -98,7 +98,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
     } catch { /* torch unsupported on this camera */ }
   }
 
-  // Detection loop: steadiness + sharpness from a tiny sample, corners from the model.
+  // Detection loop: steadiness + sharpness from a tiny sample, corners from jscanify.
   useEffect(() => {
     if (!active) return;
     const sample = document.createElement('canvas');
@@ -109,10 +109,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
     let cooldown = 0;
     let last: Quad | null = null;
     let running = true;
-    let busy = false; // an inference in flight — never queue a second tick behind it
     const id = setInterval(() => {
-      if (busy) return;
-      busy = true;
       void (async () => {
         const v = video.current;
         if (!v || !v.videoWidth || document.hidden || !running) return;
@@ -140,7 +137,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
           steady = 0; cooldown = 16; last = null;
           capture();
         }
-      })().finally(() => { busy = false; });
+      })();
     }, 500);
     return () => { running = false; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,7 +198,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
       )}
       {engine === 'error' && (
         <p class="absolute inset-x-4 top-3 rounded-xl bg-red-600/90 px-3 py-2 text-center text-xs font-semibold text-white">
-          {t('The card detector could not load. Keep aiming, or use the classic scanner.')}
+          {t('The pro engine needs internet once to load. You can keep aiming, or use the classic scanner.')}
         </p>
       )}
       <p class={`absolute inset-x-0 bottom-4 mx-auto w-fit max-w-[92%] rounded-full px-3 py-1 text-center text-xs font-semibold backdrop-blur ${hint === 'blur' ? 'bg-amber-400/90 text-amber-950' : hint === 'ready' ? 'bg-brand-500/90 text-white' : 'bg-black/50 text-white'}`}>{hintText}</p>

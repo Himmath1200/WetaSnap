@@ -1,7 +1,7 @@
 /**
  * SCAN-V2 · from the flat warp to the lead photo.
  *
- * corner detection + perspective warp live in scanEngine.ts (DocAligner model).
+ * jscanify owns the geometry (corners + perspective warp in scanEngine.ts).
  * Everything after the warp reuses the classic pipeline, so the two scanners
  * can never drift apart: the look (`autoEnhance`: flatten → level → punch),
  * the ≤ 300 KB compression, and the reading flow downstream of it.
