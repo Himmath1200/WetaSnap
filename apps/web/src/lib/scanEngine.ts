@@ -12,6 +12,7 @@
  * app entirely. Everything in this file that is not canvas work is pure and
  * unit-tested.
  */
+import { reportError } from './errors';
 
 export interface Pt { x: number; y: number }
 /** Card corners in reading order: top-left, top-right, bottom-right, bottom-left. */
@@ -40,6 +41,7 @@ async function ensureEngine(): Promise<void> {
   } catch (e) {
     // lib/docAligner drops its cached promise on failure, so the next call retries.
     setState('error');
+    void reportError(e, { action: 'Scanning a card with the Pro scanner', where: 'scanEngine › ensureEngine' });
     throw e;
   }
 }
