@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { ACC, backendCall, deviceRows, expectToast, nav, serverRows, signIn } from './helpers';
+import { ACC, backendCall, deviceRows, expectToast, nav, serverRows, signIn, softNav } from './helpers';
 
 type Lead = { id: string; status: string; event_id: string; interest: string | null; captured_by: string; tag_ids: string[]; deleted_at: string | null; fields: Record<string, { value: string }> };
 
@@ -184,7 +184,7 @@ test.describe('3 · My leads (staff)', () => {
 
   test('a lead that never left the phone is removed from the device only', async ({ page }) => {
     await openMyLeads(page);
-    await nav(page, 'Scan');
+    await softNav(page, '/scan');
     await page.getByRole('button', { name: 'Type', exact: true }).click();
     // Offline so it stays on the device.
     await page.evaluate(async () => { const p = '/src/lib/net.ts'; const m = await import(/* @vite-ignore */ p); m.net.set((s: object) => ({ ...s, simulatedOffline: true })); });

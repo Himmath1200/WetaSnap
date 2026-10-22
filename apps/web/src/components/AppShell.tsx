@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
-import { Building2, Camera, ScanLine, ScanSearch, ChevronDown, CloudOff, CreditCard, Download, Gauge, Globe, LifeBuoy, List, LogOut, Monitor, Moon, RefreshCw, ScrollText, Settings, ShieldCheck, Sun, UserCircle2, Users, Wifi, WifiOff } from 'lucide-preact';
+import { Building2, Camera, ScanLine, ChevronDown, CloudOff, CreditCard, Download, Gauge, Globe, Home, LifeBuoy, List, LogOut, Monitor, Moon, RefreshCw, ScrollText, Settings, ShieldCheck, Sun, UserCircle2, Users, Wifi, WifiOff } from 'lucide-preact';
 import { doorForRole, linkFor, readPath, signInPath } from '../lib/portal';
 import { useStore, toast } from '../lib/store';
 import { config, endSession, session, setEvent } from '../lib/session';
@@ -24,14 +24,14 @@ interface NavItem { href: string; label: string; icon: typeof Camera }
 
 const NAV: Record<Role, NavItem[]> = {
   staff: [
-    { href: '/scan', label: 'Scan', icon: Camera },
-    { href: '/scan-v2', label: 'Pro scan', icon: ScanSearch },
+    { href: '/home', label: 'Home', icon: Home },
+    { href: '/scan-v2', label: 'Scan', icon: Camera },
     { href: '/my-leads', label: 'My leads', icon: List },
   ],
   client_admin: [
     { href: '/leads', label: 'Leads', icon: List },
-    { href: '/scan', label: 'Scan', icon: Camera },
-    { href: '/scan-v2', label: 'Pro scan', icon: ScanSearch },
+    { href: '/home', label: 'Home', icon: Home },
+    { href: '/scan-v2', label: 'Scan', icon: Camera },
     { href: '/team', label: 'Team', icon: Users },
     { href: '/settings', label: 'Settings', icon: Settings },
     { href: '/my-leads', label: 'My leads', icon: ScanLine },

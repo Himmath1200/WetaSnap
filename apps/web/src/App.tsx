@@ -14,6 +14,7 @@ import { SCREENS, canSee, homeFor } from './routes';
 
 // Pages load on demand to keep the first download small (§8.1).
 const SignIn = lazy(() => import('./screens/SignIn'));
+const Home = lazy(() => import('./screens/Home'));
 const Scan = lazy(() => import('./screens/Scan'));
 const ScanV2 = lazy(() => import('./screens/ScanV2'));
 const MyLeads = lazy(() => import('./screens/MyLeads'));
@@ -29,7 +30,7 @@ const Security = lazy(() => import('./screens/Security'));
 const Profile = lazy(() => import('./screens/Profile'));
 
 const COMPONENTS: Record<string, ComponentType> = {
-  '/scan': Scan, '/scan-v2': ScanV2, '/my-leads': MyLeads, '/leads': Leads, '/team': Team, '/settings': Settings, '/settings/crm': Settings,
+  '/home': Home, '/scan': Scan, '/scan-v2': ScanV2, '/my-leads': MyLeads, '/leads': Leads, '/team': Team, '/settings': Settings, '/settings/crm': Settings,
   '/companies': Companies, '/subscriptions': Subscriptions, '/audit': AuditLog, '/support': Support, '/usage': Usage,
   '/security': Security, '/profile': Profile,
 };

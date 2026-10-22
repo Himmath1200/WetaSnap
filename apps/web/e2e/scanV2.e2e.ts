@@ -11,8 +11,8 @@ import { ACC, SAMPLE_CARD, nav, printedCardFile, signIn, uniq, uploadInput, expe
 test.describe('2b · Pro scanner (staff)', () => {
   test('nav entry, upload → corners → Use scan → review → save', async ({ page }) => {
     await signIn(page, 'staff', ACC.anna);
-    // Second scan button with its own icon sits next to the classic one.
-    await nav(page, 'Pro scan');
+    // The single scan entry in the nav now opens the pro scanner.
+    await nav(page, 'Scan');
     await expect(page).toHaveURL(/\/scan-v2$/);
     await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeVisible();
 

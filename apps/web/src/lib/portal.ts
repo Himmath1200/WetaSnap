@@ -39,7 +39,8 @@ export const ROLE_META: Record<Role, { name: string; tagline: string; home: stri
   staff: {
     name: 'Scanner',
     tagline: 'Scan cards at the booth — with or without internet.',
-    home: '/scan',
+    // ponytail: lands on the scanner until the Home screen exists; then '/home'.
+    home: '/scan-v2',
   },
 };
 

@@ -29,7 +29,7 @@ for (const [who, portal, email, myLeadsPath] of [
   test.describe(`2 · Scanning (${who})`, () => {
     test(`${who}: upload a card → AI review → save → My leads (Synced → In CRM)`, async ({ page }) => {
       await signIn(page, portal, email);
-      if (portal === 'client-admin') await nav(page, 'Scan');
+      if (portal === 'client-admin') await softNav(page, '/scan');
       // A card with real printed text: the reader must pull the details off this photo (SCAN-03).
       await uploadCard(page, await printedCardFile(page));
       await expect(page.getByText('Review & save')).toBeVisible();
@@ -164,7 +164,7 @@ test.describe('2 · Scanning (staff)', () => {
     const count = async () => Number(((await page.locator('main h1 + p').innerText()).match(/(\d+) lead/) ?? [])[1]);
     await expect.poll(count).toBeGreaterThan(0);
     const before = await count();
-    await nav(page, 'Scan');
+    await softNav(page, '/scan');
     await uploadInput(page).setInputFiles([
       await printedCardFile(page, { ...SAMPLE_CARD, last: 'Aaltonen' }, 'a.png'),
       await printedCardFile(page, { ...SAMPLE_CARD, last: 'Baumann' }, 'b.png'),
@@ -307,7 +307,7 @@ test.describe('2 · Scanning (staff)', () => {
     await sheet.getByRole('button', { name: /QA Quick Show/ }).click();
     await expectToast(page, 'Event changed to QA Quick Show');
     await page.keyboard.press('Escape');
-    await nav(page, 'Scan');
+    await softNav(page, '/scan');
     await page.getByRole('button', { name: 'Type', exact: true }).click();
     // "Quick capture" has First name, Last name, Company and Job title only.
     await expect(page.locator('#scan-job_title')).toBeVisible();
