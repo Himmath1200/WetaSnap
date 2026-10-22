@@ -12,8 +12,9 @@ import { compressCard } from './image';
 /** CamScanner-style looks. Colour is the default; grey/B&W help tired print. */
 export type ScanFilter = 'color' | 'gray' | 'bw';
 
-export function canvasToBlob(c: HTMLCanvasElement, type = 'image/jpeg', q = 0.92): Promise<Blob> {
-  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), type, q));
+/** Lossless intermediate: the photo is re-encoded twice downstream, so no reason to lose detail here. */
+export function canvasToBlob(c: HTMLCanvasElement, type = 'image/png'): Promise<Blob> {
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), type));
 }
 
 export async function blobToCanvas(photo: Blob): Promise<HTMLCanvasElement> {

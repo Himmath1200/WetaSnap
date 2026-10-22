@@ -67,9 +67,11 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('unsupported');
         stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
+          // Sensor's best: the guide crop is downscaled to 1600 px, so more source
+          // pixels means a sharper card (supersampling, not blur).
           video: deviceId
-            ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-            : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+            ? { deviceId: { exact: deviceId }, width: { ideal: 3840 }, height: { ideal: 2160 } }
+            : { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
         });
         if (cancelled) { stream.getTracks().forEach((tr) => tr.stop()); return; }
         if (video.current) {
