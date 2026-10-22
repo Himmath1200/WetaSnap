@@ -239,23 +239,17 @@ export async function extractCard(
   if (!quad) quad = await detectCard(src, sw, sh);
   if (!quad || !quadIsSane(quad, sw, sh)) return null;
   const { w, h } = outputSizeFor(quad);
-  // Downscale to ~1.5× the output before warping: the browser's resampler beats
-  // bilinear point-sampling, so a 4K frame supersamples instead of moiré-ing.
-  const k = Math.min(1, (w * 1.5) / sw, (h * 1.5) / sh);
-  const fw = Math.max(2, Math.round(sw * k));
-  const fh = Math.max(2, Math.round(sh * k));
   const full = document.createElement('canvas');
-  full.width = fw;
-  full.height = fh;
+  full.width = sw;
+  full.height = sh;
   const fctx = full.getContext('2d', { willReadFrequently: true });
   if (!fctx) return null;
-  fctx.imageSmoothingQuality = 'high';
-  fctx.drawImage(src, 0, 0, fw, fh);
+  fctx.drawImage(src, 0, 0, sw, sh);
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  ctx.putImageData(warpPixels(fctx.getImageData(0, 0, fw, fh), fw, fh, scaleQuad(quad, k, k), w, h), 0, 0);
+  ctx.putImageData(warpPixels(fctx.getImageData(0, 0, sw, sh), sw, sh, quad, w, h), 0, 0);
   return { canvas, quad };
 }

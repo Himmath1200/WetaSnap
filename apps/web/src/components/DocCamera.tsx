@@ -66,11 +66,9 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('unsupported');
         stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          // Ask for the sensor's best: the warp downsamples to 1600 px, so a 4K
-          // frame supersamples and the card detail survives.
           video: deviceId
-            ? { deviceId: { exact: deviceId }, width: { ideal: 3840 }, height: { ideal: 2160 } }
-            : { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
+            ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+            : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
         });
         if (cancelled) { stream.getTracks().forEach((tr) => tr.stop()); return; }
         if (video.current) {

@@ -17,7 +17,7 @@ export async function compressCard(src: Blob | HTMLVideoElement | HTMLCanvasElem
   if ('close' in bmp) (bmp as ImageBitmap).close();
 
   const webp = await supportsWebp();
-  for (let q = 0.95; q >= 0.4; q -= 0.1) {
+  for (let q = 0.85; q >= 0.4; q -= 0.1) {
     const blob = await toBlob(canvas, webp ? 'image/webp' : 'image/jpeg', q);
     if (blob.size <= MAX_BYTES) return blob;
   }
