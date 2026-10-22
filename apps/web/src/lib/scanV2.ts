@@ -4,17 +4,13 @@
  * scanEngine.ts owns the geometry (model corners + our own homography warp).
  * Everything after the warp reuses the classic pipeline, so the two scanners
  * can never drift apart: the look (`autoEnhance`: flatten → level → punch),
- * the ≤ 300 KB compression, and the reading flow downstream of it.
+ * the ≤ 420 KB compression, and the reading flow downstream of it.
  */
 import { autoEnhance, sauvolaBinarize } from './scan';
 import { compressCard } from './image';
 
 /** CamScanner-style looks. Colour is the default; grey/B&W help tired print. */
 export type ScanFilter = 'color' | 'gray' | 'bw';
-
-export function canvasToBlob(c: HTMLCanvasElement, type = 'image/jpeg', q = 0.92): Promise<Blob> {
-  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('encode failed'))), type, q));
-}
 
 export async function blobToCanvas(photo: Blob): Promise<HTMLCanvasElement> {
   const bmp = await createImageBitmap(photo);
@@ -58,10 +54,10 @@ export function applyFilter(src: HTMLCanvasElement, mode: ScanFilter): HTMLCanva
  * over an error.
  */
 export async function developScan(warped: HTMLCanvasElement, mode: ScanFilter): Promise<Blob> {
-  const raw = await canvasToBlob(applyFilter(warped, mode));
+  const cleaned = applyFilter(warped, mode);
   try {
-    return await autoEnhance(raw);
+    return await autoEnhance(cleaned); // canvas in: one encode, not a JPEG round-trip first
   } catch {
-    return compressCard(raw);
+    return compressCard(cleaned);
   }
 }

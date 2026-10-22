@@ -1,15 +1,17 @@
 /** Card photo processing in the browser — no extra package (URS §10.1).
- *  Crop to the card frame, resize to ~1600 px, compress to ≤ 300 KB (SCAN-06). */
+ *  Crop to the card frame, resize to a 2000 px long side, compress to ≤ 420 KB (SCAN-06).
+ *  The long side is what is capped, not the width: a portrait upload would otherwise keep
+ *  ~1.8x the pixels of a landscape card and lose its small print to the byte cap. */
 
-export const MAX_BYTES = 300 * 1024;
-const TARGET_W = 1600;
+export const MAX_BYTES = 420 * 1024;
+const TARGET_LONG = 2000;
 
 export async function compressCard(src: Blob | HTMLVideoElement | HTMLCanvasElement, crop?: { x: number; y: number; w: number; h: number }): Promise<Blob> {
   const bmp = src instanceof Blob ? await createImageBitmap(src) : src;
   const sw = 'videoWidth' in bmp ? bmp.videoWidth : bmp.width;
   const sh = 'videoHeight' in bmp ? bmp.videoHeight : bmp.height;
   const c = crop ?? { x: 0, y: 0, w: sw, h: sh };
-  const scale = Math.min(1, TARGET_W / c.w);
+  const scale = Math.min(1, TARGET_LONG / Math.max(c.w, c.h));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(c.w * scale);
   canvas.height = Math.round(c.h * scale);
@@ -17,7 +19,7 @@ export async function compressCard(src: Blob | HTMLVideoElement | HTMLCanvasElem
   if ('close' in bmp) (bmp as ImageBitmap).close();
 
   const webp = await supportsWebp();
-  for (let q = 0.85; q >= 0.4; q -= 0.1) {
+  for (let q = 0.9; q >= 0.4; q -= 0.1) {
     const blob = await toBlob(canvas, webp ? 'image/webp' : 'image/jpeg', q);
     if (blob.size <= MAX_BYTES) return blob;
   }

@@ -98,11 +98,11 @@ export const scaleQuad = (q: Quad, sx: number, sy: number): Quad => ({
   bl: { x: q.bl.x * sx, y: q.bl.y * sy },
 });
 
-/** Output pixels for the warp: card proportions, long side 1600 (matches SCAN-06). Pure. */
+/** Output pixels for the warp: card proportions, long side 2000 (matches SCAN-06). Pure. */
 export function outputSizeFor(q: Quad): { w: number; h: number } {
   const wPts = Math.max(dist(q.tl, q.tr), dist(q.bl, q.br));
   const hPts = Math.max(dist(q.tl, q.bl), dist(q.tr, q.br));
-  const k = 1600 / Math.max(1, Math.max(wPts, hPts));
+  const k = 2000 / Math.max(1, Math.max(wPts, hPts));
   return { w: Math.max(2, Math.round(wPts * k)), h: Math.max(2, Math.round(hPts * k)) };
 }
 

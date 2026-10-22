@@ -135,8 +135,9 @@ export default function Scan() {
     });
   }
 
-  /** SCAN-02: capture → optional clean scan → straight to the fill-in form, no edit step. */
-  async function develop(raw: Blob): Promise<Blob> {
+  /** SCAN-02: capture → optional clean scan → straight to the fill-in form, no edit step.
+   *  Takes the capture canvas, so a live shot is encoded once rather than twice. */
+  async function develop(raw: Blob | HTMLCanvasElement): Promise<Blob> {
     if (!enhance) return compressCard(raw);
     try {
       return await autoEnhance(raw);
@@ -146,10 +147,10 @@ export default function Scan() {
   }
 
   async function onCapture(shot: HTMLCanvasElement) {
-    const blob = await compressCard(shot);
+    const blob = await develop(shot);
     if (mode === 'review' && !capturingBack && window.innerWidth < 768) return;
-    if (capturingBack) { await addBack(await develop(blob)); return; }
-    await startReview(await develop(blob), 'camera');
+    if (capturingBack) { await addBack(blob); return; }
+    await startReview(blob, 'camera');
   }
 
   async function addBack(blob: Blob) {

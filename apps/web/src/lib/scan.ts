@@ -370,7 +370,8 @@ function develop(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
   return c;
 }
 
-async function bitmapOf(photo: Blob): Promise<HTMLCanvasElement> {
+async function bitmapOf(photo: Blob | HTMLCanvasElement): Promise<HTMLCanvasElement> {
+  if (!(photo instanceof Blob)) return photo; // already the capture canvas: no decode, no encode
   const bmp = await createImageBitmap(photo);
   const c = document.createElement('canvas');
   c.width = bmp.width;
@@ -380,7 +381,8 @@ async function bitmapOf(photo: Blob): Promise<HTMLCanvasElement> {
   return c;
 }
 
-/** Full-frame clean scan in the colour look, compressed ≤ 300 KB. */
-export async function autoEnhance(photo: Blob): Promise<Blob> {
-  return compressCard(develop(await bitmapOf(photo), 1600));
+/** Full-frame clean scan in the colour look, compressed ≤ 420 KB. Takes the capture canvas as
+ *  well as a blob, so a live capture is encoded once instead of twice (SCAN-06). */
+export async function autoEnhance(src: Blob | HTMLCanvasElement): Promise<Blob> {
+  return compressCard(develop(await bitmapOf(src), 2000));
 }

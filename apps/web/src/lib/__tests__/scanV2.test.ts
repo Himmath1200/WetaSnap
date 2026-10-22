@@ -44,10 +44,10 @@ describe('pro scanner geometry', () => {
     expect(q.br).toEqual({ x: 300, y: 200 });
   });
 
-  it('sizes the warp to the card proportions at 1600 px', () => {
+  it('sizes the warp to the card proportions at 2000 px', () => {
     const { w, h } = outputSizeFor({ tl: { x: 0, y: 0 }, tr: { x: 856, y: 0 }, br: { x: 856, y: 540 }, bl: { x: 0, y: 540 } });
-    expect(w).toBe(1600);
-    expect(h).toBe(1009); // ID-1 ratio, not a square
+    expect(w).toBe(2000);
+    expect(h).toBe(1262); // ID-1 ratio, not a square
   });
 
   it('orders shuffled corners', () => {
