@@ -83,9 +83,7 @@ export async function readOffline(photo: Blob, language = 'en', opts?: { silent?
     });
     const { data } = await w.recognize(await preprocessForOcr(photo, { bw }));
     const raw = (data as { text?: string })?.text ?? '';
-    const built = rebuildLines(data as unknown as TesseractData);
-    // The boxes are index-aligned with the rebuilt text, so they only apply when it was used.
-    return { parsed: parseCardText(built.text || raw, built.text ? built.boxes : undefined), raw };
+    return { parsed: parseCardText(rebuildText(data as unknown as TesseractData) || raw), raw };
   };
   const p1 = await pass(6, false);
   if (meanConf(p1.parsed) >= 0.7 && filledCount(p1.parsed) >= 4) {
@@ -210,25 +208,13 @@ function joinGutter(words: TesseractWord[]): string {
 }
 
 /**
- * Where a line sits on the card, as fractions of the card (0–1): how far down it starts and how
- * tall it is. The tall print is the name or the brand, the bottom band is the address — the two
- * things the text alone cannot tell apart. Tesseract's word boxes are the offline reader's only
- * layout evidence, so this is all the geometry that exists.
- */
-export interface LineBox { top: number; height: number }
-
-/**
  * Rebuild lines from Tesseract's words, dropping what the engine was unsure of and what is
- * decoration rather than text, and keeping each surviving line's box. Falls back to plain text
- * when no word boxes came back (then there is no layout to report).
+ * decoration rather than text. Falls back to plain text when no word boxes came back.
  */
-export function rebuildLines(data: TesseractData): { text: string; boxes: Array<LineBox | undefined> } {
+export function rebuildText(data: TesseractData): string {
   const lines = data?.lines;
-  if (!lines?.length) return { text: data?.text ?? '', boxes: [] };
-  const words = lines.flatMap((l) => l.words ?? []).filter((w) => w.bbox);
-  const pageH = Math.max(1, ...words.map((w) => w.bbox!.y1));
+  if (!lines?.length) return data?.text ?? '';
   const out: string[] = [];
-  const boxes: Array<LineBox | undefined> = [];
   for (const line of lines) {
     const source = line.words?.length
       ? line.words.filter((w) => !WEAK_WORD(w))
@@ -237,20 +223,10 @@ export function rebuildLines(data: TesseractData): { text: string; boxes: Array<
     if (!kept.length) continue;
     const joined = joinGutter(kept).trim();
     if (!/[A-Za-z0-9@+]/u.test(joined)) continue; // a rule or underline, not a line of text
-    const boxed = kept.filter((w) => w.bbox);
     out.push(joined);
-    boxes.push(boxed.length
-      ? {
-        top: Math.min(...boxed.map((w) => w.bbox!.y0)) / pageH,
-        height: (Math.max(...boxed.map((w) => w.bbox!.y1)) - Math.min(...boxed.map((w) => w.bbox!.y0))) / pageH,
-      }
-      : undefined);
   }
-  return { text: out.join('\n'), boxes };
+  return out.join('\n');
 }
-
-/** The rebuilt text alone — for callers that do not use the layout. */
-export const rebuildText = (data: TesseractData) => rebuildLines(data).text;
 
 const EMAIL = /[\w.+-]+@[\w-]+(\.[\w-]+)+/;
 
@@ -609,7 +585,7 @@ function extractEmail(text: string): { email: string; repaired: boolean } | null
 }
 
 /** Best line for the person's name: 2 words and a lone initial beat logo fragments and debris. */
-function pickName(lines: string[], used: Set<string>, emailLocal: string, domainBase = '', emailPublic = false, tall: (idx: number) => boolean = () => false): string | null {
+function pickName(lines: string[], used: Set<string>, emailLocal: string, domainBase = '', emailPublic = false): string | null {
   let best: string | null = null;
   let bestScore = -1;
   lines.forEach((l, idx) => {
@@ -642,7 +618,6 @@ function pickName(lines: string[], used: Set<string>, emailLocal: string, domain
       s += emailPublic ? (m > 0 ? 1 : 0) : Math.min(m, 2) * 2;
     }
     if (idx <= 2) s += 1; // the name sits near the top, under the logo
-    if (tall(idx)) s += 2; // and it is printed in the largest type on the card
     if (s > bestScore) { bestScore = s; best = stripped; }
   });
   return bestScore >= 3 ? best : null;
@@ -670,32 +645,18 @@ function splitName(full: string): [string, string] {
  * Turn the lines Tesseract read into card fields. It is a best guess and every value lands in the
  * form for the person to check — which is why each carries a confidence (SCAN-04).
  */
-export function parseCardText(text: string, layout?: Array<LineBox | undefined>): ReadResult {
+export function parseCardText(text: string): ReadResult {
   // Tesseract's single-character slips first (see repairTypos), then split merged facts.
   // Two-column cards arrive as merged "email   Company" lines (the gutter survives as extra
   // spaces via preserve_interword_spaces); one OCR line also merges labelled facts
   // ("Tel: … Mobile: …"), split on the label boundary the same way.
   const fixed = repairTypos(text);
-  // The box travels with the text: a merged row splits into pieces that all sit in the same
-  // place on the card, so they share their source line's box.
-  const rows: Array<{ l: string; box?: LineBox }> = [];
-  fixed.split('\n').forEach((source, i) => {
-    const box = layout?.[i];
-    for (const piece of source
-      .split(/\t| {2,}/)
-      .flatMap((l) => l.split(/\s+(?=(?:tel|telephone|telefon|phone|mobile|mob\.?|handy|cell|fax|e-?mail|mail|web|www)\b\s*[:.])/i))) {
-      const l = clean(piece);
-      if (l.length > 1 && !LABEL.test(l) && !isDebris(l) && looksLikeText(l)) rows.push({ l, box });
-    }
-  });
-  const lines = rows.map((r) => r.l);
-  // Layout, when Tesseract supplied word boxes: which lines are the big print, and which sit in
-  // the bottom band. Absent on a plain-text read, where every signal below is simply false.
-  const heights = rows.map((r) => r.box?.height ?? 0);
-  const known = heights.filter((h) => h > 0).sort((a, b) => a - b);
-  const medianHeight = known.length ? known[Math.floor(known.length / 2)]! : 0;
-  const big = (idx: number) => medianHeight > 0 && (heights[idx] ?? 0) >= medianHeight * 1.25;
-  const bottomBand = (idx: number) => (rows[idx]?.box?.top ?? -1) >= 0.62;
+  const lines = fixed
+    .split('\n')
+    .flatMap((l) => l.split(/\t| {2,}/))
+    .flatMap((l) => l.split(/\s+(?=(?:tel|telephone|telefon|phone|mobile|mob\.?|handy|cell|fax|e-?mail|mail|web|www)\b\s*[:.])/i))
+    .map((l) => clean(l))
+    .filter((l) => l.length > 1 && !LABEL.test(l) && !isDebris(l) && looksLikeText(l));
   const out: ReadResult = {};
   const mark = (value: string, confidence: number, reason?: string) => ({ value, confidence, reason, by: 'offline' as const });
   const used = new Set<string>();
@@ -867,13 +828,7 @@ export function parseCardText(text: string, layout?: Array<LineBox | undefined>)
       ? cands.filter((l) => !isNameShaped(l))
       : cands.filter((l) => !isPersonLine(l, emailLocal));
     const mailHit = !siteHit && domainBase ? agreeIn(screened, domainBase) : null;
-    // With no suffix and no domain to go on, the printed type decides: a brand is set larger
-    // than the body copy around it, so the big line beats whichever line merely came first.
-    const bigTop = screened.find((l) => {
-      const idx = lines.indexOf(l);
-      return big(idx) && !bottomBand(idx);
-    });
-    company = siteHit ?? mailHit ?? bigTop ?? screened[0] ?? null;
+    company = siteHit ?? mailHit ?? screened[0] ?? null;
     companyWhy = siteHit ? 'site' : mailHit ? 'domain' : company ? 'top' : null;
   }
   if (company && lines.includes(company)) {
@@ -941,7 +896,7 @@ export function parseCardText(text: string, layout?: Array<LineBox | undefined>)
 
   // Name: scored, not first-match — "ayakumar P" (lowercased by a misread) still beats debris.
   // “Dr. Katharina Vogel” → the honorific is dropped, “Katharina” / “Vogel”.
-  const nameLine = pickName(lines, used, emailLocal, siteBase || domainBase, emailPublic, big);
+  const nameLine = pickName(lines, used, emailLocal, siteBase || domainBase, emailPublic);
   if (nameLine) {
     const [first, last] = splitName(nameLine);
     if (first && last) {
@@ -1008,16 +963,6 @@ export function parseCardText(text: string, layout?: Array<LineBox | undefined>)
       if (/[@\d]/.test(l) || TITLE.test(l) || COMPANY.test(l) || !l.includes(',')) break;
       if (isPersonLine(l, emailLocal)) break;
       addrLines.unshift(l);
-    }
-  } else {
-    // Nothing scored, but a card's address is printed in the bottom band: keep the clean lines
-    // from there (no postcode, no street word — "Industrial Estate, Phase II") rather than
-    // handing back nothing at all.
-    for (let i = 0; i < lines.length && addrLines.length < 3; i++) {
-      const l = lines[i]!;
-      if (!bottomBand(i) || used.has(l) || l.includes('@') || FAX.test(l) || /[@\d]/.test(l)) continue;
-      if (l.length < 4 || TITLE.test(l) || COMPANY.test(l) || isPersonLine(l, emailLocal)) continue;
-      addrLines.push(l);
     }
   }
   const picked = addrLines.slice(0, 3);
