@@ -8,7 +8,8 @@
  *
  * Model contract (fixed, from the export):
  *   input  `img`     [1, 3, 256, 256] float32, BGR, pixel / 255
- *   output `heatmap` [1, 4, 256, 256] float32, sigmoid, channels = tl, tr, br, bl
+ *   output `heatmap` [1, 4, 128, 128] float32, sigmoid, channels = tl, tr, br, bl
+ *   (the grid is half the input — always read its size from the tensor dims)
  * There is no presence head, so absence shows up as a weak peak (see MIN_PEAK).
  *
  * Weight discipline (§8.1): ONNX Runtime's wasm build and the model load lazily,
@@ -30,7 +31,7 @@ type OrtMod = typeof import('onnxruntime-web/wasm');
 /** The slice of ORT's surface this module needs. */
 interface Session {
   inputNames: readonly string[];
-  run(feeds: Record<string, unknown>): Promise<Record<string, { data: Float32Array }>>;
+  run(feeds: Record<string, unknown>): Promise<Record<string, { data: Float32Array; dims?: readonly number[] }>>;
 }
 
 interface Loaded { ort: OrtMod; session: Session }
@@ -118,30 +119,40 @@ export async function detectCorners(src: CanvasImageSource, sw: number, sh: numb
   const first = Object.values(out)[0];
   const heat = first?.data;
   if (!heat) return null;
-  const { pts, confidence } = cornersFromHeatmap(heat);
-  if (import.meta.env.DEV) {
-    // Temporary: is the input channel order wrong (or the threshold too high)?
-    const n = INPUT * INPUT;
-    const rgb = new Float32Array(3 * n);
-    for (let i = 0; i < n; i++) {
-      rgb[i] = px.data[i * 4]! / 255;
-      rgb[n + i] = px.data[i * 4 + 1]! / 255;
-      rgb[2 * n + i] = px.data[i * 4 + 2]! / 255;
+  // The export's heatmap grid is coarser than the input (128² for a 256² input),
+  // so the stride comes from the tensor, never from INPUT.
+  const grid = first?.dims?.at(-1) ?? INPUT;
+  const { pts, confidence } = cornersFromHeatmap(heat, grid);
+  if (confidence < MIN_PEAK) {
+    if (import.meta.env.DEV) {
+      // Temporary: channel order and normalisation are guesses — measure them.
+      const n = INPUT * INPUT;
+      const mean = [0.485, 0.456, 0.406];
+      const std = [0.229, 0.224, 0.225];
+      const probe = async (label: string, order: [number, number, number], norm: boolean) => {
+        const t = new Float32Array(3 * n);
+        for (let i = 0; i < n; i++) {
+          for (let ch = 0; ch < 3; ch++) {
+            const v = px.data[i * 4 + order[ch]!]! / 255;
+            t[ch * n + i] = norm ? (v - mean[ch]!) / std[ch]! : v;
+          }
+        }
+        const r = await session.run({ [session.inputNames[0] ?? 'img']: new ort.Tensor('float32', t, [1, 3, INPUT, INPUT]) });
+        const h = Object.values(r)[0]?.data;
+        return [label, h ? Number(cornersFromHeatmap(h, grid).confidence.toFixed(4)) : null] as const;
+      };
+      const probes = Object.fromEntries([
+        await probe('bgrRaw', [2, 1, 0], false),
+        await probe('rgbRaw', [0, 1, 2], false),
+        await probe('bgrNorm', [2, 1, 0], true),
+        await probe('rgbNorm', [0, 1, 2], true),
+      ]);
+      console.warn('[aligner] low peak', { grid, bgrPeak: confidence, probes, max: heat.reduce((m, v) => (v > m ? v : m), 0) });
     }
-    const alt = await session.run({ [session.inputNames[0] ?? 'img']: new ort.Tensor('float32', rgb, [1, 3, INPUT, INPUT]) });
-    const altHeat = Object.values(alt)[0]?.data;
-    console.warn('[aligner]', {
-      outs: Object.keys(out),
-      dims: (first as { dims?: number[] })?.dims,
-      bgrPeak: confidence,
-      rgbPeak: altHeat ? cornersFromHeatmap(altHeat).confidence : null,
-      max: heat.reduce((m, v) => (v > m ? v : m), 0),
-      pts,
-    });
+    return null;
   }
-  if (confidence < MIN_PEAK) return null;
-  const kx = sw / INPUT;
-  const ky = sh / INPUT;
+  const kx = sw / grid;
+  const ky = sh / grid;
   const [tl, tr, br, bl] = pts as [Pt, Pt, Pt, Pt];
   const at = (p: Pt): Pt => ({ x: p.x * kx, y: p.y * ky });
   return { tl: at(tl), tr: at(tr), br: at(br), bl: at(bl) };
