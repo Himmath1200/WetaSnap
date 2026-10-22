@@ -13,7 +13,7 @@ services/api/.env
 services/api/storage/
 
 # ONNX Runtime wasm, copied out of node_modules by apps/web/scripts/vendor-ort.mjs
-apps/web/public/ort/
+apps/web/ort/
 
 # Test and tool artefacts
 apps/web/e2e/.results/

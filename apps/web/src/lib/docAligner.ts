@@ -13,9 +13,11 @@
  *
  * Weight discipline (§8.1): ONNX Runtime's wasm build and the model load lazily,
  * only when the Pro scanner opens. Both are precached by the service worker
- * (`scripts/vendor-ort.mjs` copies the wasm into `public/ort/`), so the second
- * open — and a cold offline launch — still detects.
+ * (`scripts/vendor-ort.mjs` copies the wasm + glue into `ort/`, imported here as
+ * `?url` assets), so the second open — and a cold offline launch — still detects.
  */
+import wasmUrl from '../../ort/ort-wasm-simd-threaded.wasm?url';
+import glueUrl from '../../ort/ort-wasm-simd-threaded.mjs?url';
 import type { Pt, Quad } from './scanEngine';
 
 const MODEL_URL = '/models/lcnet100_h_e_bifpn_256_fp32.onnx';
@@ -77,7 +79,8 @@ export function loadAligner(): Promise<Loaded> {
   if (!loadPromise) {
     loadPromise = (async () => {
       const ort = await import('onnxruntime-web/wasm');
-      ort.env.wasm.wasmPaths = '/ort/';
+      // Both files as real assets: ORT imports the glue as a module at runtime.
+      ort.env.wasm.wasmPaths = { wasm: wasmUrl, mjs: glueUrl };
       // Multi-threaded wasm needs SharedArrayBuffer (COOP/COEP) which static hosts
       // do not send, and one thread is plenty for a single 256×256 inference.
       ort.env.wasm.numThreads = 1;

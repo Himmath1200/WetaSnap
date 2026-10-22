@@ -1,10 +1,11 @@
 /**
- * Copies the ONNX Runtime wasm into `public/ort/` (runs on `dev` and `build`).
+ * Copies the ONNX Runtime wasm + its ESM glue into `ort/` (runs on `dev` and
+ * `build`). `src/lib/docAligner.ts` imports both with `?url`, so Vite emits
+ * hashed assets the service worker can precache (offline detection).
  *
- * ORT fetches that binary at runtime instead of importing it, so Vite would
- * otherwise leave it behind in node_modules and the service worker could not
- * precache it (no offline detection). An 11 MB binary does not belong in git
- * either, so it is rebuilt from the installed package. The model itself
+ * Not `public/`: ORT imports the glue as a module at runtime, and Vite refuses to
+ * serve public files through the module graph. An 11 MB binary does not belong
+ * in git either, so it is rebuilt from the installed package. The model itself
  * (`public/models/*.onnx`) is a real asset and is committed.
  */
 import { copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
@@ -13,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const out = join(here, '..', 'public', 'ort');
+const out = join(here, '..', 'ort');
 const files = ['ort-wasm-simd-threaded.wasm', 'ort-wasm-simd-threaded.mjs'];
 
 // `onnxruntime-web/package.json` is not in the package's exports map, so resolve the
