@@ -10,6 +10,8 @@ export default defineConfig({
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   server: {
+    // 0.0.0.0 so a phone on the same Wi-Fi can open the app.
+    host: '0.0.0.0',
     // Allow Cloudflare quick-tunnel hosts (each run gets a new random subdomain).
     allowedHosts: true,
     watch: {
@@ -20,6 +22,7 @@ export default defineConfig({
     },
   },
   preview: {
+    host: '0.0.0.0',
     allowedHosts: true,
   },
   plugins: [
