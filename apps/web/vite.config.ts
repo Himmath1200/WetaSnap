@@ -43,10 +43,13 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        // The Pro scanner's detector (DocAligner model + ORT wasm bundle) is precached
+        // whole so it scans offline on a cold first launch. That is a deliberate
+        // exception to the ≤2 MB installed budget in URS §8.1 — do not "fix" it.
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,webmanifest,onnx,wasm}'],
         // Admin-only extras stay out of the installed app; they load on demand (§8.1).
         globIgnores: ['**/exceljs*', '**/tesseract*', '**/jspdf*', '**/html2canvas*', '**/index.es*', '**/purify*'], // the API chunk stays cached — the app must work offline
-        maximumFileSizeToCacheInBytes: 3_000_000,
+        maximumFileSizeToCacheInBytes: 20_000_000,
         navigateFallback: '/index.html',
         importScripts: ['push-sw.js'], // push + notification click handling
       },

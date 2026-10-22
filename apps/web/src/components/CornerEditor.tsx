@@ -138,7 +138,7 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
     }
   }
 
-  /** Last resort when the engine never loads (offline first open): the plain photo. */
+  /** Last resort when the detector never loads: the plain photo. */
   async function useAsIs() {
     setBusy(true);
     try {
