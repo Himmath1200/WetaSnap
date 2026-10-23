@@ -437,6 +437,59 @@ describe('parseCardText', () => {
     expect(r.phone).toBeUndefined();
   });
 
+  it('Auranov card: the icon glyph before the email is not part of the address', () => {
+    // Envelope mark read as "A"/"SA", then the address proper — flagged as repaired (0.6) today.
+    for (const glyph of ['A', 'SA']) {
+      const r = parseCardText([
+        'Christian R.S. Arokiaswamy',
+        `${glyph} carokiaswamy@auranov.org`,
+        '+91 89397 54754',
+      ].join('\n'));
+
+      expect(r.email?.value, `glyph ${glyph}`).toBe('carokiaswamy@auranov.org');
+      expect(r.email?.reason, `glyph ${glyph}`).toBeUndefined();
+    }
+
+    // An address printed in capitals keeps its leading token.
+    const caps = parseCardText(['JR SMITH@enrichspaces.co.in'].join('\n'));
+    expect(caps.email?.value).toBe('jrsmith@enrichspaces.co.in');
+    expect(caps.email?.reason).toBeTruthy();
+  });
+
+  it('Auranov card: artwork under the title never becomes the company', () => {
+    const r = parseCardText([
+      'Christian R.S. Arokiaswamy',
+      'Founder and Partner',
+      'SORE [ores',
+      '+91 89397 54754,',
+      '+91 98843 20824',
+      'SA carokiaswamy@auranov.org',
+      'www.auranov.org',
+      '2B Lyn Periera St Santhome,',
+      'Chennai - 600 004.',
+      'Clarity in construction',
+    ].join('\n'));
+
+    expect(r.company).toBeUndefined(); // nothing printed as a company name — blank beats "SORE"
+    expect(r.email?.value).toBe('carokiaswamy@auranov.org');
+    expect(r.first_name?.value).toBe('Christian R.S.');
+    expect(r.last_name?.value).toBe('Arokiaswamy');
+    expect(r.job_title?.value).toBe('Founder and Partner');
+    expect(r.phone?.value).toBe('+91 89397 54754');
+    expect(r.phone2?.value).toBe('+91 98843 20824');
+    expect(r.website?.value).toBe('https://www.auranov.org');
+    expect(r.country?.value).toBe('India');
+  });
+
+  it('a brand line above the name is still guessed as the company', () => {
+    const r = parseCardText(['AGRISOL', 'Camille Dubois', 'Tel +33 4 72 00 11 22'].join('\n'));
+
+    expect(r.company?.value).toBe('AGRISOL');
+    expect(r.company?.reason).toMatch(/top of the card/i);
+    expect(r.first_name?.value).toBe('Camille');
+    expect(r.last_name?.value).toBe('Dubois');
+  });
+
   it('every value carries a confidence and is marked as read on the device', () => {
     const r = parseCardText('Nordsaat GmbH\nLea Koch\nlea.koch@nordsaat.de');
     for (const v of Object.values(r)) {

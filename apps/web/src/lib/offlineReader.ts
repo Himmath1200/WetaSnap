@@ -527,6 +527,32 @@ function looksLikeText(l: string) {
   return symbols / l.length <= 0.35;
 }
 
+/**
+ * Lines Tesseract read out of artwork rather than print — a logo mark, the QR code, the
+ * skyline printed under the job title ("SORE [ores", "ExmOmt] oo ee jC EX §"). Two shapes
+ * give it away: a bracket, rule or section sign still stuck to a word, and a run of
+ * one/two-letter blips. Printed names are letters, "&", apostrophes and a dot. Pure.
+ */
+function isArtworkLine(l: string) {
+  if (/[[\]{}<>~_=*§©®™^|\\]/.test(l)) return true;
+  const words = l.split(/\s+/).filter(Boolean);
+  const blips = words.filter((w) => w.replace(/[^A-Za-z0-9]/g, '').length <= 2).length;
+  return words.length >= 3 && blips >= 2;
+}
+
+/**
+ * Whether an evidence-free line is worth offering as the company. A guess with nothing
+ * behind it must look like a brand: several words, or one long word ("AGRISOL") — never a
+ * four-letter logo fragment such as "SORE", which is artwork noise the engine spelled out.
+ * Pure: unit-tested.
+ */
+function isBrandGuess(l: string): boolean {
+  if (isArtworkLine(l)) return false;
+  const letters = l.replace(/[^A-Za-z]/g, '');
+  const words = l.split(/\s+/).filter(Boolean);
+  return letters.length >= 4 && (words.length >= 2 || letters.length >= 5);
+}
+
 /** Longest calling code first, so +351 wins over +35-style prefixes. */
 function ccOf(digits: string): string | null {
   const ccs = CC_COUNTRY.map(([c]) => c).sort((a, b) => b.length - a.length);
@@ -555,6 +581,20 @@ function repairPhone(p: string) {
 }
 
 /**
+ * The words Tesseract glued to the front of an address because the icon beside it read as
+ * letters: "SA carokiaswamy@…", "A carokiaswamy@…". A 1–3 character token with no lowercase
+ * letter is the envelope mark, not the mailbox — it is dropped only when the address proper
+ * starts lowercase, so an address printed in capitals ("JR SMITH@…") keeps all of itself.
+ */
+function trimIconPrefix(buf: string): string[] {
+  const tokens = buf.split(/\s+/).filter(Boolean);
+  let from = 0;
+  while (tokens.length - from > 1 && /^[^a-z]{1,3}$/.test(tokens[from]!)) from++;
+  if (from > 0 && !/^[a-z]/.test(tokens[from] ?? '')) from = 0;
+  return tokens.slice(from);
+}
+
+/**
  * The email address, glued from Tesseract fragments ("ay 2 kumar.p@…" → "ay2kumar.p@…").
  * The longest local part wins, so a fragment never beats the full address; the domain is
  * taken as printed and never repaired.
@@ -575,11 +615,14 @@ function extractEmail(text: string): { email: string; repaired: boolean } | null
       buf = ch + buf;
       l--;
     }
-    const local = buf.replace(/\s+/g, '');
+    // A space that survives between real words of the local part means Tesseract lost the
+    // print — the address is flagged. A dropped icon prefix is not a lost character.
+    const parts = trimIconPrefix(buf);
+    const local = parts.join('');
     const dm = text.slice(i + 1).match(/^[\w-]+(\.[\w-]+)+/);
     if (!dm || !local) continue;
     const cand = `${local}@${dm[0]}`;
-    if (EMAIL.test(cand)) take(cand, /\s/.test(buf));
+    if (EMAIL.test(cand)) take(cand, parts.length > 1);
   }
   return best;
 }
@@ -828,7 +871,13 @@ export function parseCardText(text: string): ReadResult {
       ? cands.filter((l) => !isNameShaped(l))
       : cands.filter((l) => !isPersonLine(l, emailLocal));
     const mailHit = !siteHit && domainBase ? agreeIn(screened, domainBase) : null;
-    company = siteHit ?? mailHit ?? screened[0] ?? null;
+    // A guess with no domain behind it has to sit in the card's head — above the job title
+    // and the contact block, where the brand line lives — and read like a brand. What the
+    // engine spelled out of the artwork below the title is not a company.
+    const headEnd = lines.findIndex((l) => TITLE.test(l) || PHONE_CHARS.test(l) || EMAIL.test(l) || WEB.test(l));
+    const inHead = (l: string) => headEnd < 0 || lines.indexOf(l) < headEnd;
+    const guess = screened.find((l) => inHead(l) && isBrandGuess(l)) ?? null;
+    company = siteHit ?? mailHit ?? guess;
     companyWhy = siteHit ? 'site' : mailHit ? 'domain' : company ? 'top' : null;
   }
   if (company && lines.includes(company)) {
