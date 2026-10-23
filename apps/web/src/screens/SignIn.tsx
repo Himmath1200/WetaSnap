@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
-import { ArrowLeft, CheckCircle2, Eye, EyeOff, KeyRound, Lock, Mail, MailCheck, ShieldCheck } from 'lucide-preact';
+import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, KeyRound, Lock, Mail, MailCheck, ShieldCheck } from 'lucide-preact';
 import { backend, isDemo } from '../lib/backend';
 import { devAccounts, devCode, type DevAccounts } from '../lib/devAccounts';
 import { startSession } from '../lib/session';
@@ -9,7 +9,6 @@ import { toast } from '../lib/store';
 import { DEFAULT_POLICY, STRENGTH_LABEL, checkPassword, passwordStrength } from '../lib/password';
 
 import { t, tn } from '../lib/i18n';
-import { Logo } from '../components/AppShell';
 import { type Door } from '../lib/portal';
 import { Copyright, Spinner } from '../components/ui';
 import { homeFor } from '../routes';
@@ -31,6 +30,10 @@ type Step = 'password' | 'email_code' | 'totp' | 'forgot' | 'setup' | 'reset' | 
  * with a “Set up password” button pointing at /signin#setup=<address>. That opens the `setup`
  * step here: code, new password, the same password again; then “Go to sign in”. A forgotten
  * password takes the identical path (`forgot` → `reset`), so there is one flow to learn.
+ *
+ * The door's own dark surface (design, Oct 2026): the `.door-*` classes in styles.css keep it
+ * one colour in both themes, with mint as the only accent. It is the first screen anyone sees,
+ * so it wears the brand colour rather than the theme's.
  */
 export default function SignIn({ door }: { door: Door }) {
   const console_ = door === 'console';
@@ -163,7 +166,7 @@ export default function SignIn({ door }: { door: Door }) {
   }
 
   const back = (to: Step) => (
-    <button type="button" class="-ml-1 mb-3 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-muted hover:text-ink" onClick={() => go(to)}>
+    <button type="button" class="-ml-1 mb-3 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-door-muted hover:text-door-ink" onClick={() => go(to)}>
       <ArrowLeft class="size-4" />{t('Back')}
     </button>
   );
@@ -173,128 +176,147 @@ export default function SignIn({ door }: { door: Door }) {
   const stepNo = step === 'email_code' ? 2 : step === 'totp' ? 3 : 1;
 
   return (
-    <div class="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-br from-brand-50 via-canvas to-ocean-50 px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-8 sm:pt-12 sm:pb-12">
-      <div class="w-full max-w-sm">
-        <div class="mb-6 flex flex-col items-center gap-3">
-          <Logo />
-          {console_ && (
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1 text-xs font-semibold text-slate-700">
-              <ShieldCheck class="size-3.5 text-brand-700" />{t('WeTano Console')}
-            </span>
+    <div class="door-scope flex min-h-dvh flex-col justify-between bg-door px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] text-door-ink sm:justify-center sm:p-6">
+      {/* Ambient glow behind the mark, and nothing to read: it is decoration. */}
+      <div aria-hidden="true" class="pointer-events-none fixed -top-40 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-500/10 blur-[120px]" />
+
+      <div class="relative z-10 mx-auto my-auto flex w-full max-w-[420px] flex-col pt-2 pb-6">
+        <header class="mb-6 flex items-center justify-center gap-3">
+          <SnapMark />
+          <div class="wordmark flex items-baseline text-xl">
+            <span class="text-door-ink">WeTa</span>
+            <span class="ml-1.5 text-mint">Snap</span>
+          </div>
+        </header>
+
+        {console_ && (
+          <span class="mx-auto mb-4 inline-flex items-center gap-1.5 rounded-full border border-door-line bg-door-card px-3 py-1 text-xs font-semibold text-door-ink">
+            <ShieldCheck class="size-3.5 text-mint" />{t('WeTano Console')}
+          </span>
+        )}
+
+        <main class="door-card relative rounded-2xl p-5 sm:p-7">
+          {/* The card's top edge catches a little mint, so it reads as lit from above. */}
+          <div aria-hidden="true" class="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
+
+          {stepsFor > 1 && (step === 'password' || step === 'email_code' || step === 'totp') && (
+            <ol class="mb-4 flex items-center gap-1.5" aria-label={t('Sign-in steps')}>
+              {Array.from({ length: stepsFor }, (_, i) => (
+                <li key={i} class={`h-1.5 flex-1 rounded-full ${i < stepNo ? 'bg-mint' : 'bg-door-line'}`} />
+              ))}
+            </ol>
           )}
-        </div>
 
-        <div class="card overflow-hidden">
-          <div class="accent-bar" />
-          <div class="p-5 sm:p-6">
-            {ended && step === 'password' && (
-              <p class="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                {kept > 0
-                  ? tn(kept, 'You were signed out after a quiet spell. {n} lead is still safe on this phone and will be sent when you sign in again.', 'You were signed out after a quiet spell. {n} leads are still safe on this phone and will be sent when you sign in again.')
-                  : t('You were signed out. Sign in again to continue.')}
-              </p>
-            )}
-            {stepsFor > 1 && (step === 'password' || step === 'email_code' || step === 'totp') && (
-              <ol class="mb-4 flex items-center gap-1.5" aria-label={t('Sign-in steps')}>
-                {Array.from({ length: stepsFor }, (_, i) => (
-                  <li key={i} class={`h-1.5 flex-1 rounded-full ${i < stepNo ? 'bg-brand-600' : 'bg-slate-200'}`} />
-                ))}
-              </ol>
-            )}
-
-            {step === 'password' && (
-              <form onSubmit={submitPassword} noValidate>
-                <h1 class="title text-xl font-bold">{t('Sign in')}</h1>
-                <p class="mt-1 text-sm text-muted">
+          {step === 'password' && (
+            <form onSubmit={submitPassword} noValidate>
+              <div class="mb-5">
+                <h1 class="mb-1.5 text-xl font-bold text-door-ink">{t('Sign in to WeTa Snap')}</h1>
+                <p class="text-xs leading-relaxed text-door-muted sm:text-sm">
                   {console_ ? t('Companies, licences and support for every client.') : t('Scanning, leads and everything else — all in one place.')}
                 </p>
-                <label class="label mt-5" for="si-email">{t('Work email')}</label>
-                <div class="relative">
-                  <Mail class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                  <input id="si-email" type="email" inputMode="email" autoComplete="username" autoFocus class="input pl-9"
-                    placeholder="name@company.com" value={email} onInput={(e) => setEmail(e.currentTarget.value)} />
-                </div>
-                <label class="label mt-3" for="si-pw">{t('Password')}</label>
-                <div class="relative">
-                  <Lock class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                  <input id="si-pw" type={showPw ? 'text' : 'password'} autoComplete="current-password" class="input pr-11 pl-9"
-                    value={password} onInput={(e) => setPassword(e.currentTarget.value)} />
-                  <button type="button" class="absolute top-1/2 right-0 flex size-11 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-subtle"
-                    onClick={() => setShowPw((v) => !v)} aria-label={showPw ? t('Hide password') : t('Show password')}>
-                    {showPw ? <EyeOff class="size-4" /> : <Eye class="size-4" />}
-                  </button>
-                </div>
-                {error && <p class="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">{error}</p>}
-                <button type="submit" class="btn-primary mt-5 w-full" disabled={busy}>{busy ? <Spinner /> : t('Continue')}</button>
-                <button type="button" class="mt-3 flex min-h-10 w-full items-center justify-center text-sm font-semibold text-ocean-700 hover:underline" onClick={() => go('forgot')}>
+              </div>
+              {ended && (
+                <p class="door-error mb-4">
+                  {kept > 0
+                    ? tn(kept, 'You were signed out after a quiet spell. {n} lead is still safe on this phone and will be sent when you sign in again.', 'You were signed out after a quiet spell. {n} leads are still safe on this phone and will be sent when you sign in again.')
+                    : t('You were signed out. Sign in again to continue.')}
+                </p>
+              )}
+
+              <label class="door-label" for="si-email">{t('Work email')}</label>
+              <div class="group relative">
+                <Mail class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                <input id="si-email" type="email" inputMode="email" autoComplete="username" autoFocus class="door-input pl-10"
+                  placeholder="name@company.com" value={email} onInput={(e) => setEmail(e.currentTarget.value)} />
+              </div>
+
+              <label class="door-label mt-4" for="si-pw">{t('Password')}</label>
+              <div class="group relative">
+                <Lock class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                <input id="si-pw" type={showPw ? 'text' : 'password'} autoComplete="current-password" class="door-input pr-11 pl-10 tracking-wide"
+                  placeholder="••••••••••••" value={password} onInput={(e) => setPassword(e.currentTarget.value)} />
+                <button type="button" class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-door-muted hover:text-door-ink"
+                  onClick={() => setShowPw((v) => !v)} aria-label={showPw ? t('Hide password') : t('Show password')}>
+                  {showPw ? <EyeOff class="size-4" /> : <Eye class="size-4" />}
+                </button>
+              </div>
+
+              {error && <p class="door-error mt-3" role="alert">{error}</p>}
+
+              <button type="submit" class="door-cta mt-5 w-full" disabled={busy}>
+                <span>{t('Continue')}</span>
+                {busy ? <Spinner class="size-4" /> : <ArrowRight class="size-4" />}
+              </button>
+              <div class="pt-1 text-center">
+                <button type="button" class="door-link min-h-11 underline decoration-door-line underline-offset-4 hover:decoration-mint" onClick={() => go('forgot')}>
                   {t('Set or reset password')}
                 </button>
-              </form>
-            )}
-
-            {step === 'email_code' && (
-              <div>
-                {back('password')}
-                <h1 class="title flex items-center gap-2 text-xl font-bold"><MailCheck class="size-5 text-brand-700" />{t('Check your email')}</h1>
-                <p class="mt-1 text-sm text-muted">{t('We sent a 6-digit code to {email}. It lasts 10 minutes.', { email })}</p>
-                {demoCode && <DemoNote>{t('Demo mode — your code is')} <b class="font-mono tracking-widest">{demoCode}</b></DemoNote>}
-                <CodeBoxes key="email" disabled={busy} onComplete={(c) => void submitEmailCode(c)} />
-                {error && <p class="mt-3 text-sm font-medium text-red-700" role="alert">{error}</p>}
-                <div class="mt-4 flex items-center justify-between">
-                  <button class="min-h-11 text-sm font-semibold text-ocean-700 disabled:text-slate-400" disabled={resendIn > 0 || busy} onClick={() => void resend()}>
-                    {resendIn > 0 ? t('Resend in {s}s', { s: resendIn }) : t('Resend code')}
-                  </button>
-                  {busy && <Spinner class="size-5 text-brand-700" />}
-                </div>
               </div>
-            )}
+            </form>
+          )}
 
-            {step === 'totp' && (
-              <div>
-                {back('password')}
-                <h1 class="title flex items-center gap-2 text-xl font-bold"><ShieldCheck class="size-5 text-brand-700" />
-                  {t('Authenticator code')}
-                </h1>
-                <p class="mt-1 text-sm text-muted">{t('Enter the 6 digits from your authenticator app, or one of your recovery codes.')}</p>
-                {isDemo && <DemoNote>{t('Demo mode — any 6 digits work.')}</DemoNote>}
-                <CodeBoxes key="totp" disabled={busy} onComplete={(c) => void submitTotp(c)} />
-                <RecoveryInput disabled={busy} onSubmit={(c) => void submitTotp(c)} />
-                {error && <p class="mt-3 text-sm font-medium text-red-700" role="alert">{error}</p>}
+          {step === 'email_code' && (
+            <div>
+              {back('password')}
+              <h1 class="flex items-center gap-2 text-xl font-bold text-door-ink"><MailCheck class="size-5 text-mint" />{t('Check your email')}</h1>
+              <p class="mt-1 text-sm text-door-muted">{t('We sent a 6-digit code to {email}. It lasts 10 minutes.', { email })}</p>
+              {demoCode && <DemoNote>{t('Demo mode — your code is')} <b class="font-mono tracking-widest">{demoCode}</b></DemoNote>}
+              <CodeBoxes key="email" disabled={busy} onComplete={(c) => void submitEmailCode(c)} />
+              {error && <p class="door-error mt-3" role="alert">{error}</p>}
+              <div class="mt-4 flex items-center justify-between">
+                <button class="door-link min-h-11" disabled={resendIn > 0 || busy} onClick={() => void resend()}>
+                  {resendIn > 0 ? t('Resend in {s}s', { s: resendIn }) : t('Resend code')}
+                </button>
+                {busy && <Spinner class="size-5 text-mint" />}
               </div>
-            )}
+            </div>
+          )}
 
-            {step === 'forgot' && (
-              <form onSubmit={askReset} noValidate>
-                {!setupEmail && back('password')}
-                <h1 class="title flex items-center gap-2 text-xl font-bold"><KeyRound class="size-5 text-brand-700" />
-                  {setupEmail ? t('Set your password') : t('Set or reset your password')}
-                </h1>
-                <p class="mt-1 text-sm text-muted">{t('We email a 6-digit code to your work address, then you choose a password.')}</p>
-                <label class="label mt-5" for="fp-email">{t('Work email')}</label>
-                <div class="relative">
-                  <Mail class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-                  <input id="fp-email" type="email" inputMode="email" autoFocus class="input pl-9" value={email} onInput={(e) => setEmail(e.currentTarget.value)} />
-                </div>
-                {error && <p class="mt-3 text-sm font-medium text-red-700" role="alert">{error}</p>}
-                <button type="submit" class="btn-primary mt-5 w-full" disabled={busy}>{busy ? <Spinner /> : t('Send the code')}</button>
-              </form>
-            )}
+          {step === 'totp' && (
+            <div>
+              {back('password')}
+              <h1 class="flex items-center gap-2 text-xl font-bold text-door-ink"><ShieldCheck class="size-5 text-mint" />
+                {t('Authenticator code')}
+              </h1>
+              <p class="mt-1 text-sm text-door-muted">{t('Enter the 6 digits from your authenticator app, or one of your recovery codes.')}</p>
+              {isDemo && <DemoNote>{t('Demo mode — any 6 digits work.')}</DemoNote>}
+              <CodeBoxes key="totp" disabled={busy} onComplete={(c) => void submitTotp(c)} />
+              <RecoveryInput disabled={busy} onSubmit={(c) => void submitTotp(c)} />
+              {error && <p class="door-error mt-3" role="alert">{error}</p>}
+            </div>
+          )}
 
-            {(step === 'reset' || step === 'setup') && (
-              <ResetForm setup={step === 'setup'} email={email} policy={policy} busy={busy} error={error}
-                demoCode={isDemo ? demoCode : undefined} resendIn={resendIn}
-                onBack={() => go('password')} onSubmit={(c, pw) => void doReset(c, pw)} onResend={() => void askReset()} />
-            )}
-
-            {step === 'done' && (
-              <div>
-                <h1 class="title flex items-center gap-2 text-xl font-bold"><CheckCircle2 class="size-5 text-brand-700" />{t('Your password is set')}</h1>
-                <p class="mt-2 text-sm text-muted">{t('Sign in with {email} and the password you just chose.', { email })}</p>
-                <button type="button" class="btn-primary mt-5 w-full" onClick={() => go('password')}>{t('Go to sign in')}</button>
+          {step === 'forgot' && (
+            <form onSubmit={askReset} noValidate>
+              {!setupEmail && back('password')}
+              <h1 class="flex items-center gap-2 text-xl font-bold text-door-ink"><KeyRound class="size-5 text-mint" />
+                {setupEmail ? t('Set your password') : t('Set or reset your password')}
+              </h1>
+              <p class="mt-1 text-sm text-door-muted">{t('We email a 6-digit code to your work address, then you choose a password.')}</p>
+              <label class="door-label mt-5" for="fp-email">{t('Work email')}</label>
+              <div class="group relative">
+                <Mail class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                <input id="fp-email" type="email" inputMode="email" autoFocus class="door-input pl-10" value={email} onInput={(e) => setEmail(e.currentTarget.value)} />
               </div>
-            )}
-          </div>
-        </div>
+              {error && <p class="door-error mt-3" role="alert">{error}</p>}
+              <button type="submit" class="door-cta mt-5 w-full" disabled={busy}>{busy ? <Spinner class="size-4" /> : t('Send the code')}</button>
+            </form>
+          )}
+
+          {(step === 'reset' || step === 'setup') && (
+            <ResetForm setup={step === 'setup'} email={email} policy={policy} busy={busy} error={error}
+              demoCode={isDemo ? demoCode : undefined} resendIn={resendIn}
+              onBack={() => go('password')} onSubmit={(c, pw) => void doReset(c, pw)} onResend={() => void askReset()} />
+          )}
+
+          {step === 'done' && (
+            <div>
+              <h1 class="flex items-center gap-2 text-xl font-bold text-door-ink"><CheckCircle2 class="size-5 text-mint" />{t('Your password is set')}</h1>
+              <p class="mt-2 text-sm text-door-muted">{t('Sign in with {email} and the password you just chose.', { email })}</p>
+              <button type="button" class="door-cta mt-5 w-full" onClick={() => go('password')}>{t('Go to sign in')}</button>
+            </div>
+          )}
+        </main>
 
         {step === 'password' && (isDemo
           ? <DemoAccounts door={door} onPick={(e) => { setEmail(e); setPassword('WetaSnap#2026'); }} />
@@ -305,19 +327,38 @@ export default function SignIn({ door }: { door: Door }) {
   );
 }
 
+/** The viewfinder mark on the door: four corner brackets around a sensor dot. */
+function SnapMark() {
+  return (
+    <div class="relative size-10 rounded-xl bg-gradient-to-b from-white/10 to-white/0 p-px shadow-lg shadow-black/40">
+      <div class="relative flex size-full items-center justify-center overflow-hidden rounded-[11px] bg-door-card">
+        <svg class="size-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8V5a1 1 0 0 1 1-1h3" stroke-linecap="round" />
+          <path d="M16 4h3a1 1 0 0 1 1 1v3" stroke-linecap="round" />
+          <path d="M4 16v3a1 1 0 0 0 1 1h3" stroke-linecap="round" />
+          <path d="M16 20h3a1 1 0 0 0 1-1v-3" stroke-linecap="round" />
+          <circle class="fill-emerald-400/20" cx="12" cy="12" r="3" />
+          <path d="M9 12h6" stroke-dasharray="0.5 2" stroke-linecap="round" />
+        </svg>
+        <div class="pointer-events-none absolute inset-0 bg-emerald-400/10 mix-blend-screen" />
+      </div>
+    </div>
+  );
+}
+
 function DemoNote({ children }: { children: preact.ComponentChildren }) {
-  return <p class="mt-3 rounded-xl bg-ocean-50 px-3 py-2 text-sm text-ocean-800">{children}</p>;
+  return <p class="door-note mt-3">{children}</p>;
 }
 
 /** Fallback when the phone is lost: one of the saved recovery codes. */
 function RecoveryInput({ onSubmit, disabled }: { onSubmit: (code: string) => void; disabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
-  if (!open) return <button type="button" class="mt-4 min-h-11 text-xs font-semibold text-ocean-700 hover:underline" onClick={() => setOpen(true)}>{t('Use a recovery code instead')}</button>;
+  if (!open) return <button type="button" class="door-link mt-4 min-h-11 hover:underline" onClick={() => setOpen(true)}>{t('Use a recovery code instead')}</button>;
   return (
     <form class="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); onSubmit(code); }}>
-      <input class="input font-mono uppercase" placeholder="ABCD-EFGH" value={code} onInput={(e) => setCode(e.currentTarget.value)} aria-label={t('Recovery code')} />
-      <button class="btn-secondary shrink-0 px-3" disabled={disabled || code.replace(/\W/g, '').length < 8}>{t('Use')}</button>
+      <input class="door-input font-mono uppercase" placeholder="ABCD-EFGH" value={code} onInput={(e) => setCode(e.currentTarget.value)} aria-label={t('Recovery code')} />
+      <button class="door-cta shrink-0 px-4" disabled={disabled || code.replace(/\W/g, '').length < 8}>{t('Use')}</button>
     </form>
   );
 }
@@ -340,46 +381,46 @@ function ResetForm({ setup, email, policy, busy, error, demoCode, resendIn, onBa
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(code, pw); }} noValidate>
       {!setup && (
-        <button type="button" class="-ml-1 mb-3 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-muted hover:text-ink" onClick={onBack}>
+        <button type="button" class="-ml-1 mb-3 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-door-muted hover:text-door-ink" onClick={onBack}>
           <ArrowLeft class="size-4" />{t('Back')}
         </button>
       )}
-      <h1 class="title text-xl font-bold">{setup ? t('Set up your password') : t('Choose your password')}</h1>
-      <p class="mt-1 text-sm text-muted">
+      <h1 class="text-xl font-bold text-door-ink">{setup ? t('Set up your password') : t('Choose your password')}</h1>
+      <p class="mt-1 text-sm text-door-muted">
         {setup
           ? t('Welcome to WeTa Snap. Enter the 6-digit code from your invitation email for {email}, then pick the password you will sign in with.', { email })
           : t('Enter the code sent to {email} and your new password.', { email })}
       </p>
       {demoCode && <DemoNote>{t('Demo mode — your code is')} <b class="font-mono tracking-widest">{demoCode}</b></DemoNote>}
 
-      <label class="label mt-4" for="rs-code">{setup ? t('Code from your invitation email') : t('Code from the email')}</label>
-      <input id="rs-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus class="input text-center font-mono text-lg tracking-[0.4em]"
+      <label class="door-label mt-4" for="rs-code">{setup ? t('Code from your invitation email') : t('Code from the email')}</label>
+      <input id="rs-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus class="door-input text-center font-mono text-lg tracking-[0.4em]"
         value={code} onInput={(e) => setCode(e.currentTarget.value.replace(/\D/g, ''))} />
 
-      <label class="label mt-3" for="rs-pw">{t('New password')}</label>
-      <div class="relative">
-        <Lock class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
-        <input id="rs-pw" type={show ? 'text' : 'password'} autoComplete="new-password" class="input pr-11 pl-9" value={pw} onInput={(e) => setPw(e.currentTarget.value)} />
-        <button type="button" class="absolute top-1/2 right-0 flex size-11 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-subtle"
+      <label class="door-label mt-4" for="rs-pw">{t('New password')}</label>
+      <div class="group relative">
+        <Lock class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+        <input id="rs-pw" type={show ? 'text' : 'password'} autoComplete="new-password" class="door-input pr-11 pl-10" value={pw} onInput={(e) => setPw(e.currentTarget.value)} />
+        <button type="button" class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-door-muted hover:text-door-ink"
           onClick={() => setShow((v) => !v)} aria-label={show ? t('Hide password') : t('Show password')}>
           {show ? <EyeOff class="size-4" /> : <Eye class="size-4" />}
         </button>
       </div>
       <PasswordMeter strength={passwordStrength(pw)} problems={problems} show={!!pw} />
 
-      <label class="label mt-3" for="rs-pw2">{t('Type it again')}</label>
-      <input id="rs-pw2" type={show ? 'text' : 'password'} autoComplete="new-password" class="input" value={confirm} onInput={(e) => setConfirm(e.currentTarget.value)} />
-      {mismatch && <p class="mt-1 text-xs font-medium text-red-700">{t('The two passwords are different.')}</p>}
+      <label class="door-label mt-4" for="rs-pw2">{t('Type it again')}</label>
+      <input id="rs-pw2" type={show ? 'text' : 'password'} autoComplete="new-password" class="door-input" value={confirm} onInput={(e) => setConfirm(e.currentTarget.value)} />
+      {mismatch && <p class="mt-1 text-xs font-medium text-red-300">{t('The two passwords are different.')}</p>}
 
-      {error && <p class="mt-3 text-sm font-medium text-red-700" role="alert">{error}</p>}
-      <button type="submit" class="btn-primary mt-5 w-full" disabled={busy || code.length !== 6 || problems.length > 0 || !pw || pw !== confirm}>
-        {busy ? <Spinner /> : setup ? t('Set up my password') : t('Save the password')}
+      {error && <p class="door-error mt-3" role="alert">{error}</p>}
+      <button type="submit" class="door-cta mt-5 w-full" disabled={busy || code.length !== 6 || problems.length > 0 || !pw || pw !== confirm}>
+        {busy ? <Spinner class="size-4" /> : setup ? t('Set up my password') : t('Save the password')}
       </button>
-      <button type="button" class="mt-3 min-h-11 w-full text-xs font-semibold text-ocean-700 disabled:text-slate-400" disabled={resendIn > 0} onClick={onResend}>
+      <button type="button" class="door-link mt-1 min-h-11 w-full disabled:text-door-muted" disabled={resendIn > 0} onClick={onResend}>
         {resendIn > 0 ? t('Resend in {s}s', { s: resendIn }) : setup ? t('Email me a new code') : t('Send a new code')}
       </button>
       {setup && (
-        <button type="button" class="mt-1 min-h-11 w-full text-xs font-semibold text-muted hover:text-ink" onClick={onBack}>
+        <button type="button" class="door-link mt-1 min-h-11 w-full" onClick={onBack}>
           {t('I already have a password — sign in')}
         </button>
       )}
@@ -393,13 +434,13 @@ export function PasswordMeter({ strength, problems, show }: { strength: number; 
   return (
     <div class="mt-2">
       <div class="flex items-center gap-2">
-        <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+        <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-door-line">
           <div class={`h-full rounded-full transition-all ${colour}`} style={{ width: `${(strength / 4) * 100}%` }} />
         </div>
-        <span class="text-[11px] font-semibold text-muted">{t(STRENGTH_LABEL[strength]!)}</span>
+        <span class="text-[11px] font-semibold text-door-muted">{t(STRENGTH_LABEL[strength]!)}</span>
       </div>
       {problems.length > 0 && (
-        <ul class="mt-1.5 space-y-0.5">{problems.map((p) => <li key={p} class="text-[11px] text-amber-800">• {t(p)}</li>)}</ul>
+        <ul class="mt-1.5 space-y-0.5">{problems.map((p) => <li key={p} class="text-[11px] text-amber-300">• {t(p)}</li>)}</ul>
       )}
     </div>
   );
@@ -438,13 +479,22 @@ function CodeBoxes({ onComplete, disabled }: { onComplete: (code: string) => voi
       {digits.map((d, i) => (
         <input key={i} ref={(el) => { refs.current[i] = el; }} value={d} disabled={disabled}
           inputMode="numeric" autoComplete={i === 0 ? 'one-time-code' : 'off'} maxLength={i === 0 ? 6 : 1} aria-label={t('Digit {n}', { n: i + 1 })}
-          class="h-12 w-full min-w-0 rounded-xl border border-line bg-surface text-center text-xl font-bold tabular-nums outline-none focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100 sm:h-13"
+          class="h-12 w-full min-w-0 rounded-xl border border-door-line bg-door-input text-center text-xl font-bold text-door-ink tabular-nums outline-none transition focus:border-mint focus:ring-2 focus:ring-emerald-500/20 sm:h-13"
           onInput={(e) => onInput(i, e.currentTarget.value)}
           onKeyDown={(e) => {
             if (e.key === 'Backspace' && !digits[i] && i > 0) { refs.current[i - 1]?.focus(); const n = [...digits]; n[i - 1] = ''; setDigits(n); }
           }} />
       ))}
     </div>
+  );
+}
+
+/** The role tag on a demo account chip: mint for the people who scan, blue for the ones who run it. */
+function RoleTag({ children, admin }: { children: preact.ComponentChildren; admin?: boolean }) {
+  return (
+    <span class={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${admin ? 'border-sky-500/20 bg-sky-500/10 text-sky-400' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'}`}>
+      {children}
+    </span>
   );
 }
 
@@ -459,25 +509,27 @@ function DevAccountsPanel({ door, demo, onPick }: { door: Door; demo: DevAccount
   if (!demo.password || !accounts.length) return null;
 
   return (
-    <div class="mt-4 rounded-2xl border border-dashed border-line bg-surface/70 p-4">
-      <p class="text-xs font-semibold text-muted">
-        {t('Demo accounts — tap to fill (password {password})', { password: demo.password })}
-      </p>
-      <div class="mt-2 flex flex-wrap gap-2">
+    <section class="mt-4 rounded-2xl border border-door-line bg-door-card/60 p-4">
+      <div class="mb-3 flex items-center justify-between px-1">
+        <span class="text-xs font-medium text-door-muted">{t('Demo accounts — tap to fill')}</span>
+        <span class="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">{demo.password}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
         {accounts.map((a) => (
-          <button key={a.email} type="button" class="chip border-line bg-surface text-xs hover:border-brand-500"
-            onClick={() => onPick(a.email)} title={a.email}>
-            <span class="font-semibold text-brand-800">{a.name || a.email}</span>
-            <span class="text-muted">{a.role === 'super_admin' ? t('WeTano') : a.role === 'client_admin' ? t('Admin') : t('Scanner')}</span>
+          <button key={a.email} type="button" class="door-chip" onClick={() => onPick(a.email)} title={a.email}>
+            <span class="truncate text-xs font-medium text-door-ink">{a.name || a.email}</span>
+            <RoleTag admin={a.role === 'super_admin' || a.role === 'client_admin'}>
+              {a.role === 'super_admin' ? t('WeTano') : a.role === 'client_admin' ? t('Admin') : t('Scanner')}
+            </RoleTag>
           </button>
         ))}
       </div>
-      <p class="mt-2 text-[11px] text-muted">
+      <p class="mt-2 px-1 text-[11px] text-door-muted">
         {door === 'console'
           ? t('The 6-digit code appears here on the next screen.')
           : t('Scanner accounts need no code; an admin\u2019s code appears on the next screen.')}
       </p>
-    </div>
+    </section>
   );
 }
 
@@ -492,15 +544,19 @@ function DemoAccounts({ door, onPick }: { door: Door; onPick: (email: string) =>
       ['admin@nordicseeds.se', 'Erik Lund', 'Admin'],
     ];
   return (
-    <div class="mt-4 rounded-2xl border border-dashed border-line bg-surface/70 p-4">
-      <p class="text-xs font-semibold text-muted">{t('Demo accounts — tap to fill (password WetaSnap#2026)')}</p>
-      <div class="mt-2 flex flex-wrap gap-2">
+    <section class="mt-4 rounded-2xl border border-door-line bg-door-card/60 p-4">
+      <div class="mb-3 flex items-center justify-between px-1">
+        <span class="text-xs font-medium text-door-muted">{t('Demo accounts — tap to fill')}</span>
+        <span class="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">WetaSnap#2026</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
         {accounts.map(([e, name, role]) => (
-          <button key={e} type="button" class="chip border-line bg-surface text-xs hover:border-brand-500" onClick={() => onPick(e)}>
-            <span class="font-semibold text-brand-800">{name}</span><span class="text-muted">{t(role)}</span>
+          <button key={e} type="button" class="door-chip" onClick={() => onPick(e)} title={e}>
+            <span class="truncate text-xs font-medium text-door-ink">{name}</span>
+            <RoleTag admin={role === 'Admin'}>{t(role)}</RoleTag>
           </button>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

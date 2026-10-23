@@ -50,6 +50,16 @@
   /* main (green) button — its own pair so the label stays readable in both themes */
   --color-btn: #047857;
   --color-btn-ink: #ffffff;
+
+  /* The sign-in door is one deliberately dark surface in both themes (design, Oct 2026),
+     so its colours are their own names and never flip with data-theme. */
+  --color-door: #08090d;
+  --color-door-card: #11131a;
+  --color-door-input: #151720;
+  --color-door-line: rgb(255 255 255 / 0.08);
+  --color-door-ink: #f3f4f6;
+  --color-door-muted: #9aa1ad;
+  --color-mint: #10b981;
 }
 
 /* ---------------------------------------------------------------- dark theme */
@@ -250,6 +260,46 @@
   :root[data-theme="dark"] .pop { box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7); }
   .pill { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap; }
   .chip { @apply inline-flex items-center gap-1.5 rounded-full border px-3 min-h-11 text-sm font-medium transition; }
+
+  /* ---------------------------------------------------------------- sign-in door (S1) */
+  .door-card {
+    background: var(--color-door-card);
+    border: 1px solid var(--color-door-line);
+    box-shadow: 0 20px 40px -15px rgb(0 0 0 / 0.6), inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  }
+  .door-input {
+    @apply w-full rounded-xl border px-3.5 min-h-11 text-base sm:text-sm outline-none transition;
+    background: var(--color-door-input);
+    border-color: var(--color-door-line);
+    color: var(--color-door-ink);
+  }
+  .door-input::placeholder { color: #6b7280; }
+  .door-input:focus { border-color: rgb(16 185 129 / 0.55); box-shadow: 0 0 0 3px rgb(16 185 129 / 0.2); }
+  .door-input:-webkit-autofill { -webkit-text-fill-color: var(--color-door-ink); box-shadow: 0 0 0 1000px var(--color-door-input) inset; }
+  .door-label { @apply block text-[11px] font-semibold uppercase tracking-wider mb-2; color: #cbd5e1; }
+  .door-cta {
+    @apply btn text-sm font-bold;
+    background: linear-gradient(to bottom, #1cd295, var(--color-mint));
+    color: #052e1f;
+    box-shadow: 0 0 24px -4px rgb(16 185 129 / 0.3);
+  }
+  .door-cta:hover:not(:disabled) { background: linear-gradient(to bottom, #20dc9d, #0ea774); }
+  .door-cta:active:not(:disabled) { transform: scale(0.99); }
+  .door-link { @apply text-xs font-medium transition-colors; color: var(--color-door-muted); }
+  .door-link:hover:not(:disabled) { color: var(--color-mint); }
+  .door-link:disabled { @apply opacity-50; }
+  .door-note { @apply rounded-xl px-3 py-2 text-xs; background: rgb(59 130 246 / 0.14); color: #bfdbfe; }
+  .door-error { @apply rounded-xl border px-3 py-2 text-sm font-medium; background: rgb(239 68 68 / 0.12); border-color: rgb(239 68 68 / 0.3); color: #fca5a5; }
+  .door-chip {
+    @apply flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors;
+    background: rgb(21 23 32 / 0.8);
+    border-color: rgb(255 255 255 / 0.05);
+  }
+  .door-chip:hover { background: #1a1d29; border-color: rgb(255 255 255 / 0.15); }
+  /* A mint focus ring on the dark door, where the app's blue default would vanish. */
+  .door-card :focus-visible, .door-chip:focus-visible { outline-color: #34d399; }
+  /* Shared small print (Copyright) picks up the door's grey instead of the theme's. */
+  .door-scope { --color-muted: #9aa1ad; }
 }
 
 /* A card photo keeps its white paper in dark mode, just a touch softer. */
