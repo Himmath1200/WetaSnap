@@ -84,7 +84,7 @@ const read = await call('/v1/scan/read', {
   },
 });
 check('the read is answered with quality and fields', read.status === 201 && !!read.body.fields, read.body);
-check('the card was cropped out of the frame', read.body.cropped === true, read.body.cropped);
+check('an image sent without a crop is not cut again', read.body.cropped === false, read.body.cropped);
 
 const blurredRead = await call('/v1/scan/read', { method: 'POST', token, body: { image: await cardPhoto({ blurred: true }), event_id: eventId } });
 check('a poor photo is refused before any reading', blurredRead.status === 422 && blurredRead.body.code === 'poor_quality', blurredRead.body);

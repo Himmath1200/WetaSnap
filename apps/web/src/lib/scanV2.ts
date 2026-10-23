@@ -56,7 +56,8 @@ export function applyFilter(src: HTMLCanvasElement, mode: ScanFilter): HTMLCanva
 export async function developScan(warped: HTMLCanvasElement, mode: ScanFilter): Promise<Blob> {
   const cleaned = applyFilter(warped, mode);
   try {
-    return await autoEnhance(cleaned); // canvas in: one encode, not a JPEG round-trip first
+    // The warp already cut the card out: no second detection, or it shaves printed lines.
+    return await autoEnhance(cleaned, false); // canvas in: one encode, not a JPEG round-trip first
   } catch {
     return compressCard(cleaned);
   }

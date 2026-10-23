@@ -6,6 +6,8 @@ What changed in this session: capture → auto clean-up → fill-in form. No cro
 - Capture / Upload goes straight to Review & save.
 - Removed `CropCard.tsx` and the Scan/adjust step.
 - Single upload and camera capture share one path: `develop()` → `startReview()`.
+- `develop(_, cropToCard)`: capture passes `false` (the guide frame already cut the card) and so
+  does the Pro scanner's warp (`developScan` → `autoEnhance(_, false)`); uploads pass `true`.
 - Batch uploads also run through the same clean-up.
 - e2e helpers updated: `uploadCard()` now waits for `Review & save`.
 

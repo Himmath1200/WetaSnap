@@ -66,7 +66,8 @@ export class PipelineService {
       throw new DomainError(quality.reasons[0] ?? 'That photo is too unclear to read.', 422, 'poor_quality');
     }
 
-    // 3 · crop — the rectangle from the app, or the card found in the frame.
+    // 3 · crop — the rectangle the app took. Without one the image is kept whole: the app has
+    // already cut the card out, and guessing again would shave printed lines off it.
     const cropped = await cropCard(request.image, request.crop ?? null);
 
     // 4+5 · OCR and AI, in parallel: whichever is configured answers.

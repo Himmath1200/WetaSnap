@@ -136,18 +136,19 @@ export default function Scan() {
   }
 
   /** SCAN-02: capture → optional clean scan → straight to the fill-in form, no edit step.
-   *  Takes the capture canvas, so a live shot is encoded once rather than twice. */
-  async function develop(raw: Blob | HTMLCanvasElement): Promise<Blob> {
+   *  Takes the capture canvas, so a live shot is encoded once rather than twice.
+   *  Crop-to-card only for an uploaded photo: a capture is already cut to the guide frame. */
+  async function develop(raw: Blob | HTMLCanvasElement, cropToCard = true): Promise<Blob> {
     if (!enhance) return compressCard(raw);
     try {
-      return await autoEnhance(raw);
+      return await autoEnhance(raw, cropToCard);
     } catch {
       return compressCard(raw);
     }
   }
 
   async function onCapture(shot: HTMLCanvasElement) {
-    const blob = await develop(shot);
+    const blob = await develop(shot, false);
     if (mode === 'review' && !capturingBack && window.innerWidth < 768) return;
     if (capturingBack) { await addBack(blob); return; }
     await startReview(blob, 'camera');

@@ -357,11 +357,12 @@ function sharpen(c: HTMLCanvasElement, a = 0.12) {
 
 // ---------------------------------------------------------------- public pipeline
 
-/** Auto colour clean-up: detect the card (tables/desks cut away, padded so no side is
- * lost) → flatten → barely-there level → whisper of punch. A missed detection keeps the
- * whole photo — never a wrong cut. */
-function develop(src: HTMLCanvasElement, maxSide: number): HTMLCanvasElement {
-  const found = detectCardRect(src);
+/** Auto colour clean-up: (optionally) detect the card in an untouched photo, then flatten →
+ * barely-there level → whisper of punch. A missed detection keeps the whole photo — never a
+ * wrong cut. `cropToCard` is off when the frame is already the card: the guide frame and the
+ * Pro scanner's warp have done the cutting, and a second detection would shave printed lines. */
+function develop(src: HTMLCanvasElement, maxSide: number, cropToCard: boolean): HTMLCanvasElement {
+  const found = cropToCard ? detectCardRect(src) : null;
   const c = fitCanvas(found ? cropCanvas(src, found) : src, maxSide);
   flatten(c);
   stretch(c);
@@ -381,8 +382,9 @@ async function bitmapOf(photo: Blob | HTMLCanvasElement): Promise<HTMLCanvasElem
   return c;
 }
 
-/** Full-frame clean scan in the colour look, compressed ≤ 420 KB. Takes the capture canvas as
- *  well as a blob, so a live capture is encoded once instead of twice (SCAN-06). */
-export async function autoEnhance(src: Blob | HTMLCanvasElement): Promise<Blob> {
-  return compressCard(develop(await bitmapOf(src), 2000));
+/** Clean scan in the colour look, compressed ≤ 420 KB. Takes the capture canvas as well as a
+ *  blob, so a live capture is encoded once instead of twice (SCAN-06). Pass `cropToCard: false`
+ *  when the image is already just the card. */
+export async function autoEnhance(src: Blob | HTMLCanvasElement, cropToCard = true): Promise<Blob> {
+  return compressCard(develop(await bitmapOf(src), 2000, cropToCard));
 }

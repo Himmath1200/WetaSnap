@@ -122,7 +122,7 @@ secrets, one-time codes, CRM tokens and the job queue have **no grant at all** f
 | Step | Where | What it does |
 |---|---|---|
 | Quality | `scan/pipeline/quality.ts` | sharpness, exposure, glare and coverage; a poor photo is refused before it costs an OCR pass |
-| Crop | `scan/pipeline/crop.ts` | the rectangle the person dragged, or the card found in the frame |
+| Crop | `scan/pipeline/crop.ts` | the rectangle the app took; without one the image is kept whole — the card is cut on the device, never twice |
 | OCR | `scan/pipeline/readers.ts` | `services/ocr` (Surya / Tesseract), on your own machine |
 | AI | `scan/pipeline/readers.ts` | Claude vision, when `ANTHROPIC_API_KEY` is set and the company allows cloud reading |
 | Validate + normalise | `scan/pipeline/normalise.ts` | per field type; a value that cannot be made sense of keeps its text, loses confidence and gains a reason |
