@@ -456,7 +456,7 @@ describe('parseCardText', () => {
     expect(caps.email?.reason).toBeTruthy();
   });
 
-  it('Auranov card: artwork under the title never becomes the company', () => {
+  it('Auranov card: artwork and the tagline never become the company', () => {
     const r = parseCardText([
       'Christian R.S. Arokiaswamy',
       'Founder and Partner',
@@ -481,13 +481,30 @@ describe('parseCardText', () => {
     expect(r.country?.value).toBe('India');
   });
 
-  it('a brand line above the name is still guessed as the company', () => {
+  it('a brand line with no legal suffix is still guessed as the company', () => {
     const r = parseCardText(['AGRISOL', 'Camille Dubois', 'Tel +33 4 72 00 11 22'].join('\n'));
 
     expect(r.company?.value).toBe('AGRISOL');
-    expect(r.company?.reason).toMatch(/top of the card/i);
+    expect(r.company?.reason).toMatch(/no legal suffix/i);
     expect(r.first_name?.value).toBe('Camille');
     expect(r.last_name?.value).toBe('Dubois');
+  });
+
+  it('reads a company printed below the contact details', () => {
+    // Footer placement — the position rule must not matter in either direction.
+    const r = parseCardText([
+      'Camille Dubois',
+      'Head of Export',
+      'Tel +33 4 72 00 11 22',
+      'www.agrisol.fr',
+      'AGRISOL RENEWABLES',
+    ].join('\n'));
+
+    expect(r.company?.value).toBe('AGRISOL RENEWABLES');
+    expect(r.company?.reason).toMatch(/website/i);
+    expect(r.first_name?.value).toBe('Camille');
+    expect(r.last_name?.value).toBe('Dubois');
+    expect(r.website?.value).toBe('https://www.agrisol.fr');
   });
 
   it('every value carries a confidence and is marked as read on the device', () => {

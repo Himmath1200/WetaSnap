@@ -527,6 +527,11 @@ function looksLikeText(l: string) {
   return symbols / l.length <= 0.35;
 }
 
+/** Lowercase or joining words inside a printed name: "Bank of Baroda", "ACME - RENEWABLES". */
+const LOWER_NAME_WORD = /^(of|and|the|for|in|at|on|to|by|y|e|de|del|della|der|den|di|da|das|dos|du|van|von|ter|ten|le|la|el|al|bin|mac|mc|&|\+|-|–)$/i;
+/** A line of instructions printed at the foot of a card is never the company. */
+const PROMO = /^(scan|follow|connect|visit|call|contact|join|tap|download|subscribe|email|mail|write|reach|book|order)\b/i;
+
 /**
  * Lines Tesseract read out of artwork rather than print — a logo mark, the QR code, the
  * skyline printed under the job title ("SORE [ores", "ExmOmt] oo ee jC EX §"). Two shapes
@@ -541,16 +546,20 @@ function isArtworkLine(l: string) {
 }
 
 /**
- * Whether an evidence-free line is worth offering as the company. A guess with nothing
- * behind it must look like a brand: several words, or one long word ("AGRISOL") — never a
- * four-letter logo fragment such as "SORE", which is artwork noise the engine spelled out.
- * Pure: unit-tested.
+ * Whether an evidence-free line is worth offering as the company. With no legal suffix and no
+ * domain behind it, the line itself has to read like a printed name: a brand of several
+ * capitalised words, or one long word ("AGRISOL"). Cards put that line anywhere — above the
+ * name or in the footer under the address — so position decides nothing here. What it must
+ * not be is artwork the engine spelled out ("SORE [ores") or a sentence-case tagline
+ * ("Clarity in construction"). Pure: unit-tested.
  */
 function isBrandGuess(l: string): boolean {
-  if (isArtworkLine(l)) return false;
-  const letters = l.replace(/[^A-Za-z]/g, '');
+  if (isArtworkLine(l) || PROMO.test(l)) return false;
   const words = l.split(/\s+/).filter(Boolean);
-  return letters.length >= 4 && (words.length >= 2 || letters.length >= 5);
+  const letters = l.replace(/[^A-Za-z]/g, '');
+  if (letters.length < 4) return false;
+  if (words.length === 1) return letters.length >= 5;
+  return words.every((w) => /^[\p{Lu}\p{N}]/u.test(w) || LOWER_NAME_WORD.test(w));
 }
 
 /** Longest calling code first, so +351 wins over +35-style prefixes. */
@@ -871,12 +880,9 @@ export function parseCardText(text: string): ReadResult {
       ? cands.filter((l) => !isNameShaped(l))
       : cands.filter((l) => !isPersonLine(l, emailLocal));
     const mailHit = !siteHit && domainBase ? agreeIn(screened, domainBase) : null;
-    // A guess with no domain behind it has to sit in the card's head — above the job title
-    // and the contact block, where the brand line lives — and read like a brand. What the
-    // engine spelled out of the artwork below the title is not a company.
-    const headEnd = lines.findIndex((l) => TITLE.test(l) || PHONE_CHARS.test(l) || EMAIL.test(l) || WEB.test(l));
-    const inHead = (l: string) => headEnd < 0 || lines.indexOf(l) < headEnd;
-    const guess = screened.find((l) => inHead(l) && isBrandGuess(l)) ?? null;
+    // No suffix and no domain: the line itself has to read like a printed name, wherever the
+    // card puts it. Artwork and taglines are rejected on their own shape, not their position.
+    const guess = screened.find((l) => isBrandGuess(l)) ?? null;
     company = siteHit ?? mailHit ?? guess;
     companyWhy = siteHit ? 'site' : mailHit ? 'domain' : company ? 'top' : null;
   }
@@ -919,7 +925,7 @@ export function parseCardText(text: string): ReadResult {
     let conf = hardWon ? 0.85 : companyWhy === 'site' ? 0.8 : companyWhy === 'domain' ? 0.75 : 0.5;
     let reason = hardWon ? undefined
       : companyWhy === 'site' ? 'Matches the website address'
-      : companyWhy === 'domain' ? 'Matches the email address' : 'Taken from the top of the card';
+      : companyWhy === 'domain' ? 'Matches the email address' : 'No legal suffix on the card — check the company name';
     if (!hardWon && companyWhy === 'site' && siteBase) {
       // The logo read is often the misread one — the website domain spells it right.
       const fixed = repairCompanySpelling(company, siteBase);
