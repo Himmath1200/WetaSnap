@@ -302,6 +302,10 @@
   .door-scope { --color-muted: #9aa1ad; }
 }
 
+/* The sign-in door is one centred screen: hide the page scrollbar, scrolling still works. */
+html:has(.door-scope), body:has(.door-scope) { scrollbar-width: none; }
+html:has(.door-scope)::-webkit-scrollbar, body:has(.door-scope)::-webkit-scrollbar { display: none; }
+
 /* A card photo keeps its white paper in dark mode, just a touch softer. */
 .card-photo { @apply bg-white; }
 :root[data-theme="dark"] .card-photo { filter: brightness(0.92); }
