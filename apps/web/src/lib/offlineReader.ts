@@ -862,7 +862,7 @@ export function parseCardText(text: string): ReadResult {
   const domainBase = emailDomain && !emailPublic ? domainBaseOf(emailDomain) : '';
   const webHost = webPrinted?.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0] ?? '';
   const siteBase = webHost && !isFreeMailDomain(webHost) ? domainBaseOf(webHost) : '';
-  let company = hard[0] ?? soft[0] ?? null;
+  let company: string | null = hard[0] ?? soft[0] ?? null;
   let companyWhy: 'suffix' | 'site' | 'domain' | 'top' | null = company ? 'suffix' : null;
   if (!company) {
     const cands = lines.filter((l) => !used.has(l) && !/[@\d]/.test(l) && !TITLE.test(l));

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { ArrowLeft, Images, Keyboard, ScanSearch, Upload, RotateCcw, Share2, UserPlus, X, Camera as CameraIcon } from 'lucide-preact';
+import { ArrowLeft, Images, Keyboard, ScanSearch, Upload, RotateCcw, Share2, UserPlus, X, Camera as CameraIcon, Crown, Zap, Lock, CalendarClock } from 'lucide-preact';
 import { DocCamera } from '../components/DocCamera';
 import { CornerEditor } from '../components/CornerEditor';
 import { LeadForm, ReadBadge, draftErrors, type Draft, type ReadState } from '../components/LeadForm';
 import { TagPicker } from '../components/TagPicker';
-import { Spinner } from '../components/ui';
+import { Dialog, Spinner } from '../components/ui';
 import { useStore, toast } from '../lib/store';
 import { config, session } from '../lib/session';
 import { saveLocal } from '../lib/sync';
@@ -18,7 +18,13 @@ import { db } from '../lib/db';
 import { deviceLabel, nowIso, uuid } from '../lib/id';
 import { readOffline } from '../lib/offlineReader';
 import { localOcrAvailable, readWithLocalOcr } from '../lib/ocr';
+import { geminiAvailable, hasLowConfidenceField, verifyLowConfidenceWithGemini } from '../lib/gemini';
+import type { DocShot } from '../components/DocCamera';
+import { lastOcrEntry } from '../lib/ocrLog';
 import { ClipboardFallback, saveToPhone, shareContact } from '../lib/contact';
+import { getFollowUpConfig, formatFollowUpMessage, sendViaWhatsApp, sendViaEmail } from '../lib/followup';
+import { FollowUpModal } from '../components/FollowUpModal';
+import { linkFor } from '../lib/portal';
 import { t, tn } from '../lib/i18n';
 import type { FieldValue, Lead, LeadSource, Tag } from '../lib/types';
 
@@ -52,12 +58,49 @@ export default function ScanV2() {
   const [saving, setSaving] = useState(false);
   const [dup, setDup] = useState<string | null>(null);
   const [batch, setBatch] = useState<{ done: number; total: number } | null>(null);
+  const [followUpLead, setFollowUpLead] = useState<Lead | null>(null);
+  const [fuModalOpen, setFuModalOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const cam = useRef<{ capture: () => void } | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const readToken = useRef(0);
   const defs = cfg.fields;
   const event = cfg.events.find((e) => e.id === s.event_id);
+
+  const isIndividual = s.person.role === 'individual';
+  const [activeScans, setActiveScans] = useState(s.person.monthly_scans ?? 0);
+  useEffect(() => {
+    if (!isIndividual) return;
+    void db.leads.filter((l) => !l.deleted_at && l.captured_by === s.person.id).count().then(setActiveScans);
+  }, [isIndividual, s.person.id]);
+
+  useEffect(() => {
+    if (s.company?.id) {
+      void backend().then((b) => b.company()).then((freshCo) => {
+        if (freshCo) {
+          const cur = session.get();
+          if (cur && cur.company) {
+            const next = { ...cur, company: { ...cur.company, ...freshCo } };
+            session.set(next);
+            void db.session.update('current', { company: next.company });
+          }
+        }
+      }).catch(() => {});
+    }
+  }, [s.company?.id]);
+  const isFreeOverLimit = isIndividual && s.person.plan !== 'pro' && activeScans >= 5;
+
+  function eventBlockReason() {
+    if (!event || isIndividual) return null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const start = new Date(event.starts_on); start.setHours(0, 0, 0, 0);
+    const end = new Date(event.ends_on); end.setHours(23, 59, 59, 999);
+    if (today < start) return t('upcoming');
+    if (today > end || event.status === 'closed') return t('ended');
+    return null;
+  }
+  const eventBlocked = eventBlockReason();
 
   useEffect(() => () => { if (thumb) URL.revokeObjectURL(thumb); }, [thumb]);
   useEffect(() => () => { if (backThumb) URL.revokeObjectURL(backThumb); }, [backThumb]);
@@ -90,38 +133,67 @@ export default function ScanV2() {
     if (!blob) { setRead('idle'); return; }
 
     const aiAllowed = s.company?.cloud_ai_enabled !== false;
+    let extracted: Record<string, { value: string; confidence: number; reason?: string }> = {};
+    let readBy: FieldValue['by'] = 'offline';
+
     try {
+      // 1. Try local OCR service if set
       if (await localOcrAvailable()) {
         setRead('reading');
         try {
           const r = await readWithLocalOcr(blob, defs, s.company?.default_language ?? 'en');
-          if (token !== readToken.current) return;
-          fillFromRead(r, 'offline');
-          setRead('offline');
-          return;
-        } catch {
-          if (!isOnline() || !aiAllowed) throw new Error('local ocr failed');
-        }
+          if (Object.values(r).some((v) => v?.value)) {
+            extracted = r;
+            readBy = 'offline';
+          }
+        } catch { /* fall through */ }
       }
-      if (isOnline() && aiAllowed) {
+
+      // 2. Try server cloud reader if local had nothing
+      if (!Object.values(extracted).some((v) => v?.value) && isOnline() && aiAllowed) {
         setRead('reading');
         try {
           const r = await (await backend()).readCard(blob);
-          if (token !== readToken.current) return;
-          fillFromRead(r, 'ai');
-          setRead('ai');
-          return;
+          if (Object.values(r).some((v) => v?.value)) {
+            extracted = r;
+            readBy = 'ai';
+          }
         } catch (err) {
           if ((err as { code?: string }).code === 'scan_limit') throw err;
         }
       }
-      {
+
+      // 3. Fallback to on-device Tesseract OCR if server/local returned empty
+      if (!Object.values(extracted).some((v) => v?.value)) {
         setRead('reading');
-        const r = await readOffline(blob, s.company?.default_language ?? 'en');
-        if (token !== readToken.current) return;
-        fillFromRead(r, 'offline');
-        setRead('offline');
+        try {
+          const r = await readOffline(blob, s.company?.default_language ?? 'en');
+          if (Object.values(r).some((v) => v?.value)) {
+            extracted = r;
+            readBy = 'offline';
+          }
+        } catch (err) {
+          console.warn('[ScanV2] on-device OCR error:', err);
+        }
       }
+
+      // 4. If Gemini is available and confidence is low or fields are missing, verify/extract with Gemini
+      if (isOnline() && geminiAvailable() && hasLowConfidenceField(extracted, 0.8)) {
+        setRead('reading');
+        try {
+          const verified = await verifyLowConfidenceWithGemini(blob, extracted, defs);
+          if (Object.values(verified).some((v) => v?.value)) {
+            extracted = verified;
+            readBy = 'ai';
+          }
+        } catch (err) {
+          console.warn('[ScanV2] Gemini verification error:', err);
+        }
+      }
+
+      if (token !== readToken.current) return;
+      fillFromRead(extracted, readBy);
+      setRead(readBy);
     } catch (err) {
       if (token !== readToken.current) return;
       setRead('pending');
@@ -156,6 +228,26 @@ export default function ScanV2() {
     } catch { /* front values stand */ }
   }
 
+  /** Card captured: if corners were already locked on, auto-warp immediately to review; otherwise open true-up */
+  async function handleShot(shot: DocShot) {
+    if (isFreeOverLimit) { setPaywallOpen(true); return; }
+    if (eventBlocked) { toast(t('Scanning is not allowed — this event has {reason}.', { reason: eventBlocked }), 'error'); return; }
+    if (shot.quad && !capturingBack) {
+      try {
+        const warped = await extractCard(shot.canvas, shot.canvas.width, shot.canvas.height, shot.quad);
+        if (warped) {
+          const blob = await developScan(warped.canvas, 'color');
+          await startReview(blob, 'camera');
+          return;
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) console.warn('[ScanV2] auto-warp failed, falling back to manual adjust', err);
+      }
+    }
+    setAdjust({ canvas: shot.canvas, quad: shot.quad, back: capturingBack });
+    setMode('adjust');
+  }
+
   /** Warped + cleaned scan → the review form (front) or the back slot. */
   async function onAdjustDone(blob: Blob) {
     if (adjust?.back) { await addBack(blob); return; }
@@ -164,6 +256,8 @@ export default function ScanV2() {
   }
 
   async function onFiles(files: FileList | File[]) {
+    if (isFreeOverLimit) { setPaywallOpen(true); return; }
+    if (eventBlocked) { toast(t('Scanning is not allowed — this event has {reason}.', { reason: eventBlocked }), 'error'); return; }
     const list = [...files].filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
     if (list.length === 1) {
@@ -174,7 +268,7 @@ export default function ScanV2() {
       return;
     }
     // Many photos → one lead each, auto-warped; AI fills them after sync (SCAN-03).
-    if (!s.event_id) { toast(t('Choose an event first.'), 'error'); return; }
+    if (!s.event_id && !isIndividual) { toast(t('Choose an event first.'), 'error'); return; }
     setBatch({ done: 0, total: list.length });
     for (const [i, f] of list.entries()) {
       let blob: Blob;
@@ -194,9 +288,14 @@ export default function ScanV2() {
 
   function newLead(d: Draft, src: LeadSource): Lead {
     const now = nowIso();
+    const detectedRaw = lastOcrEntry()?.text || '';
+    const otherNote = d.interest === 'other' && d.otherInterestText?.trim()
+      ? `[Interest: ${d.otherInterestText.trim()}]\n\n${detectedRaw}`
+      : detectedRaw;
+    const finalInterest = d.interest || d.leadRating || null;
     return {
-      id: uuid(), company_id: s.person.company_id!, event_id: s.event_id!, captured_by: s.person.id, captured_by_name: s.person.name,
-      device: deviceLabel(), source: src, fields: d.fields, interest: d.interest, notes: d.notes.trim(),
+      id: uuid(), company_id: s.person.company_id || s.person.id, event_id: s.event_id || 'solo', captured_by: s.person.id, captured_by_name: s.person.name,
+      device: deviceLabel(), source: src, fields: d.fields, interest: finalInterest, notes: otherNote,
       consent: d.consent, consent_version: s.company?.consent_version ?? 1, consent_at: d.consent ? now : null,
       status: 'waiting', crm_error: null, crm_record_id: null, crm_history: [], has_photo: false, has_back_photo: !!backPhoto,
       tag_ids: tagIds,
@@ -205,16 +304,48 @@ export default function ScanV2() {
   }
 
   async function save() {
-    if (!s.event_id) { toast(t('Choose an event first (tap the event name at the top).'), 'error'); return; }
+    if (!s.event_id && !isIndividual) { toast(t('Choose an event first (tap the event name at the top).'), 'error'); return; }
+    if (eventBlocked) { toast(t('Scanning is not allowed — this event has {reason}.', { reason: eventBlocked }), 'error'); return; }
     const missing = draftErrors(defs, draft);
     const photoOnly = read === 'pending' && photo && Object.values(draft.fields).every((f) => !f.value);
     if (missing.length && !photoOnly) { setShowErrors(true); toast(t('Please check: {fields}', { fields: missing.join(', ') }), 'error'); return; }
     setSaving(true);
     try {
-      await saveLocal(newLead(draft, source), photo, backPhoto);
+      const lead = newLead(draft, source);
+      await saveLocal(lead, photo, backPhoto);
       toast(t('Lead saved'), 'success', 1800);
       readToken.current++;
-      setMode('camera'); // next scan ready at once (SCAN-08)
+
+      // Follow-up messaging feature
+      const leadPhone = lead.fields.phone?.value?.trim() || lead.fields.mobile?.value?.trim() || '';
+      const leadEmail = lead.fields.email?.value?.trim() || '';
+      const fuConfig = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
+
+      if (fuConfig.autoSend && (leadPhone || leadEmail)) {
+        const msg = formatFollowUpMessage(fuConfig.message, lead, s.person.name, event?.name, s.company?.name);
+        let sentAny = false;
+        if (fuConfig.sendWhatsApp && leadPhone) {
+          sendViaWhatsApp(leadPhone, msg);
+          sentAny = true;
+        }
+        if (fuConfig.sendEmail && leadEmail) {
+          const subj = event?.name ? `${event.name} — Great connecting with you!` : t('Great connecting with you!');
+          sendViaEmail(leadEmail, subj, msg);
+          sentAny = true;
+        }
+        if (sentAny) {
+          toast(t('Follow-up message dispatched!'), 'success', 3000);
+        }
+        setMode('camera');
+      } else if (!fuConfig.autoSend && (leadPhone || leadEmail)) {
+        // Toggle is OFF: give the user options where they want to push the message
+        setFollowUpLead(lead);
+        setFuModalOpen(true);
+        setMode('camera');
+      } else {
+        setMode('camera'); // next scan ready at once (SCAN-08)
+      }
+
       setDraft(emptyDraft());
       setPhoto(null);
       setThumb(null);
@@ -272,11 +403,11 @@ export default function ScanV2() {
     <div class="flex h-full flex-col">
       <div class="flex items-center gap-3 border-b border-line px-4 py-3">
         <button class="btn-ghost -ml-2 min-w-11 px-2 lg:hidden" onClick={() => { readToken.current++; setMode('camera'); }} aria-label={t('Back')}><ArrowLeft class="size-5" /></button>
-        {thumb ? <img src={thumb} alt={t('Front of the card')} class="card-photo h-12 w-19 rounded-lg border border-line object-cover" /> : <span class="flex h-12 w-19 items-center justify-center rounded-lg bg-slate-100 text-slate-400"><Keyboard class="size-5" /></span>}
+        {thumb ? <img src={thumb} alt={t('Front of the card')} class="card-photo h-12 w-19 rounded-lg border border-line object-cover" /> : <span class="flex h-12 w-19 items-center justify-center rounded-lg bg-subtle text-muted"><Keyboard class="size-5" /></span>}
         {backThumb && (
           <span class="relative">
             <img src={backThumb} alt={t('Back of the card')} class="card-photo h-12 w-19 rounded-lg border border-line object-cover" />
-            <button class="absolute -top-1.5 -right-1.5 rounded-full bg-slate-900/80 p-0.5 text-white" onClick={() => { setBackPhoto(null); setBackThumb(null); }} aria-label={t('Remove the back photo')}><X class="size-3" /></button>
+            <button class="absolute -top-1.5 -right-1.5 rounded-full bg-black/80 p-0.5 text-white" onClick={() => { setBackPhoto(null); setBackThumb(null); }} aria-label={t('Remove the back photo')}><X class="size-3" /></button>
           </span>
         )}
         <div class="min-w-0">
@@ -303,7 +434,9 @@ export default function ScanV2() {
             <Share2 class="size-4" />{t('Share contact')}
           </button>
         </div>
-        <div class="mb-4"><TagPicker tags={tags} selected={tagIds} onChange={setTagIds} /></div>
+        {s.person.role !== 'individual' && tags.length > 0 && (
+          <div class="mb-4"><TagPicker tags={tags} selected={tagIds} onChange={setTagIds} /></div>
+        )}
         <LeadForm defs={defs} draft={draft} onChange={setDraft} company={s.company} showErrors={showErrors} readState={read} duplicate={dup} idPrefix="scan-v2" />
       </div>
       <div class="flex items-center gap-3 border-t border-line bg-surface px-4 py-3">
@@ -332,7 +465,13 @@ export default function ScanV2() {
       {/* Camera side */}
       {mode !== 'adjust' && (
         <section class={`relative flex min-h-0 flex-1 flex-col ${mode === 'review' ? 'hidden lg:flex' : 'flex'}`}>
-          {!event && <div class="bg-amber-100 px-4 py-2 text-center text-xs font-semibold text-amber-900">{t('No event selected — tap the event name at the top.')}</div>}
+          {!event && !isIndividual && <div class="bg-amber-100 px-4 py-2 text-center text-xs font-semibold text-amber-900">{t('No event selected — tap the event name at the top.')}</div>}
+          {event && eventBlocked && (
+            <div class="flex items-center justify-center gap-2 px-4 py-3 text-center text-xs font-semibold text-white" style={eventBlocked === t('upcoming') ? 'background:#6366f1' : 'background:#dc2626'}>
+              {eventBlocked === t('upcoming') ? <CalendarClock class="size-4 shrink-0" /> : <Lock class="size-4 shrink-0" />}
+              <span>{eventBlocked === t('upcoming') ? t('This event has not started yet. Scanning opens on {date}.', { date: new Date(event.starts_on).toLocaleDateString() }) : t('This event has ended. You can view existing scans but no new cards can be scanned.')}</span>
+            </div>
+          )}
           {capturingBack && (
             <div class="flex items-center justify-between gap-2 bg-ocean-600 px-4 py-2 text-xs font-semibold text-white">
               <span>{t('Now hold the back of the card in the frame')}</span>
@@ -340,16 +479,16 @@ export default function ScanV2() {
             </div>
           )}
           <div class="relative min-h-0 flex-1">
-            <DocCamera active={mode === 'camera'} handle={(h) => { cam.current = h; }} onShot={(shot) => { setAdjust({ canvas: shot.canvas, quad: shot.quad, back: capturingBack }); setMode('adjust'); }} />
+            <DocCamera active={mode === 'camera'} handle={(h) => { cam.current = h; }} onShot={(shot) => void handleShot(shot)} />
           </div>
           <div class="flex items-center justify-around gap-4 bg-surface px-6 py-4 lg:bg-subtle">
-            <button class="flex w-16 flex-col items-center gap-1 text-xs font-semibold text-slate-600 hover:text-ocean-700" onClick={() => fileInput.current?.click()}>
+            <button class="flex w-16 flex-col items-center gap-1 text-xs font-semibold text-muted hover:text-ocean-600 disabled:opacity-40 disabled:pointer-events-none" disabled={!!eventBlocked} onClick={() => fileInput.current?.click()}>
               <span class="flex size-12 items-center justify-center rounded-full border border-line bg-surface"><Upload class="size-5" /></span>{t('Upload')}
             </button>
-            <button class="group flex size-18 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-ocean-600 p-1 shadow-lg" onClick={() => cam.current?.capture()} aria-label={t('Capture')}>
+            <button class="group flex size-18 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-ocean-600 p-1 shadow-lg disabled:opacity-40 disabled:pointer-events-none" disabled={!!eventBlocked} onClick={() => cam.current?.capture()} aria-label={t('Capture')}>
               <span class="flex size-full items-center justify-center rounded-full border-4 border-white bg-brand-700 transition group-active:scale-90"><ScanSearch class="size-6 text-white" /></span>
             </button>
-            <button class="flex w-16 flex-col items-center gap-1 text-xs font-semibold text-slate-600 hover:text-ocean-700" onClick={() => void startReview(null, 'manual')}>
+            <button class="flex w-16 flex-col items-center gap-1 text-xs font-semibold text-muted hover:text-ocean-600 disabled:opacity-40 disabled:pointer-events-none" disabled={!!eventBlocked} onClick={() => void startReview(null, 'manual')}>
               <span class="flex size-12 items-center justify-center rounded-full border border-line bg-surface"><Keyboard class="size-5" /></span>{t('Type')}
             </button>
           </div>
@@ -387,6 +526,48 @@ export default function ScanV2() {
           <p class="mt-2 font-bold">{batch ? t('Saving {done} of {total}…', batch) : t('Drop card photos — each photo becomes a lead')}</p>
         </div>
       )}
+
+      {/* ── Quota Reached Paywall Modal ── */}
+      <Dialog
+        open={paywallOpen}
+        onClose={() => setPaywallOpen(false)}
+        title={t('Monthly Scan Limit Reached')}
+        footer={<>
+          <button class="btn-ghost" onClick={() => setPaywallOpen(false)}>{t('Maybe later')}</button>
+          <a
+            href={linkFor(s.person.role, '/upgrade')}
+            class="btn-primary font-bold gap-2 px-5"
+          >
+            <Crown class="size-4" />
+            <span>{t('Upgrade to Pro ($100/mo)')}</span>
+          </a>
+        </>}
+      >
+        <div class="text-center py-4 space-y-3">
+          <div class="size-14 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center border border-amber-500/30">
+            <Zap class="size-7" />
+          </div>
+          <h3 class="text-lg font-bold text-ink">{t('You have used all 5 free scans this month')}</h3>
+          <p class="text-xs text-muted max-w-sm mx-auto leading-relaxed">
+            {t('Upgrade to WeTa Snap Pro for unlimited card scanning, advanced Google Gemini AI field verification, and full export capabilities.')}
+          </p>
+          <div class="p-3 rounded-xl bg-subtle border border-line text-xs font-semibold text-ink flex items-center justify-around">
+            <span>{t('Monthly:')} <strong class="text-emerald-600 dark:text-emerald-400">$100 / mo</strong></span>
+            <span>•</span>
+            <span>{t('Annual:')} <strong class="text-emerald-600 dark:text-emerald-400">$1,150 / yr</strong></span>
+          </div>
+        </div>
+      </Dialog>
+
+      <FollowUpModal
+        open={fuModalOpen}
+        onClose={() => { setFuModalOpen(false); setFollowUpLead(null); setMode('camera'); }}
+        lead={followUpLead}
+        senderName={s.person.name}
+        eventName={event?.name}
+        companyName={s.company?.name || getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff').senderCompanyName}
+        config={getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff')}
+      />
     </div>
   );
 }

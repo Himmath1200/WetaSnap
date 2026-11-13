@@ -238,6 +238,22 @@ export function isGlare(data: Uint8ClampedArray, w: number, h: number): boolean 
   return hot / n > 0.12 && ink / n < 0.02;
 }
 
+/** Instant single-frame grab from live video without multi-frame burst delay. */
+export function snapVideo(
+  src: HTMLVideoElement,
+  crop?: { x: number; y: number; w: number; h: number },
+): HTMLCanvasElement {
+  const r = crop ?? { x: 0, y: 0, w: src.videoWidth, h: src.videoHeight };
+  const c = document.createElement('canvas');
+  c.width = Math.max(2, Math.round(r.w));
+  c.height = Math.max(2, Math.round(r.h));
+  const ctx = c.getContext('2d');
+  if (ctx && src.videoWidth) {
+    ctx.drawImage(src, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+  }
+  return c;
+}
+
 /** Grab n frames gapMs apart from the live video, return the sharpest. No crop = full frame. */
 export async function burstCrop(
   src: HTMLVideoElement, crop?: { x: number; y: number; w: number; h: number }, n = 3, gapMs = 220,

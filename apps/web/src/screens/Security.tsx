@@ -367,7 +367,14 @@ function ChangePassword({ policy }: { policy: SecurityPolicy | null }) {
 function TwoFactor() {
   const s = useStore(session);
   const [on, setOn] = useState(Boolean(s?.person.mfa_enabled));
-  const [enrol, setEnrol] = useState<{ secret: string; otpauth_url: string } | null>(null);
+  const [enrol, setEnrol] = useState<{ secret: string; otpauth_url: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('wetasnap_mfa_enrol');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [code, setCode] = useState('');
   const [codes, setCodes] = useState<RecoveryCodes | null>(null);
   const [fresh, setFresh] = useState(false);
@@ -381,7 +388,9 @@ function TwoFactor() {
   async function start() {
     setErr(''); setBusy(true);
     try {
-      setEnrol(await (await backend()).startMfaEnrolment());
+      const data = await (await backend()).startMfaEnrolment();
+      setEnrol(data);
+      try { localStorage.setItem('wetasnap_mfa_enrol', JSON.stringify(data)); } catch {}
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
 
@@ -392,6 +401,7 @@ function TwoFactor() {
     try {
       const rc = await (await backend()).confirmMfaEnrolment(code);
       setCodes(rc); setFresh(true); setEnrol(null); setCode(''); setOn(true);
+      try { localStorage.removeItem('wetasnap_mfa_enrol'); } catch {}
       void refreshSession();
       toast(t('Two-factor is on'), 'success');
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -470,7 +480,7 @@ function TwoFactor() {
           </Field>
           <div class="flex flex-wrap gap-2">
             <button class="btn-primary" disabled={busy} onClick={() => void confirm()}>{busy ? <Spinner /> : t('Turn on two-factor')}</button>
-            <button class="btn-ghost" disabled={busy} onClick={() => { setEnrol(null); setCode(''); setErr(''); }}>{t('Cancel')}</button>
+            <button class="btn-ghost" disabled={busy} onClick={() => { setEnrol(null); setCode(''); setErr(''); try { localStorage.removeItem('wetasnap_mfa_enrol'); } catch {} }}>{t('Cancel')}</button>
           </div>
         </div>
       )}

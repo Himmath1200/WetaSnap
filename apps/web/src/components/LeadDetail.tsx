@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import {
-  AlertTriangle, CheckCircle2, ExternalLink, Mail, MapPin, Pencil, Phone, Globe, Share2, Trash2, UserPlus, ZoomIn, Image as ImageIcon,
+  AlertTriangle, CheckCircle2, ExternalLink, Mail, MapPin, MessageSquare, Pencil, Phone, Globe, Share2, Trash2, UserPlus, ZoomIn, Image as ImageIcon,
 } from 'lucide-preact';
 import { LeadForm, draftErrors, type Draft } from './LeadForm';
 import { TagChips, TagPicker } from './TagPicker';
@@ -13,6 +13,7 @@ import { useStore, toast } from '../lib/store';
 import { config, session } from '../lib/session';
 import { leadName } from '../lib/leads';
 import { ClipboardFallback, actionHref, saveToPhone, shareCardPhoto, shareContact } from '../lib/contact';
+import { getFollowUpConfig, formatFollowUpMessage, sendViaWhatsApp, sendViaEmail } from '../lib/followup';
 import { t } from '../lib/i18n';
 import type { Lead, Tag } from '../lib/types';
 
@@ -109,7 +110,7 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
         await db.leads.update(lead.id, { deleted_at: new Date().toISOString() }).catch(() => 0);
       }
       setConfirmDelete(false);
-      toast(neverSent ? t('Lead deleted from this device.') : t('Lead deleted. Your admin can restore it for 30 days.'), 'success');
+      toast(neverSent ? t('Card removed from this device.') : t('Card moved to Recycle Bin. Auto-deleted after 30 days.'), 'success');
       onChanged?.();
       onClose();
     } catch (e) {
@@ -207,7 +208,12 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
                     {lead.consent ? <><CheckCircle2 class="size-3.5" />{t('Consent given')}</> : t('No consent')}
                   </span>
                 </div>
-                {lead.notes && <p class="rounded-xl bg-subtle px-3 py-2 text-sm whitespace-pre-wrap">{lead.notes}</p>}
+                {lead.notes && (
+                  <div>
+                    <h4 class="text-xs font-bold uppercase tracking-wider text-muted mb-1">{t('Detected card text')}</h4>
+                    <p class="rounded-xl bg-subtle px-3 py-2 text-xs font-mono whitespace-pre-wrap text-ink border border-line">{lead.notes}</p>
+                  </div>
+                )}
 
                 <div class="grid grid-cols-2 gap-2">
                   <button class="btn-secondary" onClick={() => saveToPhone(lead, defs, event?.name)}><UserPlus class="size-4" />{t('Save to device')}</button>
@@ -215,11 +221,39 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
                   {photoBlob && (
                     <button class="btn-secondary col-span-2" onClick={() => void shareCardPhoto(photoBlob, lead)}><ImageIcon class="size-4" />{t('Share card photo')}</button>
                   )}
+                  {lead.fields.phone?.value && (
+                    <button
+                      class="btn-secondary text-xs font-semibold gap-1.5 border-emerald-500/30 text-emerald-700 bg-emerald-500/5 hover:bg-emerald-500/10"
+                      onClick={() => {
+                        const fu = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
+                        const coName = s.company?.name || fu.senderCompanyName;
+                        const msg = formatFollowUpMessage(fu.message, lead, s.person.name, event?.name, coName);
+                        sendViaWhatsApp(lead.fields.phone!.value, msg);
+                      }}
+                    >
+                      <MessageSquare class="size-3.5 text-emerald-600 shrink-0" />
+                      <span class="truncate">{t('Follow-up WhatsApp')}</span>
+                    </button>
+                  )}
+                  {lead.fields.email?.value && (
+                    <button
+                      class="btn-secondary text-xs font-semibold gap-1.5 border-sky-500/30 text-sky-700 bg-sky-500/5 hover:bg-sky-500/10"
+                      onClick={() => {
+                        const fu = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
+                        const coName = s.company?.name || fu.senderCompanyName;
+                        const msg = formatFollowUpMessage(fu.message, lead, s.person.name, event?.name, coName);
+                        const subj = event?.name ? `${event.name} — Great connecting with you!` : t('Great connecting with you!');
+                        sendViaEmail(lead.fields.email!.value, subj, msg);
+                      }}
+                    >
+                      <Mail class="size-3.5 text-sky-600 shrink-0" />
+                      <span class="truncate">{t('Follow-up Email')}</span>
+                    </button>
+                  )}
                 </div>
 
                 <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                  <dt class="text-muted">{t('Event')}</dt><dd class="font-medium">{event?.name ?? '—'}</dd>
-                  <dt class="text-muted">{t('Captured by')}</dt><dd class="font-medium">{lead.captured_by_name}</dd>
+                  {event?.name && <><dt class="text-muted">{t('Event')}</dt><dd class="font-medium">{event.name}</dd></>}
                   <dt class="text-muted">{t('Captured at')}</dt><dd class="font-medium">{new Date(lead.created_at).toLocaleString()}</dd>
                   <dt class="text-muted">{t('Device · source')}</dt><dd class="font-medium">{lead.device} · {t(lead.source)}</dd>
                 </dl>
@@ -259,12 +293,17 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
         </div>
       )}
 
-      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={t('Delete this lead?')}
+      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={t('Move to Recycle Bin?')}
         footer={<>
           <button class="btn-ghost" onClick={() => setConfirmDelete(false)}>{t('Cancel')}</button>
-          <button class="btn bg-red-600 text-white hover:bg-red-700" onClick={() => void remove()}>{t('Delete')}</button>
+          <button class="btn bg-red-600 text-white hover:bg-red-700" onClick={() => void remove()}>{t('Move to Recycle Bin')}</button>
         </>}>
-        <p class="text-sm text-slate-700">{t('The lead is removed from WeTa Snap and can be restored for 30 days. It is not deleted from your CRM.')}</p>
+        <div class="space-y-2 text-sm text-slate-700">
+          <p>{t('The card will be moved to the Recycle Bin.')}</p>
+          <p class="text-xs bg-subtle p-2.5 rounded-xl border border-line text-ink">
+            🕒 {t('Cards in the Recycle Bin are kept safely and will be permanently deleted after 30 days.')}
+          </p>
+        </div>
       </Dialog>
     </>
   );

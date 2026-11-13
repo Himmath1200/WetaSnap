@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CameraOff, SwitchCamera, Zap, ZapOff } from 'lucide-preact';
-import { burstCrop, motion, sharpness } from '../lib/image';
-import { detectCard, engineState, onEngineState, quadsClose, warmEngine, type Quad } from '../lib/scanEngine';
+import { motion, sharpness, snapVideo } from '../lib/image';
+import { detectCard, engineState, onEngineState, quadsClose, quadArea, warmEngine, type Quad } from '../lib/scanEngine';
 import { t } from '../lib/i18n';
 
 export interface DocShot { canvas: HTMLCanvasElement; quad: Quad | null }
@@ -15,9 +15,9 @@ interface Props {
 
 const SAMPLE_W = 160;
 const SAMPLE_H = 100;
-const STEADY_FRAMES = 4; // ~2 s at 500 ms — a warp needs a steadier hand than a crop
-const MOTION_MAX = 6;
-const SHARP_MIN = 90;
+const STEADY_FRAMES = 3; // ~840 ms at 280 ms interval: ensures full card is steady and inside frame
+const MOTION_MAX = 8;
+const SHARP_MIN = 80;
 
 /**
  * SCAN-V2 · live document camera. While the detector loads it behaves like a plain
@@ -50,10 +50,11 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
     const v = video.current;
     if (!v || !v.videoWidth) return;
     setFlash(true);
-    setTimeout(() => setFlash(false), 180);
+    setTimeout(() => setFlash(false), 120);
     navigator.vibrate?.(30);
-    // Same burst as the classic camera — full frame here (the warp crops later), not the ID-1 guide.
-    void burstCrop(v).then((best) => shot.current({ canvas: best, quad: quadRef.current }));
+    // Instant frame grab from live video — no multi-frame burst lag
+    const best = snapVideo(v);
+    shot.current({ canvas: best, quad: quadRef.current });
   };
 
   // Start / stop the stream.
@@ -132,16 +133,24 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
         setQuad(found);
         if (!still) { steady = 0; last = found; setHint('hold'); return; }
         if (sharp < SHARP_MIN) { steady = 0; last = found; setHint('blur'); return; }
+
+        // Ensure the card covers sufficient area and is not cut off at the edge
+        const area = quadArea(found);
+        const frameArea = v.videoWidth * v.videoHeight;
+        if (area < frameArea * 0.08 || area > frameArea * 0.96) {
+          steady = 0; last = found; setHint('hold'); return;
+        }
+
         if (last && quadsClose(last, found, 0.02, v.videoWidth, v.videoHeight)) steady++;
         else steady = 1;
         last = found;
         setHint('ready');
         if (autoCapture && steady >= STEADY_FRAMES) {
-          steady = 0; cooldown = 16; last = null;
+          steady = 0; cooldown = 5; last = null;
           capture();
         }
       })();
-    }, 500);
+    }, 280);
     return () => { running = false; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, autoCapture]);
@@ -161,7 +170,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
 
   if (error) {
     return (
-      <div class="flex h-full min-h-64 flex-col items-center justify-center gap-3 bg-slate-900 p-6 text-center text-white">
+      <div class="flex h-full min-h-64 flex-col items-center justify-center gap-3 bg-black p-6 text-center text-white">
         <CameraOff class="size-10 text-white/60" />
         <p class="max-w-xs text-sm text-white/90">{error}</p>
       </div>
@@ -189,7 +198,7 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
   }[hint];
 
   return (
-    <div ref={box} class="relative h-full min-h-64 overflow-hidden bg-slate-900">
+    <div ref={box} class="relative h-full min-h-64 overflow-hidden bg-black">
       <video ref={video} class="absolute inset-0 size-full object-cover" playsInline muted autoPlay />
       {pts && (
         <svg class="pointer-events-none absolute inset-0 size-full" aria-hidden="true">

@@ -66,7 +66,7 @@ export class DevController {
     const rows = await this.db.query<{ email: string; name: string; role: string; company: string; has_password: boolean }>(
       `select p.email, p.name, p.role::text as role, coalesce(c.name, 'WeTano') as company, p.has_password
          from people p left join companies c on c.id = p.company_id
-        where p.active and p.has_password
+        where p.active and p.has_password and p.role != 'individual'
         order by case p.role when 'super_admin' then 0 when 'client_admin' then 1 else 2 end, p.email`,
     ).catch(() => []);
     return { password, accounts: rows };

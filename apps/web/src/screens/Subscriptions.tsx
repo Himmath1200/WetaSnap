@@ -13,11 +13,11 @@ import { t, tn } from '../lib/i18n';
 import {
   INVOICE_STATUS_LABEL, invoicesToPdf, invoicesToXlsx, subscriptionsToXlsx, type BillTo, type SubscriptionRow,
 } from '../lib/billingExport';
-import type { CompanySummary, Invoice, InvoiceStatus, Plan, Sort, Subscription } from '../lib/types';
+import type { CompanySummary, IndividualPricingConfig, Invoice, InvoiceStatus, Person, Plan, Sort, Subscription } from '../lib/types';
 
 /** S9 · Subscriptions & billing — WeTano Super Admin: plans, company subscriptions and invoices (SUB-01..03). */
 
-type Tab = 'plans' | 'subs' | 'invoices';
+type Tab = 'plans' | 'individuals' | 'subs' | 'invoices';
 type SubRow = SubscriptionRow;
 
 // ---------------------------------------------------------------- money (minor units everywhere)
@@ -46,7 +46,7 @@ const sumBy = <T,>(rows: T[], cur: (r: T) => string, value: (r: T) => number) =>
 const INVOICE_STATUSES: InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue', 'cancelled'];
 const INVOICE_CLS: Record<InvoiceStatus, string> = {
   draft: 'bg-subtle text-muted',
-  sent: 'bg-slate-200 text-slate-700',
+  sent: 'bg-subtle text-muted',
   paid: 'bg-brand-100 text-brand-800',
   overdue: 'bg-red-100 text-red-700',
   cancelled: 'bg-subtle text-muted',
@@ -72,20 +72,22 @@ export default function Subscriptions() {
       <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div class="min-w-0">
           <h1 class="text-xl font-bold">{t('Subscriptions')}</h1>
-          <p class="text-sm text-muted">{t('Plans, what each company pays and their invoices.')}</p>
+          <p class="text-sm text-muted">{t('Company and individual plans, active subscriptions and invoices.')}</p>
         </div>
         {tab === 'plans' && <button class="btn-primary" onClick={() => setNewPlan(true)}><Plus class="size-4" />{t('New plan')}</button>}
         {tab === 'invoices' && <button class="btn-primary" onClick={() => setNewInvoice(true)}><Plus class="size-4" />{t('New invoice')}</button>}
       </div>
 
       <Tabs<Tab> value={tab} onChange={setTab} items={[
-        { id: 'plans', label: t('Plans') },
+        { id: 'plans', label: t('Company Plans') },
+        { id: 'individuals', label: t('Individual Plans') },
         { id: 'subs', label: t('Subscriptions') },
         { id: 'invoices', label: t('Invoices') },
       ]} />
 
       <div class="mt-5">
         {tab === 'plans' && <PlansTab plans={plans} reload={loadPlans} newOpen={newPlan} closeNew={() => setNewPlan(false)} />}
+        {tab === 'individuals' && <IndividualPlansTab />}
         {tab === 'subs' && <SubsTab plans={plans ?? []} />}
         {tab === 'invoices' && <InvoicesTab plans={plans ?? []} newOpen={newInvoice} closeNew={() => setNewInvoice(false)} />}
       </div>
@@ -503,7 +505,7 @@ function SubSheet({ row, plans, onClose, onDone }: { row: SubRow; plans: Plan[];
   const choices = plans.filter((p) => p.active || p.id === row.plan_id);
 
   return (
-    <Sheet open onClose={onClose} title={row.company_name}
+    <Sheet open onClose={onClose} centered title={row.company_name}
       footer={<button class="btn-primary ml-auto min-w-32" disabled={busy} onClick={() => void save()}>{busy ? <Spinner /> : t('Save subscription')}</button>}>
       <div class="space-y-4">
         <Field label={t('Plan')}>
@@ -1151,7 +1153,7 @@ function FilterPanel({ title, count, onClearAll, children }: { title: string; co
         {count > 0 && <span class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-ocean-600 text-[11px] font-bold text-white">{count}</span>}
       </button>
 
-      {open && <div class="fixed inset-0 z-30 bg-slate-900/25 sm:hidden" onClick={() => setOpen(false)} />}
+      {open && <div class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
         <div class="pop fixed inset-x-0 bottom-0 z-40 max-h-[80dvh] overflow-y-auto rounded-t-3xl rounded-b-none p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:bottom-auto sm:mt-2 sm:max-h-[70vh] sm:w-[340px] sm:rounded-2xl sm:pb-4" role="dialog" aria-label={title}>
           <div class="mb-3 flex items-center justify-between">
@@ -1246,5 +1248,287 @@ function Toggle({ label, hint, on, onChange }: { label: string; hint?: string; o
         <span class={`size-5 rounded-full bg-white shadow transition ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
       </span>
     </button>
+  );
+}
+
+// ---------------------------------------------------------------- individual plans tab (synchronized with PlansTab)
+function IndividualPlansTab() {
+  const [pricing, setPricing] = useState<IndividualPricingConfig | null>(null);
+  const [individuals, setIndividuals] = useState<Person[]>([]);
+  const [editModal, setEditModal] = useState<'free' | 'pro' | null>(null);
+
+  const load = () => {
+    void backend().then((b) => b.getIndividualPricing()).then(setPricing).catch((e) => toast((e as Error).message, 'error'));
+    void backend().then((b) => b.listIndividuals()).then(setIndividuals).catch(() => {});
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  if (!pricing) return <div class="flex justify-center py-16"><Spinner class="size-6 text-brand-700" /></div>;
+
+  const proCount = individuals.filter((i) => i.plan === 'pro').length;
+  const totalScans = individuals.reduce((acc, i) => acc + (i.monthly_scans ?? 0), 0);
+  const mrr = proCount * pricing.pro_price_month;
+  const currency = pricing.currency || 'USD';
+
+  return (
+    <>
+      {/* 4 Telemetry Counters matching SubsTab */}
+      <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Counter label={t('Individual accounts')} value={individuals.length} />
+        <Counter label={t('Monthly recurring revenue')} value={money(mrr * 100, currency)} tone="ocean" />
+        <Counter label={t('Pro subscribers')} value={proCount} tone="brand" />
+        <Counter label={t('Scans this month')} value={totalScans.toLocaleString()} tone="amber" />
+      </div>
+
+      {/* Synchronized Plan Cards Grid matching Company Plans layout */}
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-2">
+        {/* Card 1: Solo Free */}
+        <article class="card flex flex-col gap-3 p-4">
+          <header class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h2 class="truncate font-bold">{t('Solo Free')}</h2>
+              <p class="line-clamp-2 text-xs text-muted">{t('Default free tier for individual self-registered users.')}</p>
+            </div>
+            <span class="pill bg-brand-100 text-brand-800">{t('Active')}</span>
+          </header>
+
+          <p class="text-2xl font-bold tabular-nums">
+            {money(0, currency)}<span class="text-sm font-medium text-muted"> / {t('month')}</span>
+          </p>
+          <p class="-mt-2 text-xs text-muted tabular-nums">{money(0, currency)} / {t('year')}</p>
+
+          <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+            <dt class="text-muted">{t('Seats')}</dt>
+            <dd class="font-semibold tabular-nums">1 ({t('Solo')})</dd>
+            <dt class="text-muted">{t('Scans per month')}</dt>
+            <dd class="font-semibold tabular-nums">{pricing.free_scans_limit}</dd>
+          </dl>
+
+          <div class="flex flex-wrap gap-1.5">
+            <span class="pill bg-subtle text-muted">{t('Self-Registration')}</span>
+            <span class="pill bg-subtle text-muted">{t('No card required')}</span>
+          </div>
+
+          {pricing.free_features && pricing.free_features.length > 0 && (
+            <ul class="space-y-1 text-xs">
+              {pricing.free_features.map((f, i) => (
+                <li key={i} class="flex items-start gap-1.5">
+                  <Check class="mt-0.5 size-3.5 shrink-0 text-brand-600" />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div class="mt-auto flex gap-2">
+            <button class="btn-secondary flex-1" onClick={() => setEditModal('free')}>
+              <Pencil class="size-4" />{t('Edit plan')}
+            </button>
+          </div>
+        </article>
+
+        {/* Card 2: WeTa Snap Pro */}
+        <article class="card flex flex-col gap-3 p-4">
+          <header class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h2 class="truncate font-bold">{t('WeTa Snap Pro')}</h2>
+              <p class="line-clamp-2 text-xs text-muted">{t('Unlimited card scans, Gemini AI verification & exports.')}</p>
+            </div>
+            <span class="pill bg-brand-100 text-brand-800">{t('Active')}</span>
+          </header>
+
+          <p class="text-2xl font-bold tabular-nums">
+            {money(pricing.pro_price_month * 100, currency)}<span class="text-sm font-medium text-muted"> / {t('month')}</span>
+          </p>
+          <p class="-mt-2 text-xs text-muted tabular-nums">
+            {money(pricing.pro_price_year * 100, currency)} / {t('year')}
+            {pricing.pro_price_month * 12 > pricing.pro_price_year && (
+              <span class="ml-1 text-brand-700 font-semibold">
+                ({t('saves {n}/yr', { n: money((pricing.pro_price_month * 12 - pricing.pro_price_year) * 100, currency) })})
+              </span>
+            )}
+          </p>
+
+          <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+            <dt class="text-muted">{t('Seats')}</dt>
+            <dd class="font-semibold tabular-nums">1 ({t('Solo')})</dd>
+            <dt class="text-muted">{t('Scans per month')}</dt>
+            <dd class="font-semibold tabular-nums">{t('Unlimited')}</dd>
+          </dl>
+
+          <div class="flex flex-wrap gap-1.5">
+            <span class="pill bg-brand-100 text-brand-800">{t('Unlimited Scans')}</span>
+            <span class="pill bg-ocean-100 text-ocean-800">{t('Gemini AI Verification')}</span>
+            <span class="pill bg-ocean-100 text-ocean-800">{t('Full Exports')}</span>
+          </div>
+
+          {pricing.pro_features && pricing.pro_features.length > 0 && (
+            <ul class="space-y-1 text-xs">
+              {pricing.pro_features.map((f, i) => (
+                <li key={i} class="flex items-start gap-1.5">
+                  <Check class="mt-0.5 size-3.5 shrink-0 text-brand-600" />
+                  <span>{f}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div class="mt-auto flex gap-2">
+            <button class="btn-secondary flex-1" onClick={() => setEditModal('pro')}>
+              <Pencil class="size-4" />{t('Edit plan')}
+            </button>
+          </div>
+        </article>
+      </div>
+
+      {editModal && (
+        <IndividualPlanSheet
+          mode={editModal}
+          pricing={pricing}
+          onClose={() => setEditModal(null)}
+          onDone={() => { setEditModal(null); void load(); }}
+        />
+      )}
+    </>
+  );
+}
+
+function IndividualPlanSheet({
+  mode,
+  pricing,
+  onClose,
+  onDone,
+}: {
+  mode: 'free' | 'pro';
+  pricing: IndividualPricingConfig;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const isFree = mode === 'free';
+  const [freeLimit, setFreeLimit] = useState(pricing.free_scans_limit);
+  const [proMonth, setProMonth] = useState(pricing.pro_price_month);
+  const [proYear, setProYear] = useState(pricing.pro_price_year);
+  const [currency, setCurrency] = useState(pricing.currency || 'USD');
+  const [featureText, setFeatureText] = useState((isFree ? pricing.free_features : pricing.pro_features).join('\n'));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function save() {
+    setErr('');
+    if (!isFree && proMonth < 1) { setErr(t('Monthly price must be at least 1.')); return; }
+    if (!isFree && proYear < 1) { setErr(t('Yearly price must be at least 1.')); return; }
+    if (isFree && freeLimit < 1) { setErr(t('Free limit must be at least 1 scan.')); return; }
+
+    setBusy(true);
+    try {
+      const parsedFeatures = featureText.split('\n').map((f) => f.trim()).filter(Boolean);
+      await (await backend()).updateIndividualPricing({
+        ...(isFree
+          ? { free_scans_limit: freeLimit, free_features: parsedFeatures }
+          : { pro_price_month: proMonth, pro_price_year: proYear, currency, pro_features: parsedFeatures }),
+      });
+      toast(t('Plan saved successfully'), 'success');
+      onDone();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const title = isFree ? t('Edit Solo Free Plan') : t('Edit WeTa Snap Pro Plan');
+
+  return (
+    <Sheet open onClose={onClose} centered wide title={title}
+      footer={<>
+        <span class="text-xs text-muted">
+          {isFree ? t('{n} scans/mo', { n: freeLimit }) : `${money(proMonth * 100, currency)} / ${t('month')}`}
+        </span>
+        <button class="btn-primary ml-auto min-w-32" disabled={busy} onClick={() => void save()}>
+          {busy ? <Spinner /> : t('Save plan')}
+        </button>
+      </>}>
+      <div class="space-y-4">
+        {err && <p class="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">{err}</p>}
+
+        <Field label={t('Plan name')} for="ind-name">
+          <input id="ind-name" class="input" value={isFree ? t('Solo Free') : t('WeTa Snap Pro')} disabled />
+        </Field>
+
+        <Field label={t('Description')} for="ind-desc">
+          <textarea
+            id="ind-desc"
+            class="input"
+            rows={2}
+            value={isFree ? t('Default free tier for individual self-registered users.') : t('Unlimited card scans, Gemini AI verification & exports.')}
+            disabled
+          />
+        </Field>
+
+        {isFree ? (
+          <div class="grid grid-cols-2 gap-2">
+            <Field label={t('Monthly free scan limit')} for="ind-limit" hint={t('After this limit, users are prompted to upgrade.')}>
+              <input
+                id="ind-limit"
+                type="number"
+                min={1}
+                max={500}
+                class="input"
+                value={freeLimit}
+                onInput={(e) => setFreeLimit(Number(e.currentTarget.value))}
+              />
+            </Field>
+            <Field label={t('Price')} for="ind-free-price">
+              <input id="ind-free-price" class="input" value="$0.00" disabled />
+            </Field>
+          </div>
+        ) : (
+          <div class="grid grid-cols-3 gap-2">
+            <Field label={t('Price per month')} for="ind-month" hint={t('Shown in {currency}', { currency })}>
+              <input
+                id="ind-month"
+                type="number"
+                min={1}
+                class="input font-semibold"
+                value={proMonth}
+                onInput={(e) => setProMonth(Number(e.currentTarget.value))}
+              />
+            </Field>
+            <Field label={t('Price per year')} for="ind-year">
+              <input
+                id="ind-year"
+                type="number"
+                min={1}
+                class="input font-semibold"
+                value={proYear}
+                onInput={(e) => setProYear(Number(e.currentTarget.value))}
+              />
+            </Field>
+            <Field label={t('Currency')} for="ind-cur">
+              <input
+                id="ind-cur"
+                class="input uppercase"
+                maxLength={3}
+                value={currency}
+                onInput={(e) => setCurrency(e.currentTarget.value.toUpperCase())}
+              />
+            </Field>
+          </div>
+        )}
+
+        <div>
+          <label class="label" for="ind-features">{t('Features list (one line per bullet)')}</label>
+          <textarea
+            id="ind-features"
+            class="input text-xs"
+            rows={6}
+            value={featureText}
+            onInput={(e) => setFeatureText(e.currentTarget.value)}
+          />
+          <p class="mt-1 text-xs text-muted">{t('These features appear directly on the Upgrade screen for individual users.')}</p>
+        </div>
+      </div>
+    </Sheet>
   );
 }

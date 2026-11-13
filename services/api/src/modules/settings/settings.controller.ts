@@ -19,6 +19,8 @@ const companyPatch = z.object({
   retention_photos_months: z.number().int().min(1).max(120),
   cloud_ai_enabled: z.boolean(),
   offline_pack_enabled: z.boolean(),
+  follow_up_message: z.string().max(4000).nullable(),
+  follow_up_auto: z.boolean(),
 }).partial();
 
 const errorReport = z.object({
@@ -43,7 +45,7 @@ export class SettingsController {
     return this.settings.company(me);
   }
 
-  @Roles('client_admin')
+  @Roles('client_admin', 'super_admin')
   @Patch('company')
   saveCompany(@Me() me: Caller, @Body() body: unknown) {
     return this.settings.saveCompany(me, parse(companyPatch, body));
@@ -60,7 +62,7 @@ export class SettingsController {
     return { allowed: await this.settings.allowedConnectors(me) };
   }
 
-  @Roles('client_admin')
+  @Roles('client_admin', 'super_admin')
   @Post('connections')
   connect(@Me() me: Caller, @Body() body: unknown) {
     const input = parse(z.object({
@@ -70,7 +72,7 @@ export class SettingsController {
     return this.settings.connect(me, input.kind, { webhook_url: input.webhook_url });
   }
 
-  @Roles('client_admin')
+  @Roles('client_admin', 'super_admin')
   @Put('connections/:id')
   async saveConnection(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
     const input = parse(z.object({
@@ -82,14 +84,14 @@ export class SettingsController {
     return { ok: true };
   }
 
-  @Roles('client_admin')
+  @Roles('client_admin', 'super_admin')
   @Delete('connections/:id')
   async disconnect(@Me() me: Caller, @Param('id') id: string) {
     await this.settings.disconnect(me, parse(uuid, id));
     return { ok: true };
   }
 
-  @Roles('client_admin')
+  @Roles('client_admin', 'super_admin')
   @RateLimit(10, 60)
   @Post('connections/test')
   test(@Me() me: Caller) {

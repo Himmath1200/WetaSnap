@@ -99,7 +99,7 @@ export class MeService {
       `select id::text, at, email, method::text as method, ok, reason, device,
               coalesce(host(ip), '') as ip, location
          from login_events
-        where person_id = coalesce($1, $2)
+        where person_id::text = coalesce($1::text, $2::text)
         order by at desc limit 200`,
       [personId ?? null, me.personId]);
   }
@@ -139,10 +139,15 @@ export class MeService {
    */
   async startMfa(me: Caller): Promise<{ secret: string; otpauth_url: string }> {
     const person = await this.db.one<{ email: string }>('select email from people where id = $1', [me.personId]);
-    const secret = newSecret();
+    // If there is already a pending MFA secret set up recently, reuse it so mobile app-switching doesn't invalidate it
+    const existing = await this.db.one<{ mfa_pending: string | null }>(
+      'select mfa_pending from person_credentials where person_id = $1',
+      [me.personId],
+    );
+    const secret = existing?.mfa_pending || newSecret();
     await this.db.query(
       `insert into person_credentials (person_id, mfa_pending) values ($1, $2)
-         on conflict (person_id) do update set mfa_pending = excluded.mfa_pending, updated_at = now()`,
+         on conflict (person_id) do update set mfa_pending = excluded.mfa_pending`,
       [me.personId, secret],
     );
     return { secret, otpauth_url: otpauthUrl(secret, person?.email ?? 'WeTa Snap') };
@@ -155,7 +160,7 @@ export class MeService {
     if (!verifyTotp(row.mfa_pending, code)) throw new DomainError('That authenticator code is not right.', 400, 'bad_code');
     await this.db.tx(async (c) => {
       await c.query(
-        `update person_credentials set mfa_secret = mfa_pending, mfa_pending = null, updated_at = now() where person_id = $1`,
+        `update person_credentials set mfa_secret = mfa_pending, mfa_pending = null where person_id = $1`,
         [me.personId]);
       await c.query('update people set mfa_enabled = true where id = $1', [me.personId]);
     });
@@ -198,5 +203,57 @@ export class MeService {
     });
     await this.audit.write(me, { action: 'mfa.recovery_codes', entity: 'people', entityId: me.personId });
     return { codes, used: 0, generated_at: new Date().toISOString() };
+  }
+
+  // ---------------------------------------------------------------- individual billing
+  async getIndividualPricing() {
+    const row = await this.db.one<any>(`select * from individual_pricing limit 1`);
+    return row ?? {
+      free_scans_limit: 5,
+      pro_price_month: 100,
+      pro_price_year: 1150,
+      currency: 'USD',
+      free_features: [
+        '5 business card scans per month',
+        'Fast on-device document alignment',
+        'Standard offline text extraction',
+        'Single contact export',
+        'Standard community support',
+      ],
+      pro_features: [
+        'Unlimited card scans every month',
+        'Google Gemini AI OCR field verification',
+        'Bulk Excel (.xlsx), CSV and PDF export',
+        'Multi-device automatic cloud sync',
+        'Voice memos & business card photo attachments',
+        'Priority 24/7 customer support',
+        'No overage fees or hidden charges',
+      ],
+    };
+  }
+
+  async upgradePlan(me: Caller, plan: 'pro', cycle: 'monthly' | 'annual') {
+    await this.db.query(
+      `update people set plan = $2, monthly_scans = 0 where id = $1`,
+      [me.personId, plan],
+    );
+    await this.audit.write(me, { action: 'billing.upgrade', entity: 'people', entityId: me.personId, details: { plan, cycle } });
+    return { ok: true };
+  }
+
+  async recordScanUsage(me: Caller) {
+    const person = await this.db.one<any>(`select plan, monthly_scans from people where id = $1`, [me.personId]);
+    const pricing = await this.getIndividualPricing();
+    const plan = person?.plan ?? 'free';
+    const currentScans = person?.monthly_scans ?? 0;
+    const limit = plan === 'pro' ? 999999 : (pricing.free_scans_limit || 5);
+
+    if (plan !== 'pro' && currentScans >= limit) {
+      return { allowed: false, count: currentScans, limit, plan: 'free' };
+    }
+
+    const nextCount = currentScans + 1;
+    await this.db.query(`update people set monthly_scans = $2 where id = $1`, [me.personId, nextCount]);
+    return { allowed: true, count: nextCount, limit, plan };
   }
 }

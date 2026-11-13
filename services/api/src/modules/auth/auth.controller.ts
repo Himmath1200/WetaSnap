@@ -24,6 +24,19 @@ const signInBody = z.object({
 });
 
 const codeBody = z.object({ code: code6 });
+const registerBody = z.object({
+  name: z.string().min(1, 'Please enter your name.').max(100),
+  email: emailSchema,
+  phone: z.string().min(6, 'Please enter a valid mobile number.').max(30),
+  password: z.string().min(6, 'Password must be at least 6 characters.').max(200),
+});
+const referralBody = z.object({
+  name: z.string().min(1, 'Please enter your name.').max(100),
+  email: emailSchema,
+  phone: z.string().min(6, 'Please enter a valid mobile number.').max(30),
+  password: z.string().min(6, 'Password must be at least 6 characters.').max(200),
+  referral_code: z.string().min(3).max(30),
+});
 const forgotBody = z.object({ email: emailSchema });
 const resetBody = z.object({ email: emailSchema, code: code6, password: z.string().min(1).max(200) });
 const changeRequestBody = z.object({ current_password: z.string().min(1).max(200) });
@@ -53,6 +66,33 @@ export class AuthController {
   async signIn(@Req() req: Request, @Body() body: unknown) {
     const input = parse(signInBody, body);
     return this.auth.signIn(input.email, input.password, input.door, this.where(req));
+  }
+
+  /** Send real SMS verification OTP to mobile number during registration */
+  @Public()
+  @RateLimit(10, 60)
+  @Post('phone-otp/send')
+  async sendPhoneOtp(@Body() body: unknown) {
+    const input = parse(z.object({ phone: z.string().min(7).max(30) }), body);
+    return this.auth.sendPhoneOtp(input.phone);
+  }
+
+  /** Direct registration for solo individual users */
+  @Public()
+  @RateLimit(10, 60)
+  @Post('register-individual')
+  async registerIndividual(@Req() req: Request, @Body() body: unknown) {
+    const input = parse(registerBody, body);
+    return this.auth.registerIndividual(input, this.where(req));
+  }
+
+  /** Referral registration for event organizer members */
+  @Public()
+  @RateLimit(10, 60)
+  @Post('register-referral')
+  async registerReferral(@Req() req: Request, @Body() body: unknown) {
+    const input = parse(referralBody, body);
+    return this.auth.registerReferral(input, this.where(req));
   }
 
   /** Step 2 for admins. */

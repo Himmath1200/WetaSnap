@@ -36,8 +36,8 @@ async function bootstrap() {
   app.disable('x-powered-by');
   app.set('trust proxy', 1);                       // one reverse proxy in front of us
   app.use(helmet({
-    contentSecurityPolicy: { directives: { 'default-src': ["'none'"], 'frame-ancestors': ["'none'"] } },
-    crossOriginResourcePolicy: { policy: 'same-site' },
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
     referrerPolicy: { policy: 'no-referrer' },
     hsts: env.NODE_ENV === 'production' ? { maxAge: 15_552_000, includeSubDomains: true } : false,
   }));
@@ -48,7 +48,7 @@ async function bootstrap() {
   app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 
   app.enableCors({
-    origin: env.CORS_ORIGINS.length ? env.CORS_ORIGINS : [env.APP_URL],
+    origin: env.NODE_ENV !== 'production' ? true : (env.CORS_ORIGINS.length ? env.CORS_ORIGINS : [env.APP_URL]),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Authorization', 'Content-Type', 'X-Device'],
     exposedHeaders: ['Retry-After'],

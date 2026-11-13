@@ -47,6 +47,14 @@ const schema = z.object({
   MAIL_FROM: z.string().default('WeTa Snap <no-reply@wetano.com>'),
   SMTP_URL: z.string().optional(),
 
+  // SMS & Mobile OTP configuration (Twilio or any HTTP SMS Gateway)
+  SMS_DRIVER: z.enum(['log', 'twilio', 'http']).default('log'),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
+  SMS_HTTP_URL: z.string().optional(), // Custom HTTP API, e.g. https://api.textlocal.in/send/?apikey=...
+
   // Development only: the password every seeded account uses, so the sign-in page can offer them.
   // Empty in any real deployment, and the dev endpoints are not even loaded there.
   DEV_DEMO_PASSWORD: z.string().default(''),

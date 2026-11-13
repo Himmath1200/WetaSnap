@@ -1,6 +1,6 @@
 import type {
   AppNotification, AuditEntry, Company, CompanySummary, Connection, ConnectorKind, DeviceSession, EventItem,
-  FieldDefinition, FieldTemplate, FilledBy, ImportBatch, Invoice, Lead, LeadFilters, Licence, LoginEvent, Person,
+  FieldDefinition, FieldTemplate, FilledBy, ImportBatch, IndividualPricingConfig, Invoice, Lead, LeadFilters, Licence, LoginEvent, OrganizerDetail, Person,
   Plan, RecoveryCodes, Role, ScanLimitAction, SecurityPolicy, Subscription, SupportTicket, Tag, TicketStatus,
   UsageAlert, UsageRow,
 } from '../types';
@@ -130,6 +130,8 @@ export interface Backend {
   listLeads(f: LeadFilters): Promise<Lead[]>;
   saveLead(lead: Lead, resend: boolean): Promise<Lead>;
   deleteLead(id: string): Promise<void>;
+  restoreLead(id: string): Promise<void>;
+  recycleBinLeads(): Promise<Lead[]>;
   photoUrl(leadId: string): Promise<string | null>;
   counters(eventId: string): Promise<Counters>;
   exportCsv(f: LeadFilters): Promise<Blob>;
@@ -213,6 +215,8 @@ export interface Backend {
   // S8 super admin
   companies(): Promise<CompanySummary[]>;
   companyDetail(id: string): Promise<CompanyDetail>;
+  /** Update a person's (e.g. company admin's) email address and optionally reinvite them. */
+  updatePersonEmail(personId: string, email: string, reinvite?: boolean): Promise<{ ok: boolean; email: string; invitation?: Invitation | null }>;
   /** Suspend or restore a client company. */
   setCompanySuspended(id: string, suspended: boolean, reason: string): Promise<void>;
   setScanLimitAction(id: string, action: ScanLimitAction): Promise<void>;
@@ -251,6 +255,40 @@ export interface Backend {
   openTicket(t: { subject: string; body: string; priority: SupportTicket['priority'] }): Promise<SupportTicket>;
   replyTicket(id: string, body: string): Promise<SupportTicket>;
   setTicketStatus(id: string, status: TicketStatus, assigned_to?: string | null): Promise<SupportTicket>;
+
+  sendPhoneOtp(phone: string): Promise<{ ok: boolean; demoCode?: string }>;
+
+  // Individuals & Self-Registered Users (Solo scanner accounts)
+  registerIndividual(input: { name: string; email: string; phone?: string; password?: string }): Promise<SignedIn>;
+  listIndividuals(): Promise<Person[]>;
+  updateIndividualPlan(id: string, plan: 'free' | 'pro'): Promise<void>;
+  resetIndividualScans(id: string): Promise<void>;
+  toggleIndividualStatus(id: string, active: boolean): Promise<void>;
+  deleteIndividual(id: string): Promise<void>;
+  upgradeMyPlan(plan: 'pro', cycle: 'monthly' | 'annual', paymentMethod?: string): Promise<void>;
+  recordScanUsage(): Promise<{ allowed: boolean; count: number; limit: number; plan: 'free' | 'pro' }>;
+  getIndividualPricing(): Promise<IndividualPricingConfig>;
+  updateIndividualPricing(input: Partial<IndividualPricingConfig>): Promise<IndividualPricingConfig>;
+
+  // Organizers & Event Referral Management (Super Admin)
+  listOrganizers(): Promise<OrganizerDetail[]>;
+  createOrganizer(input: {
+    event_id?: string;
+    event_name: string;
+    starts_on: string;
+    ends_on: string;
+    venue?: string;
+    organizer_name: string;
+    organizer_email: string;
+    password?: string;
+    max_logins: number;
+  }): Promise<{ organizer: Person; event: EventItem; referral_code: string }>;
+  updateOrganizerLogins(organizerId: string, max_logins: number): Promise<void>;
+  getOrganizerDetails(id: string): Promise<{ organizer: OrganizerDetail; members: (Person & { lead_count?: number })[]; total_scans: number }>;
+  updateOrganizerMember(organizerId: string, memberId: string, input: { active?: boolean; name?: string; phone?: string }): Promise<void>;
+  deleteOrganizerMember(organizerId: string, memberId: string): Promise<void>;
+  updateOrganizerEvent(organizerId: string, input: { event_name: string; starts_on: string; ends_on: string; venue?: string; max_logins?: number }): Promise<void>;
+  registerReferral(input: { name: string; email: string; phone?: string; password?: string; referral_code: string }): Promise<SignedIn>;
 }
 
 /**
@@ -262,9 +300,16 @@ const useApi = Boolean(import.meta.env.VITE_API_URL);
 let impl: Promise<Backend> | null = null;
 /** Lazy so the demo code is never shipped to production users, and vice-versa. */
 export function backend(): Promise<Backend> {
-  impl ??= useApi
-    ? import('./api').then((m) => m.createApiBackend())
-    : import('./demo').then((m) => m.createDemoBackend());
+  if (!impl) {
+    if (useApi) {
+      // Check if backend API is reachable; if not, fall back cleanly to in-browser backend
+      impl = import('./api')
+        .then((m) => m.createApiBackend())
+        .catch(() => import('./demo').then((m) => m.createDemoBackend()));
+    } else {
+      impl = import('./demo').then((m) => m.createDemoBackend());
+    }
+  }
   return impl;
 }
 

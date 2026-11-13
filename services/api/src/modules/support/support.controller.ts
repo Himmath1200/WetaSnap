@@ -5,11 +5,11 @@ import { Me, RateLimit, Roles } from '../../common/guards';
 import { parse, uuid } from '../../common/validation';
 import { SupportService } from './support.service';
 
+@Roles('super_admin', 'client_admin', 'individual')
 @Controller('v1/support')
 export class SupportController {
   constructor(private readonly support: SupportService) {}
 
-  @Roles('client_admin')
   @Get()
   list(@Me() me: Caller, @Query('status') status = '', @Query('company_id') companyId = '') {
     return this.support.list(me, {
@@ -18,7 +18,6 @@ export class SupportController {
     });
   }
 
-  @Roles('client_admin')
   @RateLimit(10, 60)
   @Post()
   open(@Me() me: Caller, @Body() body: unknown) {
@@ -30,7 +29,6 @@ export class SupportController {
     return this.support.open(me, input);
   }
 
-  @Roles('client_admin')
   @RateLimit(30, 60)
   @Post(':id/reply')
   reply(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
@@ -38,7 +36,6 @@ export class SupportController {
     return this.support.reply(me, parse(uuid, id), input.body);
   }
 
-  @Roles('client_admin')
   @Put(':id/status')
   setStatus(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
     const input = parse(z.object({

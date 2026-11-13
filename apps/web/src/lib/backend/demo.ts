@@ -11,8 +11,8 @@ import { DEFAULT_POLICY, checkPassword } from '../password';
 import { buildDemoWorld } from './demoData';
 import type {
   AppNotification, Attachment, Company, CompanySummary, Connection, ConnectorKind, CrmAttempt, DeviceSession,
-  EventItem, FieldDefinition, FieldTemplate, FieldValue, ImportBatch, Invoice, Lead, LeadFilters, Licence,
-  LoginEvent, Person, Plan, RecoveryCodes, Role, ScanLimitAction, SecurityPolicy, Subscription, SupportTicket, Tag,
+  EventItem, FieldDefinition, FieldTemplate, FieldValue, ImportBatch, IndividualPricingConfig, Invoice, Lead, LeadFilters, Licence,
+  LoginEvent, OrganizerDetail, Person, Plan, RecoveryCodes, Role, ScanLimitAction, SecurityPolicy, Subscription, SupportTicket, Tag,
   TicketStatus, UsageAlert, UsageRow,
 } from '../types';
 import { OfflineError, isOnline } from '../net';
@@ -38,6 +38,30 @@ interface Note extends AppNotification { audience?: Audience; dedupe_key?: strin
 interface UsageEvent { id?: number; company_id: string; kind: string; at: string; overage?: boolean }
 /** D-32: leads whose CRM pipeline was started but has not finished (a reload can interrupt it). */
 interface Queued { lead_id: string; at: string }
+
+let individualPricing: IndividualPricingConfig = {
+  free_scans_limit: 5,
+  pro_price_month: 100,
+  pro_price_year: 1150,
+  currency: 'USD',
+  free_features: [
+    '5 business card scans per month',
+    'Fast on-device document alignment',
+    'Standard offline text extraction',
+    'Single contact export',
+    'Standard community support',
+  ],
+  pro_features: [
+    'Unlimited card scans every month',
+    'Google Gemini AI OCR field verification',
+    'Bulk Excel (.xlsx), CSV and PDF export',
+    'Multi-device automatic cloud sync',
+    'Voice memos & business card photo attachments',
+    'Priority 24/7 customer support',
+    'No overage fees or hidden charges',
+  ],
+  updated_at: new Date().toISOString(),
+};
 
 class ServerDb extends Dexie {
   companies!: Table<Company, string>;
@@ -154,7 +178,6 @@ const DEFAULT_FIELDS: [string, string, FieldDefinition['type'], boolean, string]
   ['address', 'Address', 'text', false, 'Street and postcode as printed'],
   ['phone2', 'Second phone', 'phone', false, ''],
   ['phone3', 'Third phone', 'phone', false, ''],
-  ['product_interest', 'Product interest', 'choice', false, ''],
 ];
 
 const SAMPLE_CARDS = [
@@ -193,6 +216,9 @@ async function seed() {
     person(P.ben, 'ben@agroexpo.de', 'Ben Keller', 'staff', CO, { phone: '+49 160 5551234' }),
     person(P.temp, 'mia.hostess@gmail.com', 'Mia Braun', 'staff', CO, { access_ends_on: addDays(3), invited: true }),
     person('p-nordic', 'admin@nordicseeds.se', 'Erik Lund', 'client_admin', CO2),
+    person('ind-alex', 'alex.morgan@freelance.dev', 'Alex Morgan', 'individual', null, { plan: 'pro', monthly_scans: 42, created_at: addDays(-60), phone: '+1 555-0144' }),
+    person('ind-sarah', 'sarah.solo@consulting.com', 'Sarah Lin', 'individual', null, { plan: 'free', monthly_scans: 3, created_at: addDays(-14), phone: '+1 555-0182' }),
+    person('ind-david', 'david.ross@startuphub.io', 'David Ross', 'individual', null, { plan: 'free', monthly_scans: 5, created_at: addDays(-7), phone: '+1 555-0199' }),
   ]);
   await S.events.bulkPut([
     { id: EV, company_id: CO, name: 'AgriTech Expo 2026', starts_on: addDays(-1), ends_on: addDays(2), venue: 'Messe Hannover', booth: 'Hall 7 · B12', status: 'open', description: 'Main stand with the irrigation demo rig. Ask visitors about plot size and crop.', time_zone: 'Europe/Berlin', template_id: TPL, attachments: [] },
@@ -204,7 +230,7 @@ async function seed() {
   ]);
   await S.fields.bulkPut(DEFAULT_FIELDS.map(([key, label, type, required, ai_hint], i) => ({
     id: uuid(), company_id: CO, template_id: TPL, key, label, type, required, ai_hint, filled_by: 'ai' as const, sort_order: i,
-    options: key === 'product_interest' ? ['Seeds', 'Fertiliser', 'Irrigation', 'Drones'] : [],
+    options: [],
   })));
   await S.fields.bulkPut(DEFAULT_FIELDS.slice(0, 4).map(([key, label, type, required, ai_hint], i) => ({
     id: uuid(), company_id: CO, template_id: TPL_SHORT, key, label, type, required, ai_hint, filled_by: 'ai' as const, sort_order: i, options: [],
@@ -513,6 +539,7 @@ export function createDemoBackend(): Backend {
   function visibleTo(p: Person) {
     return (n: Note) => {
       if (p.role === 'super_admin') return n.company_id === null && (!n.person_id || n.person_id === p.id);
+      if (p.role === 'individual') return n.person_id === p.id;
       if (n.company_id !== p.company_id) return false;
       if (n.person_id) return n.person_id === p.id;
       return p.role === 'client_admin' || n.audience === 'everyone';
@@ -689,8 +716,13 @@ export function createDemoBackend(): Backend {
 
   const scope = async (f: LeadFilters) => {
     const p = await me();
-    let rows = await S.leads.where('company_id').equals(p.company_id ?? '').toArray();
-    if (p.role === 'staff') rows = rows.filter((l) => l.captured_by === p.id); // LEAD-03
+    let rows: Lead[] = [];
+    if (p.role === 'individual') {
+      rows = await S.leads.where('captured_by').equals(p.id).toArray();
+    } else {
+      rows = await S.leads.where('company_id').equals(p.company_id ?? '').toArray();
+      if (p.role === 'staff') rows = rows.filter((l) => l.captured_by === p.id); // LEAD-03
+    }
     return applyFilters(rows, f);
   };
 
@@ -746,10 +778,15 @@ export function createDemoBackend(): Backend {
         throw new Error(wrongDoorMessage(person.role));
       }
       await S.secrets.update(sec.person_id, { failed: 0, locked_until: null });
-      if (person.role === 'staff') {
+      if (person.role === 'staff' || (person.role === 'individual' && !person.mfa_enabled)) {
         await logLogin(e, 'password', true, '');
         if (person.invited) await S.people.update(person.id, { invited: false });
         return { next: 'done', ...(await signedIn({ ...person, invited: false })) };
+      }
+      if (person.role === 'individual' && person.mfa_enabled) {
+        pending = { email: e, stage: 'totp' };
+        await logLogin(e, 'password', true, 'Password accepted — waiting for authenticator code');
+        return { next: 'totp' };
       }
       // Admins: a 6-digit code to the same address.
       const code = sixDigits();
@@ -838,11 +875,20 @@ export function createDemoBackend(): Backend {
 
     async events() {
       const p = await me();
+      if (p.role === 'super_admin') {
+        const rows = await S.events.toArray();
+        return rows.filter((e) => !e.company_id).sort((a, b) => b.starts_on.localeCompare(a.starts_on));
+      }
       return (await S.events.where('company_id').equals(p.company_id ?? '').toArray()).sort((a, b) => b.starts_on.localeCompare(a.starts_on));
     },
     /** D-10: the chosen event's template, else the person's default event's, else the company default. */
     async fields(eventId) {
       const p = await me();
+      if (p.role === 'individual' || !p.company_id) {
+        return DEFAULT_FIELDS.map(([key, label, type, required, ai_hint], i) => ({
+          id: `fd-ind-${i}`, company_id: '', template_id: 'default', key, label, type, required, ai_hint, filled_by: 'ai' as const, sort_order: i, options: [],
+        }));
+      }
       const all = await S.fields.where('company_id').equals(p.company_id ?? '').toArray();
       const load = async (id: string | null | undefined) => {
         const ev = id ? await S.events.get(id) : undefined;
@@ -857,8 +903,10 @@ export function createDemoBackend(): Backend {
 
     async readCard(photo) {
       const p = await me();
-      await refuseIfBlocked(p.company_id!);
-      await meter(p.company_id!, 'ai_read');
+      if (p.company_id) {
+        await refuseIfBlocked(p.company_id);
+        await meter(p.company_id, 'ai_read');
+      }
       // The demo has no cloud model, so the card is read on this device (Tesseract) — the values
       // come from the photo in front of you, never from a sample. The API adds Claude on top.
       // readOffline pushes the raw text to the live popup itself.
@@ -869,6 +917,23 @@ export function createDemoBackend(): Backend {
     async syncLead(incoming) {
       const { p, blocked, cutoff } = await caller();
       await wait(150);
+      if (p.role === 'individual') {
+        const row: Lead = {
+          ...incoming,
+          id: incoming.id,
+          company_id: '',
+          captured_by: p.id,
+          captured_by_name: p.name,
+          event_id: incoming.event_id || '',
+          tag_ids: incoming.tag_ids ?? [],
+          status: 'synced',
+          synced_at: nowIso(),
+        };
+        await S.leads.put(row);
+        const activeCount = (await S.leads.toArray()).filter((l) => l.captured_by === p.id && !l.deleted_at).length;
+        await S.people.update(p.id, { monthly_scans: activeCount });
+        return row;
+      }
       if (!p.company_id) throw new Error('Only company accounts capture leads.');
       // D-8 / W5: after access ended or suspension, only leads captured before the cut-off are accepted.
       if (blocked && (!cutoff || incoming.created_at > cutoff)) throw new Error(blocked);
@@ -917,6 +982,14 @@ export function createDemoBackend(): Backend {
     async uploadPhoto(leadId, side, blob) {
       const { p, blocked, cutoff } = await caller();
       const lead = await S.leads.get(leadId);
+      // Solo / Individual accounts can always store their own card photos
+      if (p.role === 'individual') {
+        if (!lead || lead.captured_by !== p.id) throw new Error('Lead not found');
+        if (side !== 'front' && side !== 'back') throw new Error('Unknown photo side');
+        await S.photos.put({ key: `${leadId}/${side}`, lead_id: leadId, blob });
+        await S.leads.update(leadId, side === 'front' ? { has_photo: true } : { has_back_photo: true });
+        return;
+      }
       // D-2: only the caller's company, and for staff only their own leads.
       if (!lead || lead.company_id !== p.company_id || (p.role === 'staff' && lead.captured_by !== p.id)) throw new Error('Lead not found');
       if (blocked && (!cutoff || lead.created_at > cutoff)) throw new Error(blocked); // W5
@@ -947,6 +1020,17 @@ export function createDemoBackend(): Backend {
     async saveLead(lead, resend) {
       const p = await me();
       const cur = await S.leads.get(lead.id);
+      if (p.role === 'individual') {
+        if (!cur || cur.captured_by !== p.id) throw new Error('Lead not found');
+        const row: Lead = {
+          ...cur, ...lead,
+          id: cur.id, company_id: '', captured_by: p.id, captured_by_name: p.name,
+          import_batch_id: null, created_at: cur.created_at, deleted_at: cur.deleted_at,
+          status: 'synced', crm_error: null, updated_at: nowIso(),
+        };
+        await S.leads.put(row);
+        return row;
+      }
       if (!cur || cur.company_id !== p.company_id) throw new Error('Lead not found');
       if (p.role === 'staff' && cur.captured_by !== p.id) throw new Error('Not your lead');
       if (lead.event_id !== cur.event_id) {
@@ -971,25 +1055,71 @@ export function createDemoBackend(): Backend {
     async deleteLead(id) {
       const p = await me();
       const lead = await S.leads.get(id);
-      // Staff may soft-delete their own leads; admins any lead in the company (restorable for 30 days).
-      if (!lead || lead.company_id !== p.company_id || (p.role === 'staff' && lead.captured_by !== p.id)) {
-        throw new Error('You can only delete leads you captured.');
+      if (p.role === 'individual') {
+        if (!lead || lead.captured_by !== p.id) throw new Error('Not your lead');
+      } else {
+        // Staff may soft-delete their own leads; admins any lead in the company (restorable for 30 days).
+        if (!lead || lead.company_id !== p.company_id || (p.role === 'staff' && lead.captured_by !== p.id)) {
+          throw new Error('You can only delete leads you captured.');
+        }
       }
       await S.leads.update(id, { deleted_at: nowIso() }); // soft delete, restorable 30 days (LEAD-07)
       await audit(p, 'lead.delete', id);
     },
 
+    async restoreLead(id) {
+      const p = await me();
+      const lead = await S.leads.get(id);
+      if (p.role === 'individual') {
+        if (!lead || lead.captured_by !== p.id) throw new Error('Not your lead');
+      } else {
+        if (!lead || lead.company_id !== p.company_id || (p.role === 'staff' && lead.captured_by !== p.id)) {
+          throw new Error('Not your lead');
+        }
+      }
+      await S.leads.update(id, { deleted_at: null });
+      await audit(p, 'lead.restore', id);
+    },
+
+    async recycleBinLeads() {
+      const p = await me();
+      const rows = await S.leads.toArray();
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      return rows.filter((l) => {
+        if (!l.deleted_at || l.deleted_at < thirtyDaysAgo) return false;
+        if (p.role === 'individual') return l.captured_by === p.id;
+        if (p.role === 'client_admin') return l.company_id === p.company_id;
+        return l.captured_by === p.id;
+      });
+    },
+
     async photoUrl(leadId) {
       const p = await me();
       const lead = await S.leads.get(leadId);
+      if (p.role === 'individual') {
+        if (!lead || lead.captured_by !== p.id) return null;
+        const ph = await S.photos.get(`${leadId}/front`);
+        return ph ? URL.createObjectURL(ph.blob) : null;
+      }
       if (!lead || lead.company_id !== p.company_id || (p.role === 'staff' && lead.captured_by !== p.id)) return null; // D-2
       const ph = await S.photos.get(`${leadId}/front`);
       return ph ? URL.createObjectURL(ph.blob) : null;
     },
 
     async counters(eventId): Promise<Counters> {
-      const p = await admin();
-      const all = (await S.leads.where('company_id').equals(p.company_id!).toArray()).filter((l) => !l.deleted_at);
+      const p = await me();
+      if (p.role === 'individual') {
+        const myLeads = (await S.leads.where('captured_by').equals(p.id).toArray()).filter((l) => !l.deleted_at);
+        const t = today();
+        return {
+          in_event: myLeads.length,
+          today: myLeads.filter((l) => l.created_at.slice(0, 10) === t).length,
+          waiting: 0,
+          failed: myLeads.filter((l) => l.status === 'check').length,
+        };
+      }
+      if (!p.company_id) throw new Error('No company');
+      const all = (await S.leads.where('company_id').equals(p.company_id).toArray()).filter((l) => !l.deleted_at);
       const t = today();
       return {
         in_event: all.filter((l) => l.event_id === eventId).length,
@@ -1000,7 +1130,7 @@ export function createDemoBackend(): Backend {
     },
 
     async exportCsv(f) {
-      const p = await admin();
+      const p = await me();
       const rows = await scope(f);
       const defs = await this.fields();
       await audit(p, 'lead.export', `${rows.length} rows`);
@@ -1061,6 +1191,23 @@ export function createDemoBackend(): Backend {
         if (used >= seats) throw new Error('No free seat to reactivate this person.');
       }
       const { event_ids, default_event_id } = await ownEvents(p, u.event_ids ?? [], u.default_event_id);
+      // If deactivated, demote directly to individual solo account (free plan with 5 free scans)
+      if (!u.active) {
+        await S.people.put({
+          ...cur,
+          company_id: null,
+          role: 'individual',
+          plan: 'free',
+          monthly_scans: 0,
+          scans_reset_at: addDays(30),
+          default_event_id: null,
+          event_ids: [],
+          access_ends_on: null,
+          active: true,
+        });
+        await audit(p, 'person.remove_to_solo', cur.email);
+        return;
+      }
       // Only the editable fields; id, company, email and security flags stay as stored.
       await S.people.put({
         ...cur, name: u.name.trim() || cur.name, phone: u.phone ?? '', role: u.role, event_ids, default_event_id,
@@ -1113,7 +1260,8 @@ export function createDemoBackend(): Backend {
       const cur = (await S.companies.get(p.company_id!))!;
       // D-6: only what a Client Admin may edit; suspension, scan-limit action, id and consent version stay WeTano's/the server's.
       const EDITABLE = ['name', 'logo_url', 'country', 'headquarters', 'default_language', 'time_zone', 'consent_text',
-        'retention_leads_months', 'retention_photos_months', 'cloud_ai_enabled', 'offline_pack_enabled'] as const;
+        'retention_leads_months', 'retention_photos_months', 'cloud_ai_enabled', 'offline_pack_enabled',
+        'follow_up_message', 'follow_up_auto'] as const;
       const patch: Partial<Company> = {};
       for (const k of EDITABLE) if (c[k] !== undefined) (patch as Record<string, unknown>)[k] = c[k];
       if (patch.name !== undefined && !patch.name.trim()) throw new Error('Company name is required.');
@@ -1433,6 +1581,22 @@ export function createDemoBackend(): Backend {
           id: x.id, name: x.name, email: x.email, phone: x.phone, active: x.active, invited: x.invited,
           last_sign_in_at: null,
         })),
+      };
+    },
+    async updatePersonEmail(personId, newEmail, reinvite = true) {
+      const p = await superAdmin();
+      const person = await S.people.get(personId);
+      if (!person) throw new Error('Person not found');
+      const addr = newEmail.trim().toLowerCase();
+      const existing = (await S.people.toArray()).find((x) => x.email.toLowerCase() === addr && x.id !== personId);
+      if (existing) throw new Error('An account with this email address already exists.');
+      await S.people.update(personId, { email: addr });
+      await audit(p, 'person.email_update', `${person.email} → ${addr}`, person.company_id || personId);
+      const link = `${location.origin}/signin#setup=${encodeURIComponent(addr)}`;
+      return {
+        ok: true,
+        email: addr,
+        invitation: reinvite ? { setup_link: link, email_sent: true, resent: true } : null,
       };
     },
     async setCompanySuspended(id, suspended, reason) {
@@ -1797,7 +1961,8 @@ export function createDemoBackend(): Backend {
     async tickets(f) {
       const p = await adminOrSuper(); // D-20
       let rows = await S.tickets.toArray();
-      if (p.role !== 'super_admin') rows = rows.filter((x) => x.company_id === p.company_id);
+      if (p.role === 'individual') rows = rows.filter((x) => x.opened_by === p.email || x.company_id === p.id);
+      else if (p.role !== 'super_admin') rows = rows.filter((x) => x.company_id === p.company_id);
       if (f?.company_id) rows = rows.filter((x) => x.company_id === f.company_id);
       if (f?.status) rows = rows.filter((x) => x.status === f.status);
       return rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
@@ -1805,12 +1970,14 @@ export function createDemoBackend(): Backend {
     async openTicket(input) {
       const p = await adminOrSuper(); // D-20
       if (p.role === 'super_admin') throw new Error('WeTano staff answer tickets; they do not open them.');
-      const co = await S.companies.get(p.company_id!);
+      const co = p.company_id ? await S.companies.get(p.company_id) : undefined;
       const year = new Date().getFullYear();
       const n = nextSequence((await S.tickets.toArray()).map((x) => x.number), 'SUP', year); // D-14
       const now = nowIso();
       const row: SupportTicket = {
-        id: uuid(), number: `SUP-${year}-${String(n).padStart(4, '0')}`, company_id: p.company_id!, company_name: co?.name ?? '',
+        id: uuid(), number: `SUP-${year}-${String(n).padStart(4, '0')}`,
+        company_id: p.company_id ?? p.id,
+        company_name: co?.name ?? (p.name + ' (Solo)'),
         opened_by: p.email, subject: input.subject.trim(), body: input.body.trim(), status: 'open', priority: input.priority,
         assigned_to: null, created_at: now, updated_at: now,
         messages: [{ id: uuid(), at: now, author: p.email, from_wetano: false, body: input.body.trim() }],
@@ -1824,7 +1991,8 @@ export function createDemoBackend(): Backend {
       const p = await adminOrSuper(); // D-20
       const cur = await S.tickets.get(id);
       if (!cur) throw new Error('Ticket not found');
-      if (p.role !== 'super_admin' && cur.company_id !== p.company_id) throw new Error('Ticket not found');
+      if (p.role === 'individual' && cur.opened_by !== p.email && cur.company_id !== p.id) throw new Error('Ticket not found');
+      if (p.role !== 'super_admin' && p.role !== 'individual' && cur.company_id !== p.company_id) throw new Error('Ticket not found');
       if (!body.trim()) throw new Error('Please write a message.');
       const fromWetano = p.role === 'super_admin';
       const row: SupportTicket = {
@@ -1854,6 +2022,353 @@ export function createDemoBackend(): Backend {
       await S.tickets.put(row);
       await audit(p, 'ticket.status', `${cur.number} -> ${status}`);
       return row;
+    },
+
+    async sendPhoneOtp(_phone) {
+      netGuard(); await ready;
+      const demoCode = Math.floor(100000 + Math.random() * 900000).toString();
+      return { ok: true, demoCode };
+    },
+
+    // ---------------------------------------------------------------- individual registration & management
+    async registerIndividual(input) {
+      netGuard(); await ready; await wait(300);
+      const e = input.email.trim().toLowerCase();
+      if (!isEmail(e)) throw new Error('Invalid email address');
+      const existing = await S.people.where('email').equals(e).first();
+      if (existing) throw new Error('An account with this email already exists. Please sign in.');
+      const cleanPhone = (input.phone || '').replace(/[\s\-\(\)\.]/g, '').trim();
+      if (!cleanPhone || cleanPhone.length < 7) throw new Error('Please enter a valid mobile number.');
+      const existingPhone = (await S.people.toArray()).find((p) => (p.phone || '').replace(/[\s\-\(\)\.]/g, '') === cleanPhone);
+      if (existingPhone) throw new Error('Access is not granted — an account with this mobile number already exists. One account per mobile number.');
+      const id = 'ind-' + uuid();
+      const p: Person = {
+        id,
+        email: e,
+        name: input.name.trim() || 'Solo Operator',
+        phone: input.phone?.trim() || cleanPhone,
+        role: 'individual',
+        company_id: null,
+        plan: 'free',
+        monthly_scans: 0,
+        scans_reset_at: addDays(30),
+        created_at: nowIso(),
+        event_ids: [],
+        default_event_id: null,
+        access_ends_on: null,
+        active: true,
+        invited: false,
+        avatar_url: null,
+        has_password: true,
+        mfa_enabled: false,
+      };
+      await S.people.put(p);
+      await S.secrets.put({
+        person_id: id,
+        password: input.password || 'password123',
+        history: [],
+        changed_at: nowIso(),
+        mfa_secret: null,
+        recovery: null,
+        failed: 0,
+        locked_until: null,
+      });
+      return await signedIn(p);
+    },
+
+    async listIndividuals(): Promise<Person[]> {
+      netGuard(); await ready;
+      await superAdmin();
+      return (await S.people.toArray()).filter((p) => p.role === 'individual');
+    },
+
+    async updateIndividualPlan(id: string, plan: 'free' | 'pro') {
+      netGuard(); await ready;
+      await superAdmin();
+      await S.people.update(id, { plan, monthly_scans: plan === 'pro' ? 0 : 5 });
+    },
+
+    async resetIndividualScans(id: string) {
+      netGuard(); await ready;
+      await superAdmin();
+      await S.people.update(id, { monthly_scans: 0 });
+    },
+
+    async toggleIndividualStatus(id: string, active: boolean) {
+      netGuard(); await ready;
+      await superAdmin();
+      await S.people.update(id, { active });
+    },
+
+    async deleteIndividual(id: string) {
+      netGuard(); await ready;
+      await superAdmin();
+      await S.people.delete(id);
+      await S.secrets.delete(id);
+    },
+
+    async upgradeMyPlan(_plan: 'pro', _cycle: 'monthly' | 'annual', _paymentMethod?: string) {
+      netGuard(); await ready; await wait(600);
+      const p = await me();
+      await S.people.update(p.id, { plan: 'pro', monthly_scans: 0 });
+      if (token === p.id) {
+        // Updated current person
+      }
+    },
+
+    async recordScanUsage() {
+      netGuard(); await ready;
+      const p = await me();
+      const plan = p.plan ?? 'free';
+      const count = (p.monthly_scans ?? 0) + 1;
+      const freeMax = individualPricing.free_scans_limit || 5;
+      const limit = plan === 'pro' ? 999999 : freeMax;
+      if (plan !== 'pro' && (p.monthly_scans ?? 0) >= freeMax) {
+        return { allowed: false, count: p.monthly_scans ?? freeMax, limit: freeMax, plan: 'free' };
+      }
+      await S.people.update(p.id, { monthly_scans: count });
+      return { allowed: true, count, limit, plan };
+    },
+
+    async getIndividualPricing(): Promise<IndividualPricingConfig> {
+      netGuard(); await ready;
+      return { ...individualPricing };
+    },
+
+    async updateIndividualPricing(input: Partial<IndividualPricingConfig>): Promise<IndividualPricingConfig> {
+      netGuard(); await ready;
+      await superAdmin();
+      individualPricing = {
+        ...individualPricing,
+        ...input,
+        updated_at: nowIso(),
+      };
+      return { ...individualPricing };
+    },
+
+    // ---------------------------------------------------------------- organizers
+    async listOrganizers(): Promise<OrganizerDetail[]> {
+      netGuard(); await ready;
+      await superAdmin();
+      const allPeople = await S.people.toArray();
+      const organizers = allPeople.filter((p) => p.role === 'organizer');
+      const events = await S.events.toArray();
+      const nowTime = Date.now();
+
+      return organizers.map((org) => {
+        const ev = events.find((e) => e.id === org.default_event_id || (org.event_ids ?? []).includes(e.id));
+        const members = allPeople.filter((p) => p.organizer_id === org.id);
+        const endsTime = ev ? new Date(ev.ends_on).getTime() + 24 * 3600_000 : 0;
+        const isExpired = endsTime > 0 && nowTime > endsTime;
+        return {
+          ...org,
+          event_id: ev?.id,
+          event_name: ev?.name ?? 'Assigned Event',
+          starts_on: ev?.starts_on,
+          ends_on: ev?.ends_on,
+          venue: ev?.venue,
+          members_count: members.length,
+          is_expired: isExpired,
+        };
+      });
+    },
+
+    async createOrganizer(input) {
+      netGuard(); await ready;
+      await superAdmin();
+      const evId = 'ev-org-' + uuid();
+      const orgId = 'org-' + uuid();
+      const code = 'ORG-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+
+      const ev: EventItem = {
+        id: evId,
+        company_id: '',
+        name: input.event_name.trim(),
+        starts_on: input.starts_on,
+        ends_on: input.ends_on,
+        venue: input.venue?.trim() || '',
+        booth: '',
+        status: 'open',
+        description: 'Organizer Managed Event',
+        organizer_id: orgId,
+        organizer_name: input.organizer_name.trim(),
+        max_logins: input.max_logins || 10,
+        time_zone: 'UTC',
+        template_id: null,
+        attachments: [],
+      };
+      await S.events.put(ev);
+
+      const orgPerson: Person = {
+        id: orgId,
+        company_id: null,
+        email: input.organizer_email.trim().toLowerCase(),
+        name: input.organizer_name.trim(),
+        phone: '',
+        role: 'organizer',
+        referral_code: code,
+        max_logins: input.max_logins || 10,
+        event_ids: [evId],
+        default_event_id: evId,
+        access_ends_on: input.ends_on,
+        event_ends_on: input.ends_on,
+        active: true,
+        invited: false,
+        avatar_url: null,
+        has_password: true,
+        mfa_enabled: false,
+      };
+      await S.people.put(orgPerson);
+      await S.secrets.put({
+        person_id: orgId,
+        password: input.password || 'password123',
+        history: [],
+        changed_at: nowIso(),
+        mfa_secret: null,
+        recovery: null,
+        failed: 0,
+        locked_until: null,
+      });
+
+      return { organizer: orgPerson, event: ev, referral_code: code };
+    },
+
+    async updateOrganizerLogins(organizerId: string, max_logins: number) {
+      netGuard(); await ready;
+      await superAdmin();
+      await S.people.update(organizerId, { max_logins });
+      const ev = (await S.events.toArray()).find((e) => e.organizer_id === organizerId);
+      if (ev) await S.events.update(ev.id, { max_logins });
+    },
+
+    async getOrganizerDetails(id: string) {
+      netGuard(); await ready;
+      await superAdmin();
+      const allPeople = await S.people.toArray();
+      const org = allPeople.find((p) => p.id === id && p.role === 'organizer');
+      if (!org) throw new Error('Organizer not found');
+
+      const events = await S.events.toArray();
+      const ev = events.find((e) => e.id === org.default_event_id || (org.event_ids ?? []).includes(e.id));
+      const members = allPeople.filter((p) => p.organizer_id === id);
+      const leads = await S.leads.toArray();
+
+      const membersWithLeads = members.map((m) => {
+        const leadCount = leads.filter((l) => l.captured_by === m.id && !l.deleted_at).length;
+        return { ...m, lead_count: leadCount };
+      });
+
+      const totalScans = leads.filter((l) => (l.captured_by === id || members.some((m) => m.id === l.captured_by)) && !l.deleted_at).length;
+      const endsTime = ev ? new Date(ev.ends_on).getTime() + 24 * 3600_000 : 0;
+
+      return {
+        organizer: {
+          ...org,
+          event_id: ev?.id,
+          event_name: ev?.name ?? 'Assigned Event',
+          starts_on: ev?.starts_on,
+          ends_on: ev?.ends_on,
+          venue: ev?.venue,
+          members_count: members.length,
+          is_expired: endsTime > 0 && Date.now() > endsTime,
+        },
+        members: membersWithLeads,
+        total_scans: totalScans,
+      };
+    },
+
+    async updateOrganizerMember(_organizerId: string, memberId: string, input: { active?: boolean; name?: string; phone?: string }) {
+      netGuard(); await ready;
+      await superAdmin();
+      await S.people.update(memberId, input);
+    },
+
+    async deleteOrganizerMember(_organizerId: string, memberId: string) {
+      netGuard(); await ready;
+      await superAdmin();
+      await S.people.delete(memberId);
+      await S.secrets.delete(memberId);
+    },
+
+    async updateOrganizerEvent(organizerId: string, input: { event_name: string; starts_on: string; ends_on: string; venue?: string; max_logins?: number }) {
+      netGuard(); await ready;
+      await superAdmin();
+      const ev = (await S.events.toArray()).find((e) => e.organizer_id === organizerId);
+      if (ev) {
+        await S.events.update(ev.id, {
+          name: input.event_name.trim(),
+          starts_on: input.starts_on,
+          ends_on: input.ends_on,
+          venue: input.venue?.trim() || '',
+          max_logins: input.max_logins ?? ev.max_logins,
+        });
+      }
+      await S.people.update(organizerId, {
+        event_ends_on: input.ends_on,
+        access_ends_on: input.ends_on,
+        max_logins: input.max_logins ?? undefined,
+      });
+    },
+
+    async registerReferral(input) {
+      netGuard(); await ready;
+      const refCode = input.referral_code.trim().toUpperCase();
+      const allPeople = await S.people.toArray();
+      const org = allPeople.find((p) => (p.referral_code ?? '').toUpperCase() === refCode);
+      if (!org) throw new Error('Invalid or expired referral code.');
+
+      // Check max logins
+      const members = allPeople.filter((p) => p.organizer_id === org.id);
+      if (members.length >= (org.max_logins || 10)) {
+        throw new Error('This event has reached the maximum allowed participant logins limit set by the organizer.');
+      }
+
+      // Check event expiry (24h past ends_on)
+      const ev = (await S.events.toArray()).find((e) => e.id === org.default_event_id || (org.event_ids ?? []).includes(e.id));
+      if (ev) {
+        const deadline = new Date(ev.ends_on).getTime() + 24 * 3600_000;
+        if (Date.now() > deadline) {
+          throw new Error('This event ended more than 24 hours ago. Registration is no longer open.');
+        }
+      }
+
+      const cleanPhone = (input.phone || '').replace(/[\s\-\(\)\.]/g, '').trim();
+      if (!cleanPhone || cleanPhone.length < 7) throw new Error('Please enter a valid mobile number.');
+      const existingPhone = allPeople.find((p) => (p.phone || '').replace(/[\s\-\(\)\.]/g, '') === cleanPhone);
+      if (existingPhone) throw new Error('Access is not granted — an account with this mobile number already exists. One account per mobile number.');
+
+      const id = 'mem-' + uuid();
+      const p: Person = {
+        id,
+        company_id: null,
+        organizer_id: org.id,
+        email: input.email.trim().toLowerCase(),
+        name: input.name.trim() || 'Event Member',
+        phone: input.phone?.trim() || cleanPhone,
+        role: 'staff',
+        event_ids: org.event_ids ?? [],
+        default_event_id: org.default_event_id,
+        access_ends_on: org.access_ends_on,
+        event_ends_on: org.event_ends_on,
+        active: true,
+        invited: false,
+        avatar_url: null,
+        has_password: true,
+        mfa_enabled: false,
+      };
+      await S.people.put(p);
+      await S.secrets.put({
+        person_id: id,
+        password: input.password || 'password123',
+        history: [],
+        changed_at: nowIso(),
+        mfa_secret: null,
+        recovery: null,
+        failed: 0,
+        locked_until: null,
+      });
+
+      return await signedIn(p);
     },
   };
 }

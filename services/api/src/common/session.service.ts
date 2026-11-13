@@ -11,7 +11,7 @@
  * the next request, not the one after the cache expires. The security policy is cached instead —
  * it changes once in a while, and saving it clears the entry.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { CacheService } from './cache.service';
 import { newToken, sha256 } from './crypto';
 import { DbService } from './db.service';
@@ -23,9 +23,9 @@ export interface Session {
   id: string;
   person_id: string;
   company_id: string | null;
-  role: 'super_admin' | 'client_admin' | 'staff';
+  role: 'super_admin' | 'client_admin' | 'staff' | 'individual' | 'organizer';
   stage: AuthStage;
-  portal: 'super_admin' | 'client_admin' | 'staff' | null;
+  portal: 'super_admin' | 'client_admin' | 'staff' | 'individual' | 'organizer' | null;
   device: string;
   expires_at: string;
   last_seen_at: string;
@@ -37,6 +37,7 @@ export interface Session {
 
 @Injectable()
 export class SessionService {
+  private readonly log = new Logger('Session');
   constructor(private readonly db: DbService, private readonly cache: CacheService) {}
 
   /** Opens a session and returns the token — the only time it exists outside the browser. */
@@ -49,10 +50,25 @@ export class SessionService {
     userAgent: string;
     days: number;
   }): Promise<{ token: string; id: string }> {
+    // If super admin, restrict active sessions to at most 2.
+    // When the 3rd session logs in, revoke the first (oldest) logged in device.
+    const person = await this.db.one<{ role: string }>(`select role::text as role from people where id = $1`, [input.personId]);
+    if (person?.role === 'super_admin') {
+      const oldest = await this.db.query<{ id: string }>(
+        `select id from device_sessions
+          where person_id = $1 and revoked_at is null
+          order by created_at desc offset 1`,
+        [input.personId],
+      );
+      for (const row of oldest) {
+        await this.db.query(`update device_sessions set revoked_at = now() where id = $1`, [row.id]);
+      }
+    }
+
     const token = newToken();
     const row = await this.db.one<{ id: string }>(
       `insert into device_sessions (person_id, token_hash, stage, portal, device, ip, user_agent, expires_at)
-       values ($1, $2, $3::auth_stage, $4::app_role, $5, $6::inet, $7, now() + make_interval(days => $8))
+       values ($1, $2, $3::auth_stage, $4::app_role, $5, $6, $7, now() + make_interval(days => $8))
        returning id`,
       [input.personId, sha256(token), input.stage, input.portal, input.device.slice(0, 200), input.ip,
         input.userAgent.slice(0, 400), Math.max(1, input.days)],
@@ -89,7 +105,14 @@ export class SessionService {
       await this.revoke(session.id);
       throw unauthorized('This sign-in has expired. Please sign in again.');
     }
-    if (policy.idle_timeout_minutes > 0) {
+    // Super Admin security constraints: max 2 active sessions & strict 5-minute inactivity auto-logout
+    if (session.role === 'super_admin') {
+      const idleFor = (now - new Date(session.last_seen_at).getTime()) / 60_000;
+      if (idleFor > 5) {
+        await this.revoke(session.id);
+        throw unauthorized('You were signed out after 5 minutes of inactivity for security. Sign in again to continue.');
+      }
+    } else if (policy.idle_timeout_minutes > 0 && session.role !== 'staff' && session.role !== 'individual') {
       const idleFor = (now - new Date(session.last_seen_at).getTime()) / 60_000;
       if (idleFor > policy.idle_timeout_minutes) {
         await this.revoke(session.id);
@@ -117,15 +140,19 @@ export class SessionService {
   /** "Last seen" for the idle timeout and the device list; written at most once a minute. */
   async touch(session: Session, where: { ip: string | null; device?: string; location?: string }): Promise<void> {
     if (Date.now() - new Date(session.last_seen_at).getTime() < 60_000) return;
-    await this.db.query(
-      `update device_sessions
-          set last_seen_at = now(),
-              ip = coalesce($2::inet, ip),
-              device = case when $3 <> '' then $3 else device end,
-              location = case when $4 <> '' then $4 else location end
-        where id = $1`,
-      [session.id, where.ip, (where.device ?? '').slice(0, 200), (where.location ?? '').slice(0, 120)],
-    );
+    try {
+      await this.db.query(
+        `update device_sessions
+            set last_seen_at = now(),
+                ip = coalesce($2, ip),
+                device = case when $3 <> '' then $3 else device end,
+                location = case when $4 <> '' then $4 else location end
+          where id = $1`,
+        [session.id, where.ip, (where.device ?? '').slice(0, 200), (where.location ?? '').slice(0, 120)],
+      );
+    } catch (err: any) {
+      this.log.warn(`Session touch failed: ${err.message}`);
+    }
   }
 
   async revoke(id: string): Promise<void> {

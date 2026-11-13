@@ -1,7 +1,7 @@
 import { t } from './lib/i18n';
 import type { ComponentType } from 'preact';
 import { useEffect } from 'preact/hooks';
-import { LocationProvider, Router, Route, lazy, useLocation, ErrorBoundary } from 'preact-iso';
+import { LocationProvider, Router, Route, useLocation, ErrorBoundary } from 'preact-iso';
 import { AppShell } from './components/AppShell';
 import { OcrPopup } from './components/OcrPopup';
 import { Spinner, Toaster } from './components/ui';
@@ -12,27 +12,27 @@ import { doorForRole, isOldAppPath, linkFor, readPath, signInPath } from './lib/
 import { reportError } from './lib/errors';
 import { SCREENS, canSee, homeFor } from './routes';
 
-// Pages load on demand to keep the first download small (§8.1).
-const SignIn = lazy(() => import('./screens/SignIn'));
-const Home = lazy(() => import('./screens/Home'));
-const Scan = lazy(() => import('./screens/Scan'));
-const ScanV2 = lazy(() => import('./screens/ScanV2'));
-const MyLeads = lazy(() => import('./screens/MyLeads'));
-const Leads = lazy(() => import('./screens/Leads'));
-const Team = lazy(() => import('./screens/Team'));
-const Settings = lazy(() => import('./screens/Settings'));
-const Companies = lazy(() => import('./screens/Companies'));
-const Subscriptions = lazy(() => import('./screens/Subscriptions'));
-const AuditLog = lazy(() => import('./screens/AuditLog'));
-const Support = lazy(() => import('./screens/Support'));
-const Usage = lazy(() => import('./screens/Usage'));
-const Security = lazy(() => import('./screens/Security'));
-const Profile = lazy(() => import('./screens/Profile'));
+import SignIn from './screens/SignIn';
+import Home from './screens/Home';
+import Scan from './screens/Scan';
+import ScanV2 from './screens/ScanV2';
+import MyLeads from './screens/MyLeads';
+import Leads from './screens/Leads';
+import Team from './screens/Team';
+import Settings from './screens/Settings';
+import Companies from './screens/Companies';
+import Subscriptions from './screens/Subscriptions';
+import AuditLog from './screens/AuditLog';
+import Support from './screens/Support';
+import Usage from './screens/Usage';
+import Security from './screens/Security';
+import Profile from './screens/Profile';
+import Upgrade from './screens/Upgrade';
 
 const COMPONENTS: Record<string, ComponentType> = {
   '/home': Home, '/scan': Scan, '/scan-v2': ScanV2, '/my-leads': MyLeads, '/leads': Leads, '/team': Team, '/settings': Settings, '/settings/crm': Settings,
   '/companies': Companies, '/subscriptions': Subscriptions, '/audit': AuditLog, '/support': Support, '/usage': Usage,
-  '/security': Security, '/profile': Profile,
+  '/security': Security, '/profile': Profile, '/upgrade': Upgrade,
 };
 
 const Loading = () => <div class="flex h-full items-center justify-center py-16" role="status" aria-label={t('Loading')} data-loading><Spinner class="size-7 text-brand-700" /></div>;

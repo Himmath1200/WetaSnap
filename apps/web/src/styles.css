@@ -51,77 +51,94 @@
   --color-btn: #047857;
   --color-btn-ink: #ffffff;
 
-  /* The sign-in door is one deliberately dark surface in both themes (design, Oct 2026),
-     so its colours are their own names and never flip with data-theme. */
-  --color-door: #08090d;
-  --color-door-card: #11131a;
-  --color-door-input: #151720;
-  --color-door-line: rgb(255 255 255 / 0.08);
-  --color-door-ink: #f3f4f6;
-  --color-door-muted: #9aa1ad;
-  --color-mint: #10b981;
+  /* sign-in door — light-mode defaults */
+  --color-door: #f0f4f8;
+  --color-door-card: #ffffff;
+  --color-door-input: #f8fafc;
+  --color-door-line: rgb(0 0 0 / 0.08);
+  --color-door-ink: #0f172a;
+  --color-door-muted: #64748b;
+  --color-mint: #059669;
 }
 
 /* ---------------------------------------------------------------- dark theme */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* Shared dark-mode token block — applied by data-theme and by the media query below. */
 @layer theme {
   .dark-tokens,
   :root[data-theme="dark"] {
-    --color-canvas: #0a0a0b;
-    --color-surface: #141416;
-    --color-subtle: #1c1c1f;
-    --color-ink: #f2f2f3;
-    --color-muted: #a0a0a6;
-    --color-line: #2b2b2f;
-    --color-btn: #10b981;
-    --color-btn-ink: #04241a;
+    --color-canvas: #0d0f14;
+    --color-surface: #161820;
+    --color-subtle: #1e2029;
+    --color-ink: #eceef5;
+    --color-muted: #8b909e;
+    --color-line: #2a2d38;
+    --color-btn: #059669;
+    --color-btn-ink: #ffffff;
 
-    /* tinted backgrounds become deep tints; the 700–900 text steps become light */
-    --color-brand-50: #0c1e17;
-    --color-brand-100: #123027;
-    --color-brand-200: #18503c;
+    /* door — dark mode */
+    --color-door: #08090d;
+    --color-door-card: #11131a;
+    --color-door-input: #151720;
+    --color-door-line: rgb(255 255 255 / 0.08);
+    --color-door-ink: #f3f4f6;
+    --color-door-muted: #9aa1ad;
+    --color-mint: #10b981;
+
+    /* brand scale — dark backgrounds, bright text */
+    --color-brand-50: #0d1e17;
+    --color-brand-100: #133327;
+    --color-brand-200: #1b4d3b;
     --color-brand-500: #10b981;
-    --color-brand-600: #10b981;
-    --color-brand-700: #34d399;
-    --color-brand-800: #6ee7b7;
-    --color-brand-900: #a7f3d0;
+    --color-brand-600: #34d399;
+    --color-brand-700: #6ee7b7;
+    --color-brand-800: #a7f3d0;
+    --color-brand-900: #d1fae5;
 
-    --color-ocean-50: #0e1c26;
-    --color-ocean-100: #14293a;
-    --color-ocean-200: #1d3b52;
+    /* ocean/blue scale */
+    --color-ocean-50: #0d1b28;
+    --color-ocean-100: #132437;
+    --color-ocean-200: #1a334f;
     --color-ocean-500: #60a5fa;
-    --color-ocean-600: #3b82f6;
-    --color-ocean-700: #93c5fd;
-    --color-ocean-800: #bfdbfe;
+    --color-ocean-600: #93c5fd;
+    --color-ocean-700: #bfdbfe;
+    --color-ocean-800: #dbeafe;
 
-    --color-slate-50: #1c1c1f;
-    --color-slate-100: #232327;
-    --color-slate-200: #2c2c31;
-    --color-slate-300: #3d3d43;
-    --color-slate-400: #86868c;
-    --color-slate-500: #a0a0a6;
-    --color-slate-600: #c2c2c7;
-    --color-slate-700: #e3e3e6;
+    /* slate scale — flipped so low numbers = dark surfaces, high numbers = light text */
+    --color-slate-50: #1a1d26;
+    --color-slate-100: #21242f;
+    --color-slate-200: #2a2e3d;
+    --color-slate-300: #3c4157;
+    --color-slate-400: #737995;
+    --color-slate-500: #9198b0;
+    --color-slate-600: #b8bdcf;
+    --color-slate-700: #d5d8e6;
+    --color-slate-800: #eceef5;
+    --color-slate-900: #f5f6fa;
 
-    --color-amber-50: #261d07;
-    --color-amber-100: #332709;
-    --color-amber-200: #4c3a10;
+    /* amber */
+    --color-amber-50: #20190a;
+    --color-amber-100: #2d2410;
+    --color-amber-200: #463a18;
     --color-amber-400: #fbbf24;
     --color-amber-800: #fcd34d;
     --color-amber-900: #fde68a;
 
-    --color-red-50: #2b1111;
-    --color-red-100: #3a1817;
-    --color-red-200: #5c2220;
+    /* red */
+    --color-red-50: #200e0e;
+    --color-red-100: #2f1414;
+    --color-red-200: #4a1e1e;
     --color-red-700: #fca5a5;
     --color-red-800: #fecaca;
 
-    --color-orange-100: #3a2009;
+    /* orange */
+    --color-orange-100: #2d1b0a;
     --color-orange-800: #fdba74;
 
-    --color-purple-50: #1f1430;
-    --color-purple-100: #291a3e;
+    /* purple */
+    --color-purple-50: #180f28;
+    --color-purple-100: #221538;
     --color-purple-700: #d8b4fe;
     --color-purple-800: #e9d5ff;
   }
@@ -130,59 +147,69 @@
 /* Follow the device setting when no theme was chosen. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-canvas: #0a0a0b;
-    --color-surface: #141416;
-    --color-subtle: #1c1c1f;
-    --color-ink: #f2f2f3;
-    --color-muted: #a0a0a6;
-    --color-line: #2b2b2f;
-    --color-btn: #10b981;
-    --color-btn-ink: #04241a;
+    --color-canvas: #0d0f14;
+    --color-surface: #161820;
+    --color-subtle: #1e2029;
+    --color-ink: #eceef5;
+    --color-muted: #8b909e;
+    --color-line: #2a2d38;
+    --color-btn: #059669;
+    --color-btn-ink: #ffffff;
 
-    --color-brand-50: #0c1e17;
-    --color-brand-100: #123027;
-    --color-brand-200: #18503c;
+    --color-door: #08090d;
+    --color-door-card: #11131a;
+    --color-door-input: #151720;
+    --color-door-line: rgb(255 255 255 / 0.08);
+    --color-door-ink: #f3f4f6;
+    --color-door-muted: #9aa1ad;
+    --color-mint: #10b981;
+
+    --color-brand-50: #0d1e17;
+    --color-brand-100: #133327;
+    --color-brand-200: #1b4d3b;
     --color-brand-500: #10b981;
-    --color-brand-600: #10b981;
-    --color-brand-700: #34d399;
-    --color-brand-800: #6ee7b7;
-    --color-brand-900: #a7f3d0;
+    --color-brand-600: #34d399;
+    --color-brand-700: #6ee7b7;
+    --color-brand-800: #a7f3d0;
+    --color-brand-900: #d1fae5;
 
-    --color-ocean-50: #0e1c26;
-    --color-ocean-100: #14293a;
-    --color-ocean-200: #1d3b52;
+    --color-ocean-50: #0d1b28;
+    --color-ocean-100: #132437;
+    --color-ocean-200: #1a334f;
     --color-ocean-500: #60a5fa;
-    --color-ocean-600: #3b82f6;
-    --color-ocean-700: #93c5fd;
-    --color-ocean-800: #bfdbfe;
+    --color-ocean-600: #93c5fd;
+    --color-ocean-700: #bfdbfe;
+    --color-ocean-800: #dbeafe;
 
-    --color-slate-50: #1c1c1f;
-    --color-slate-100: #232327;
-    --color-slate-200: #2c2c31;
-    --color-slate-300: #3d3d43;
-    --color-slate-400: #86868c;
-    --color-slate-500: #a0a0a6;
-    --color-slate-600: #c2c2c7;
-    --color-slate-700: #e3e3e6;
+    --color-slate-50: #1a1d26;
+    --color-slate-100: #21242f;
+    --color-slate-200: #2a2e3d;
+    --color-slate-300: #3c4157;
+    --color-slate-400: #737995;
+    --color-slate-500: #9198b0;
+    --color-slate-600: #b8bdcf;
+    --color-slate-700: #d5d8e6;
+    --color-slate-800: #eceef5;
+    --color-slate-900: #f5f6fa;
 
-    --color-amber-50: #261d07;
-    --color-amber-100: #332709;
-    --color-amber-200: #4c3a10;
+    --color-amber-50: #20190a;
+    --color-amber-100: #2d2410;
+    --color-amber-200: #463a18;
     --color-amber-400: #fbbf24;
     --color-amber-800: #fcd34d;
     --color-amber-900: #fde68a;
 
-    --color-red-50: #2b1111;
-    --color-red-100: #3a1817;
-    --color-red-200: #5c2220;
+    --color-red-50: #200e0e;
+    --color-red-100: #2f1414;
+    --color-red-200: #4a1e1e;
     --color-red-700: #fca5a5;
     --color-red-800: #fecaca;
 
-    --color-orange-100: #3a2009;
+    --color-orange-100: #2d1b0a;
     --color-orange-800: #fdba74;
 
-    --color-purple-50: #1f1430;
-    --color-purple-100: #291a3e;
+    --color-purple-50: #180f28;
+    --color-purple-100: #221538;
     --color-purple-700: #d8b4fe;
     --color-purple-800: #e9d5ff;
   }
@@ -224,7 +251,7 @@
 }
 
 @layer components {
-  .accent-bar { background: linear-gradient(90deg, var(--color-brand-500), var(--color-ocean-600)); height: 3px; }
+  .accent-bar { display: none !important; }
   .brand-gradient { background: linear-gradient(135deg, var(--color-brand-600), var(--color-ocean-600)); }
   .brand-text { background: linear-gradient(90deg, var(--color-brand-600), var(--color-ocean-600)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
@@ -241,23 +268,28 @@
   .btn-primary:active:not(:disabled) { background: color-mix(in oklab, var(--color-btn) 78%, black); }
   /* Same pair for small solid-green surfaces (selected tab, “current” pill). */
   .on-brand { background: var(--color-btn); color: var(--color-btn-ink); }
-  .btn-secondary { @apply btn bg-surface text-ocean-700 border border-ocean-100 hover:bg-ocean-50; }
+  .btn-secondary { @apply btn bg-surface text-ocean-600 border border-line hover:bg-subtle; }
   .btn-ghost { @apply btn text-muted hover:bg-subtle; }
   .btn-danger { @apply btn bg-surface text-red-700 border border-red-200 hover:bg-red-50; }
-  .link { @apply text-ocean-700 font-medium hover:underline; }
+  .link { @apply text-ocean-600 font-medium hover:underline; }
   /* A 44 px tap area for small inline text buttons (Clear, Rename, Retake…) without moving the text:
      the negative margin gives back the extra height to the line it sits in. */
   .tap { display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; min-width: 2.75rem; margin-block: calc((1lh - 2.75rem) / 2); }
 
-  .input { @apply w-full rounded-xl border border-line bg-surface px-3 min-h-11 text-base sm:text-sm text-ink placeholder:text-slate-400 focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100 outline-none transition; }
+  .input { @apply w-full rounded-xl border border-line bg-subtle px-3 min-h-11 text-base sm:text-sm text-ink placeholder:text-muted focus:border-ocean-500 focus:ring-2 focus:ring-ocean-100 outline-none transition; }
   textarea.input { @apply py-2.5; }
   .input-warn { @apply border-amber-400 bg-amber-50 focus:border-amber-400 focus:ring-amber-100; }
-  .label { @apply block text-xs font-semibold text-slate-600 mb-1; }
+  .label { @apply block text-xs font-semibold text-muted mb-1 uppercase tracking-wider; }
 
-  .card { @apply bg-surface rounded-2xl border border-line shadow-[0_1px_2px_rgba(15,23,42,0.04)]; }
+  .card { @apply bg-surface rounded-2xl border border-line shadow-[0_1px_3px_rgba(0,0,0,0.06)]; }
   /* Raised surfaces: menus, popovers, the notification panel. */
-  .pop { @apply bg-surface rounded-2xl border border-line shadow-[0_12px_32px_-8px_rgba(15,23,42,0.22)]; }
-  :root[data-theme="dark"] .pop { box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7); }
+  .pop { @apply bg-surface rounded-2xl border border-line shadow-[0_12px_32px_-8px_rgba(0,0,0,0.18)]; }
+  :root[data-theme="dark"] .pop { box-shadow: 0 16px 48px -12px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.05); }
+  :root[data-theme="dark"] .card { box-shadow: 0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .pop { box-shadow: 0 16px 48px -12px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.05); }
+    :root:not([data-theme="light"]) .card { box-shadow: 0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04); }
+  }
   .pill { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap; }
   .chip { @apply inline-flex items-center gap-1.5 rounded-full border px-3 min-h-11 text-sm font-medium transition; }
 
@@ -265,7 +297,16 @@
   .door-card {
     background: var(--color-door-card);
     border: 1px solid var(--color-door-line);
+    box-shadow: 0 4px 24px -4px rgb(0 0 0 / 0.10), inset 0 1px 0 0 rgb(255 255 255 / 0.6);
+  }
+  :root[data-theme="dark"] .door-card,
+  .door-scope:where([data-theme="dark"] *) .door-card {
     box-shadow: 0 20px 40px -15px rgb(0 0 0 / 0.6), inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .door-card {
+      box-shadow: 0 20px 40px -15px rgb(0 0 0 / 0.6), inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+    }
   }
   .door-input {
     @apply w-full rounded-xl border px-3.5 min-h-11 text-base sm:text-sm outline-none transition;
@@ -273,33 +314,35 @@
     border-color: var(--color-door-line);
     color: var(--color-door-ink);
   }
-  .door-input::placeholder { color: #6b7280; }
-  .door-input:focus { border-color: rgb(16 185 129 / 0.55); box-shadow: 0 0 0 3px rgb(16 185 129 / 0.2); }
+  .door-input::placeholder { color: var(--color-door-muted); }
+  .door-input:focus { border-color: var(--color-mint); box-shadow: 0 0 0 3px rgb(16 185 129 / 0.2); }
   .door-input:-webkit-autofill { -webkit-text-fill-color: var(--color-door-ink); box-shadow: 0 0 0 1000px var(--color-door-input) inset; }
-  .door-label { @apply block text-[11px] font-semibold uppercase tracking-wider mb-2; color: #cbd5e1; }
+  .door-label { @apply block text-[11px] font-semibold uppercase tracking-wider mb-2; color: var(--color-door-muted); }
   .door-cta {
     @apply btn text-sm font-bold;
-    background: linear-gradient(to bottom, #1cd295, var(--color-mint));
-    color: #052e1f;
-    box-shadow: 0 0 24px -4px rgb(16 185 129 / 0.3);
+    background: var(--color-mint);
+    color: #fff;
+    box-shadow: 0 0 20px -4px rgb(16 185 129 / 0.35);
   }
-  .door-cta:hover:not(:disabled) { background: linear-gradient(to bottom, #20dc9d, #0ea774); }
+  .door-cta:hover:not(:disabled) { background: color-mix(in oklab, var(--color-mint) 88%, black); }
   .door-cta:active:not(:disabled) { transform: scale(0.99); }
   .door-link { @apply text-xs font-medium transition-colors; color: var(--color-door-muted); }
   .door-link:hover:not(:disabled) { color: var(--color-mint); }
   .door-link:disabled { @apply opacity-50; }
-  .door-note { @apply rounded-xl px-3 py-2 text-xs; background: rgb(59 130 246 / 0.14); color: #bfdbfe; }
-  .door-error { @apply rounded-xl border px-3 py-2 text-sm font-medium; background: rgb(239 68 68 / 0.12); border-color: rgb(239 68 68 / 0.3); color: #fca5a5; }
+  .door-note { @apply rounded-xl px-3 py-2 text-xs; background: rgb(16 185 129 / 0.1); color: var(--color-mint); border: 1px solid rgb(16 185 129 / 0.2); }
+  .door-error { @apply rounded-xl border px-3 py-2 text-sm font-medium; background: rgb(239 68 68 / 0.08); border-color: rgb(239 68 68 / 0.25); color: #dc2626; }
+  :root[data-theme="dark"] .door-error { color: #fca5a5; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .door-error { color: #fca5a5; } }
   .door-chip {
     @apply flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-colors;
-    background: rgb(21 23 32 / 0.8);
-    border-color: rgb(255 255 255 / 0.05);
+    background: var(--color-door-input);
+    border-color: var(--color-door-line);
   }
-  .door-chip:hover { background: #1a1d29; border-color: rgb(255 255 255 / 0.15); }
-  /* A mint focus ring on the dark door, where the app's blue default would vanish. */
-  .door-card :focus-visible, .door-chip:focus-visible { outline-color: #34d399; }
-  /* Shared small print (Copyright) picks up the door's grey instead of the theme's. */
-  .door-scope { --color-muted: #9aa1ad; }
+  .door-chip:hover { background: var(--color-door-card); border-color: var(--color-mint); }
+  /* focus ring uses mint so it reads on any door background */
+  .door-card :focus-visible, .door-chip:focus-visible { outline-color: var(--color-mint); }
+  /* Copyright inherits muted from the door scope */
+  .door-scope { --color-muted: var(--color-door-muted); }
 }
 
 /* The sign-in door is one centred screen: hide the page scrollbar, scrolling still works. */

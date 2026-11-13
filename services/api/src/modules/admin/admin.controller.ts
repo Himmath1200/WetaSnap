@@ -97,6 +97,12 @@ export class AdminController {
     return this.admin.licenceHistory(me, parse(uuid, id));
   }
 
+  @Put('people/:id/email')
+  async updatePersonEmail(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(z.object({ email: email, reinvite: z.boolean().default(true) }), body);
+    return this.admin.updatePersonEmail(me, parse(uuid, id), input.email, input.reinvite);
+  }
+
   // ---------------------------------------------------------------- usage
   @Get('usage')
   usage(@Me() me: Caller, @Query('month') month?: string) {
@@ -200,5 +206,111 @@ export class AdminController {
       from: /^\d{4}-\d{2}-\d{2}$/.test(String(from)) ? String(from) : '',
       to: /^\d{4}-\d{2}-\d{2}$/.test(String(to)) ? String(to) : '',
     });
+  }
+
+  // ---------------------------------------------------------------- individuals
+  @Get('individuals')
+  listIndividuals(@Me() me: Caller) {
+    return this.admin.listIndividuals(me);
+  }
+
+  @Put('individuals/:id/plan')
+  updateIndividualPlan(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(z.object({ plan: z.enum(['free', 'pro']) }), body);
+    return this.admin.updateIndividualPlan(me, parse(uuid, id), input.plan);
+  }
+
+  @Post('individuals/:id/reset-scans')
+  resetIndividualScans(@Me() me: Caller, @Param('id') id: string) {
+    return this.admin.resetIndividualScans(me, parse(uuid, id));
+  }
+
+  @Put('individuals/:id/status')
+  toggleIndividualStatus(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(z.object({ active: z.boolean() }), body);
+    return this.admin.toggleIndividualStatus(me, parse(uuid, id), input.active);
+  }
+
+  @Delete('individuals/:id')
+  deleteIndividual(@Me() me: Caller, @Param('id') id: string) {
+    return this.admin.deleteIndividual(me, parse(uuid, id));
+  }
+
+  @Put('individual-pricing')
+  updateIndividualPricing(@Me() me: Caller, @Body() body: unknown) {
+    const input = parse(z.object({
+      free_scans_limit: z.number().int().min(1).max(1000).optional(),
+      pro_price_month: z.number().int().min(1).max(100000).optional(),
+      pro_price_year: z.number().int().min(1).max(1000000).optional(),
+      currency: z.string().max(3).optional(),
+      free_features: z.array(z.string()).optional(),
+      pro_features: z.array(z.string()).optional(),
+    }), body);
+    return this.admin.updateIndividualPricing(me, input);
+  }
+
+  // ---------------------------------------------------------------- organizers
+  @Get('organizers')
+  listOrganizers(@Me() me: Caller) {
+    return this.admin.listOrganizers(me);
+  }
+
+  @Post('organizers')
+  createOrganizer(@Me() me: Caller, @Body() body: unknown) {
+    const input = parse(z.object({
+      event_id: uuid.optional(),
+      event_name: z.string().trim().min(1).max(200),
+      starts_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      venue: z.string().trim().max(200).optional(),
+      organizer_name: z.string().trim().min(1).max(100),
+      organizer_email: email,
+      password: z.string().min(6).max(200).optional(),
+      max_logins: z.number().int().min(1).max(10000).default(10),
+    }), body);
+    return this.admin.createOrganizer(me, input);
+  }
+
+  @Put('organizers/:id/logins')
+  updateOrganizerLogins(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(z.object({ max_logins: z.number().int().min(1).max(10000) }), body);
+    return this.admin.updateOrganizerLogins(me, parse(uuid, id), input.max_logins);
+  }
+
+  @Get('organizers/:id')
+  getOrganizerDetails(@Me() me: Caller, @Param('id') id: string) {
+    return this.admin.getOrganizerDetails(me, parse(uuid, id));
+  }
+
+  @Put('organizers/:id/event')
+  updateOrganizerEvent(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
+    const input = parse(z.object({
+      event_name: z.string().trim().min(1).max(200),
+      starts_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      venue: z.string().trim().max(200).optional(),
+      max_logins: z.number().int().min(1).max(10000).optional(),
+    }), body);
+    return this.admin.updateOrganizerEvent(me, parse(uuid, id), input);
+  }
+
+  @Put('organizers/:id/members/:memberId')
+  updateOrganizerMember(
+    @Me() me: Caller,
+    @Param('id') id: string,
+    @Param('memberId') memberId: string,
+    @Body() body: unknown,
+  ) {
+    const input = parse(z.object({
+      active: z.boolean().optional(),
+      name: z.string().trim().max(100).optional(),
+      phone: z.string().trim().max(40).optional(),
+    }), body);
+    return this.admin.updateOrganizerMember(me, parse(uuid, id), parse(uuid, memberId), input);
+  }
+
+  @Delete('organizers/:id/members/:memberId')
+  deleteOrganizerMember(@Me() me: Caller, @Param('id') id: string, @Param('memberId') memberId: string) {
+    return this.admin.deleteOrganizerMember(me, parse(uuid, id), parse(uuid, memberId));
   }
 }

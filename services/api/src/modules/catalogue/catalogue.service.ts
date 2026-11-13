@@ -45,23 +45,57 @@ export class CatalogueService {
 
   // ---------------------------------------------------------------- events
   async events(me: Caller): Promise<EventDto[]> {
-    return this.db.asQuery<EventDto>(me, `select ${EVENT_COLUMNS} from events order by starts_on desc`);
+    // Super admins see only platform events created directly by Super Admin (where company_id is null / organizer events)
+    if (me.role === 'super_admin') {
+      return this.db.asQuery<EventDto>(
+        me,
+        `select ${EVENT_COLUMNS} from events where company_id is null order by starts_on desc`,
+      );
+    }
+
+    // Company admins and company staff: only see events owned by their specific company
+    if (me.companyId) {
+      return this.db.asQuery<EventDto>(
+        me,
+        `select ${EVENT_COLUMNS} from events where company_id = $1 order by starts_on desc`,
+        [me.companyId],
+      );
+    }
+
+    // Organizers: only see events assigned to their organizer ID or their default event
+    if (me.role === 'organizer') {
+      return this.db.asQuery<EventDto>(
+        me,
+        `select ${EVENT_COLUMNS} from events where organizer_id = $1 or id in (select default_event_id from people where id = $1) order by starts_on desc`,
+        [me.personId],
+      );
+    }
+
+    // Attendee staff under an organizer: only see the organizer's assigned event
+    return this.db.asQuery<EventDto>(
+      me,
+      `select ${EVENT_COLUMNS} from events where organizer_id in (select organizer_id from people where id = $1)
+         or id in (select default_event_id from people where id = $1)
+       order by starts_on desc`,
+      [me.personId],
+    );
   }
 
   async saveEvent(me: Caller, input: Partial<EventDto> & { id?: string }): Promise<EventDto> {
     const company = this.companyOf(me);
+    const templateId = input.template_id && input.template_id.trim() ? input.template_id.trim() : null;
     const row = input.id
       ? await this.db.asOne<EventDto>(me,
         `update events set name = $2, starts_on = $3, ends_on = $4, venue = $5, booth = $6,
                 status = $7::event_status, description = $8, time_zone = $9, template_id = $10
            where id = $1 returning ${EVENT_COLUMNS}`,
         [input.id, input.name, input.starts_on, input.ends_on, input.venue ?? '', input.booth ?? '',
-          input.status ?? 'open', input.description ?? '', input.time_zone ?? 'UTC', input.template_id ?? null])
+          input.status ?? 'open', input.description ?? '', input.time_zone ?? 'UTC', templateId])
       : await this.db.asOne<EventDto>(me,
         `insert into events (company_id, name, starts_on, ends_on, venue, booth, status, description, time_zone, template_id)
          values ($1, $2, $3, $4, $5, $6, $7::event_status, $8, $9, $10) returning ${EVENT_COLUMNS}`,
         [company, input.name, input.starts_on, input.ends_on, input.venue ?? '', input.booth ?? '',
-          input.status ?? 'open', input.description ?? '', input.time_zone ?? 'UTC', input.template_id ?? null]);
+          input.status ?? 'open', input.description ?? '', input.time_zone ?? 'UTC', templateId]);
     if (!row) throw notFound('That event');
     await this.audit.write(me, { action: input.id ? 'event.update' : 'event.create', entity: 'events', entityId: row.id, details: { name: row.name } });
     return row;
@@ -158,10 +192,11 @@ export class CatalogueService {
     return this.db.asQuery<FieldDto>(me,
       `select ${FIELD_COLUMNS} from field_definitions
         where template_id = coalesce(
-          (select e.template_id from events e where e.id = $1),
-          (select t.id from field_templates t where t.is_default limit 1))
+          (select e.template_id from events e where e.id::text = $1::text),
+          (select t.id from field_templates t where t.is_default limit 1),
+          (select t.id from field_templates t limit 1))
         order by sort_order, label`,
-      [eventId]);
+      [eventId ?? null]);
   }
 
   async fieldsOfTemplate(me: Caller, templateId: string): Promise<FieldDto[]> {

@@ -13,7 +13,7 @@ const BASE = String(import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
 export interface DevAccount {
   email: string;
   name: string;
-  role: 'super_admin' | 'client_admin' | 'staff';
+  role: 'super_admin' | 'client_admin' | 'staff' | 'individual';
   company: string;
 }
 

@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
@@ -18,6 +19,20 @@ export default defineConfig({
     strictPort: true,
     // Allow Cloudflare quick-tunnel hosts (each run gets a new random subdomain).
     allowedHosts: true,
+    proxy: {
+      '/v1': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/dev': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+      '/health': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+    },
     watch: {
       // Playwright writes traces and screenshots here while a run is in progress; watching them
       // sends the dev server into a reload loop and the site stops answering.

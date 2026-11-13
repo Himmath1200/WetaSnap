@@ -121,7 +121,7 @@ export class PipelineService {
   async storeCard(me: Caller, input: {
     leadId: string; side: 'front' | 'back'; image: Buffer; mime: string; crop?: CropRect | null;
   }): Promise<{ stored: boolean; quality: Quality }> {
-    if (!me.companyId) throw new DomainError('WeTano accounts do not capture cards.', 400);
+    if (!me.companyId && me.role !== 'individual') throw new DomainError('WeTano accounts do not capture cards.', 400);
 
     const lead = await this.db.asOne<{ id: string }>(me,
       'select id from leads where id = $1 and deleted_at is null', [input.leadId]);
@@ -132,7 +132,8 @@ export class PipelineService {
       ? await cropCard(input.image, input.crop ?? null)
       : { ...(await normaliseImage(input.image)), applied: null, by: 'none' as const };
 
-    const key = StorageService.cardKey(me.companyId, input.leadId, input.side);
+    const folder = me.companyId ?? me.personId;
+    const key = StorageService.cardKey(folder, input.leadId, input.side);
     await this.storage.put(key, prepared.image, 'image/jpeg');
 
     await this.db.as(me, async (c) => {
@@ -144,7 +145,7 @@ export class PipelineService {
             set storage_key = excluded.storage_key, size_bytes = excluded.size_bytes,
                 width = excluded.width, height = excluded.height, quality = excluded.quality,
                 crop = excluded.crop, stage = 'cropped', created_at = now()`,
-        [me.companyId, input.leadId, input.side, key, prepared.image.length, prepared.width, prepared.height,
+        [me.companyId ?? null, input.leadId, input.side, key, prepared.image.length, prepared.width, prepared.height,
           JSON.stringify(quality), JSON.stringify(prepared.applied ?? {})]);
       await c.query(
         `update leads set has_photo = (has_photo or $2 = 'front'), has_back_photo = (has_back_photo or $2 = 'back')
@@ -154,7 +155,7 @@ export class PipelineService {
     // The background re-read only pays off for the front, and only when a reader is configured.
     if (input.side === 'front') {
       await this.queue.add('card.read', { lead_id: input.leadId, key }, {
-        companyId: me.companyId, dedupeKey: `card.read:${input.leadId}`,
+        companyId: me.companyId ?? undefined, dedupeKey: `card.read:${input.leadId}`,
       });
     }
     return { stored: true, quality };

@@ -14,9 +14,11 @@ const emptyAudit = (): Filters => ({ q: '', company_id: '', action: '', from: ''
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 const ROLE_META: Record<Role | 'system', { label: string; cls: string }> = {
-  super_admin: { label: 'WeTano', cls: 'bg-slate-200 text-slate-700' },
+  super_admin: { label: 'WeTano', cls: 'bg-subtle text-muted' },
   client_admin: { label: 'Client Admin', cls: 'bg-subtle text-muted' },
+  organizer: { label: 'Organizer', cls: 'bg-purple-50 text-purple-700' },
   staff: { label: 'Staff', cls: 'bg-subtle text-muted' },
+  individual: { label: 'Individual', cls: 'bg-brand-50 text-brand-700' },
   system: { label: 'System', cls: 'bg-subtle text-muted' },
 };
 
@@ -133,7 +135,7 @@ export default function AuditLog() {
           )}
       </div>
 
-      <Sheet open={!!open} onClose={() => setOpen(null)} wide title={open ? actionLabel(open.action) : ''}>
+      <Sheet open={!!open} onClose={() => setOpen(null)} centered wide title={open ? actionLabel(open.action) : ''}>
         {open && (
           <div class="space-y-4">
             <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
@@ -239,7 +241,7 @@ function AuditFilterBar({ value, onChange, companies, actions, onExport, canExpo
             {count > 0 && <span class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-ocean-600 text-[11px] font-bold text-white">{count}</span>}
           </button>
 
-          {open && <div class="fixed inset-0 z-30 bg-slate-900/25 sm:hidden" onClick={() => setOpen(false)} />}
+          {open && <div class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm sm:hidden" onClick={() => setOpen(false)} />}
           {open && (
             <div class="fixed inset-x-0 bottom-0 z-40 max-h-[80dvh] overflow-y-auto rounded-t-3xl border border-line bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl sm:pb-4 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:bottom-auto sm:mt-2 sm:w-[340px] sm:rounded-2xl" role="dialog" aria-label={t('Filter the audit log')}>
               <div class="mb-3 flex items-center justify-between">

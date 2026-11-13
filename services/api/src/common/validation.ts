@@ -32,10 +32,16 @@ const label = (path: string) => {
 const lower = (s: string) => s.replace(/^./, (c) => c.toLowerCase());
 
 // ---------------------------------------------------------------- shared shapes
-export const uuid = z.string().uuid('must be an id');
+const baseId = z.string().trim().refine(
+  (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) || (v.length > 0 && v.length <= 64),
+  'must be an id',
+);
+
+export const uuid = z.preprocess((v) => (v === '' ? null : v), baseId.nullish()) as unknown as z.ZodType<string>;
+export const flexibleId = z.preprocess((v) => (v === '' ? null : v), baseId.nullish()) as unknown as z.ZodType<string>;
 export const email = z.string().trim().toLowerCase().email('must be a valid email address').max(200);
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD)');
 export const shortText = (max = 200) => z.string().trim().max(max);
 export const code6 = z.string().trim().regex(/^\d{6}$/, 'must be the 6 digits from the email');
 /** Never trust a client-sent list to be short. */
-export const idList = (max = 500) => z.array(uuid).max(max).default([]);
+export const idList = (max = 500) => z.array(z.string().trim().min(1).max(64)).max(max).default([]);

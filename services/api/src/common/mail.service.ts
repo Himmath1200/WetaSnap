@@ -25,7 +25,9 @@ export class MailService {
   }
 
   async send(mail: Mail): Promise<{ sent: boolean; error?: string }> {
-    const from = mail.fromName ? `${mail.fromName} <${address(this.env.MAIL_FROM)}>` : this.env.MAIL_FROM;
+    const fromAddr = address(this.env.MAIL_FROM);
+    const fromName = mail.fromName || 'WeTano Support';
+    const from = `"${fromName.replace(/"/g, '')}" <${fromAddr}>`;
     if (this.env.MAIL_DRIVER === 'log' || !this.env.SMTP_URL) {
       this.log.log(`\n  ── email ──────────────────────────────────────────────\n  to:      ${mail.to}\n  subject: ${mail.subject}\n${text(mail.html).split('\n').map((l) => `  ${l}`).join('\n')}\n  ───────────────────────────────────────────────────────`);
       this.keep(mail);

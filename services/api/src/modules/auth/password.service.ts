@@ -5,11 +5,12 @@
  * The rules live in `security_policy`, set by WeTano and applied to everyone — the app shows the
  * same list while someone types, but the decision is made here.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../../common/audit.service';
 import { hashCode, hashPassword, sixDigits, verifyPassword } from '../../common/crypto';
 import { DbService } from '../../common/db.service';
 import { DomainError } from '../../common/errors';
+import { loadEnv } from '../../common/env';
 import { MailService } from '../../common/mail.service';
 import { SessionService } from '../../common/session.service';
 
@@ -69,9 +70,9 @@ export class PasswordService {
     if (p.reuse_block > 0) {
       const old = await this.db.query<{ hash: string }>(
         `select hash from (
-           select password_hash as hash, password_set_at as at from person_credentials where person_id = $1 and password_hash is not null
+           select password_hash as hash, changed_at as at from person_credentials where person_id = $1 and password_hash is not null
            union all
-           select hash, changed_at as at from password_history where person_id = $1
+           select password_hash as hash, changed_at as at from password_history where person_id = $1
          ) h where hash is not null order by at desc nulls last limit $2`,
         [personId, p.reuse_block],
       );
@@ -87,17 +88,17 @@ export class PasswordService {
       const current = await c.one<{ password_hash: string | null }>(
         `select password_hash from person_credentials where person_id = $1`, [personId]);
       if (current?.password_hash) {
-        await c.query(`insert into password_history (person_id, hash) values ($1, $2)`, [personId, current.password_hash]);
+        await c.query(`insert into password_history (person_id, password_hash) values ($1, $2)`, [personId, current.password_hash]);
         await c.query(
           `delete from password_history where id in (
              select id from password_history where person_id = $1 order by changed_at desc offset 24)`, [personId]);
       }
       await c.query(
-        `insert into person_credentials (person_id, password_hash, password_set_at, failed_attempts, locked_until)
-         values ($1, $2, now(), 0, null)
+        `insert into person_credentials (person_id, password_hash, history, changed_at, failed, locked_until)
+         values ($1, $2, '{}', now(), 0, null)
          on conflict (person_id) do update
-            set password_hash = excluded.password_hash, password_set_at = now(),
-                failed_attempts = 0, locked_until = null, updated_at = now()`,
+            set password_hash = excluded.password_hash, changed_at = now(),
+                failed = 0, locked_until = null`,
         [personId, hash],
       );
       await c.query(`update people set has_password = true, invited = false where id = $1`, [personId]);
@@ -146,7 +147,7 @@ export class PasswordService {
     const p = await this.policy();
     if (p.expiry_days <= 0) return false;
     const row = await this.db.one<{ age: number }>(
-      `select extract(day from now() - coalesce(password_set_at, now()))::int as age
+      `select extract(day from now() - coalesce(changed_at, now()))::int as age
          from person_credentials where person_id = $1`, [personId]);
     return (row?.age ?? 0) > p.expiry_days;
   }
@@ -195,11 +196,16 @@ export class PasswordService {
     });
 
     const setup = purpose === 'reset' && !person.has_password;
-    await this.mail.send({
+    const sent = await this.mail.send({
       to: person.email,
+      fromName: 'WeTano Support',
       subject: setup ? 'Choose your WeTa Snap password' : `Your WeTa Snap ${purpose === 'change' ? 'password change' : 'password reset'} code`,
       html: this.mail.passwordCode(person.name, code, setup),
     });
+    if (!sent.sent && loadEnv().MAIL_DRIVER === 'smtp') {
+      new Logger('PasswordService').error(`Password reset email failed to ${person.email}: ${sent.error}`);
+      throw new DomainError(`Could not send password email to ${person.email}: ${sent.error ?? 'SMTP delivery failed'}`, 500);
+    }
     return { sent: true, code, personId: person.id };
   }
 
@@ -208,47 +214,84 @@ export class PasswordService {
    * Returns an empty string when the address may not have one (deactivated, suspended, flooded).
    */
   async mint(personId: string, email: string, purpose: 'reset' | 'change', minutes: number): Promise<string> {
+    const cleanEmail = email.trim().toLowerCase();
     const recent = await this.db.one<{ n: string }>(
       `select count(*)::text as n from password_codes
-        where lower(email) = lower($1) and created_at > now() - interval '15 minutes'`, [email]);
+        where lower(email) = $1 and created_at > now() - interval '15 minutes'`, [cleanEmail]);
     if (Number(recent?.n ?? 0) >= 5) return '';
     const code = sixDigits();
     await this.db.tx(async (c) => {
       await c.query(
-        `update password_codes set used_at = now()
-          where lower(email) = lower($1) and purpose = $2::password_purpose and used_at is null`,
-        [email, purpose]);
-      await c.query(
         `insert into password_codes (email, person_id, purpose, code_hash, expires_at)
          values ($1, $2, $3::password_purpose, $4, now() + make_interval(mins => $5))`,
-        [email.toLowerCase(), personId, purpose, hashCode(code), minutes]);
+        [cleanEmail, personId, purpose, hashCode(code), minutes]);
     });
     return code;
   }
 
   /** Checks a code and spends it. Five wrong tries kill it. */
   async useCode(email: string, code: string, purpose: 'reset' | 'change'): Promise<string> {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanCode = code.trim();
+    const expectedHash = hashCode(cleanCode);
+
+    // 1. Look for an exact match among unspent, non-expired codes (within 7 days / duration)
     const row = await this.db.one<{ id: string; person_id: string; code_hash: string; attempts: number; expires_at: Date }>(
       `select id, person_id, code_hash, attempts, expires_at from password_codes
-        where lower(email) = lower($1) and purpose = $2::password_purpose and used_at is null
+        where lower(email) = $1 and purpose = $2::password_purpose and code_hash = $3 and used_at is null
         order by created_at desc limit 1`,
-      [email, purpose],
+      [cleanEmail, purpose, expectedHash],
     );
-    if (!row) throw new DomainError('Ask for a new code — that one is no longer valid.', 400, 'bad_code');
-    if (new Date(row.expires_at).getTime() < Date.now()) {
-      await this.db.query(`update password_codes set used_at = now() where id = $1`, [row.id]);
-      throw new DomainError('That code has expired. Ask for a new one.', 400, 'bad_code');
+
+    if (row) {
+      if (new Date(row.expires_at).getTime() < Date.now()) {
+        await this.db.query(`update password_codes set used_at = now() where id = $1`, [row.id]);
+        throw new DomainError('That code has expired. Ask for a new one.', 400, 'bad_code');
+      }
+      if (row.attempts >= 5) {
+        await this.db.query(`update password_codes set used_at = now() where id = $1`, [row.id]);
+        throw new DomainError('Too many tries. Ask for a new code.', 400, 'bad_code');
+      }
+      // Spend it and clean up all older codes for this email and purpose
+      await this.db.query(`update password_codes set used_at = now() where lower(email) = $1 and purpose = $2::password_purpose`, [cleanEmail, purpose]);
+      return row.person_id;
     }
-    if (row.attempts >= 5) {
-      await this.db.query(`update password_codes set used_at = now() where id = $1`, [row.id]);
-      throw new DomainError('Too many tries. Ask for a new code.', 400, 'bad_code');
+
+    // 2. Fallback: Check if the user entered a code that was created within the last 15 minutes (even if a second invite was triggered)
+    const recentMatch = await this.db.one<{ id: string; person_id: string; attempts: number; expires_at: Date }>(
+      `select id, person_id, attempts, expires_at from password_codes
+        where lower(email) = $1 and purpose = $2::password_purpose and code_hash = $3 and created_at > now() - interval '15 minutes'
+        order by created_at desc limit 1`,
+      [cleanEmail, purpose, expectedHash],
+    );
+
+    if (recentMatch) {
+      await this.db.query(`update password_codes set used_at = now() where lower(email) = $1 and purpose = $2::password_purpose`, [cleanEmail, purpose]);
+      return recentMatch.person_id;
     }
-    if (row.code_hash !== hashCode(code)) {
-      await this.db.query(`update password_codes set attempts = attempts + 1 where id = $1`, [row.id]);
-      throw new DomainError('That code is not right.', 400, 'bad_code');
+
+    // 3. Code did not match: count an attempt on any active code so lockout is tracked
+    const anyActive = await this.db.one<{ id: string; attempts: number; expires_at: Date }>(
+      `select id, attempts, expires_at from password_codes
+        where lower(email) = $1 and purpose = $2::password_purpose and used_at is null
+        order by created_at desc limit 1`,
+      [cleanEmail, purpose],
+    );
+
+    if (anyActive) {
+      if (new Date(anyActive.expires_at).getTime() < Date.now()) {
+        await this.db.query('update password_codes set used_at = now() where id = $1', [anyActive.id]);
+        throw new DomainError('That code has expired. Ask for a new one.', 400, 'bad_code');
+      }
+      await this.db.query('update password_codes set attempts = attempts + 1 where id = $1', [anyActive.id]);
+      if (anyActive.attempts + 1 >= 5) {
+        await this.db.query('update password_codes set used_at = now() where id = $1', [anyActive.id]);
+        throw new DomainError('Too many wrong codes. Ask for a new code.', 400, 'bad_code');
+      }
+      throw new DomainError('That code is not right. Please check your latest email.', 400, 'bad_code');
     }
-    await this.db.query(`update password_codes set used_at = now() where id = $1`, [row.id]);
-    return row.person_id;
+
+    throw new DomainError('Ask for a new code — that one is no longer valid.', 400, 'bad_code');
   }
 
   /** After a reset every other device is signed out — that is the point of a reset. */

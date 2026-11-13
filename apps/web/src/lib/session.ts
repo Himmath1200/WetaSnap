@@ -1,5 +1,5 @@
-import { createStore } from './store';
-import { db, unsyncedCount, wipeDevice, wipeDeviceKeepUnsynced, type Session } from './db';
+import { createStore, toast } from './store';
+import { db, wipeDevice, wipeDeviceKeepUnsynced, type Session } from './db';
 import { backend, type SignedIn } from './backend';
 import { OfflineError } from './net';
 import type { EventItem, FieldDefinition } from './types';
@@ -98,8 +98,7 @@ export async function refreshSession() {
   try {
     const fresh = await (await backend()).refresh();
     if (!fresh) {
-      // W5: leads captured before the access end date are still accepted — flush them first.
-      if ((await unsyncedCount()) === 0) await endSession(true);
+      // Do NOT kick user out on a temporary refresh hiccup or network drop
       return;
     }
     const next: Session = {
@@ -152,16 +151,33 @@ export async function setEvent(event_id: string) {
 }
 
 /** Sign-out wipes local data (AUTH-07). `forced` = access removed by an admin. */
+let ending = false;
 export async function endSession(forced = false, opts: { keepUnsynced?: boolean } = {}) {
+  if (ending) return;
+  ending = true;
   try {
-    await (await backend()).signOut();
-  } catch { /* offline is fine */ }
-  if (opts.keepUnsynced) await wipeDeviceKeepUnsynced();
-  else await wipeDevice();
-  session.set(null);
-  config.set({ events: [], fields: [] });
-  announce(null);
-  if (forced) sessionStorage.setItem('wetasnap-ended', '1');
-  // The sign-in page uses this to decide not to send the person back to the screen they left.
-  sessionStorage.setItem('wetasnap-left', '1');
+    try {
+      await (await backend()).signOut();
+    } catch { /* offline is fine */ }
+    if (opts.keepUnsynced) await wipeDeviceKeepUnsynced();
+    else await wipeDevice();
+    session.set(null);
+    config.set({ events: [], fields: [] });
+    announce(null);
+    if (forced) sessionStorage.setItem('wetasnap-ended', '1');
+    // The sign-in page uses this to decide not to send the person back to the screen they left.
+    sessionStorage.setItem('wetasnap-left', '1');
+  } finally {
+    ending = false;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('wetasnap:unauthorized', (e: Event) => {
+    const detail = (e as CustomEvent<{ message?: string }>).detail;
+    if (detail?.message) {
+      toast(detail.message, 'error', 6000);
+    }
+    void endSession(true);
+  });
 }

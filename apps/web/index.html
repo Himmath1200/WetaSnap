@@ -17,9 +17,9 @@
         var p = localStorage.getItem('wetasnap-theme');
         if (p === 'dark' || p === 'light') document.documentElement.setAttribute('data-theme', p);
         var dark = p === 'dark' || (p !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.style.background = dark ? '#0b1220' : '#f6faf9';
+        document.documentElement.style.background = dark ? '#0d0f14' : '#f6faf9';
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m && dark) m.setAttribute('content', '#0b1220');
+        if (m && dark) m.setAttribute('content', '#0d0f14');
       } catch (e) {}
     </script>
   </head>

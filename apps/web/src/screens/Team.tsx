@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { UserPlus, Pencil, Search, Phone, Check, SlidersHorizontal, X } from 'lucide-preact';
+import { UserPlus, Pencil, Search, Phone, Check, SlidersHorizontal, X, UserCheck, UserX, Link, Copy } from 'lucide-preact';
 import { Avatar, Dialog, Field, SortHeader, SortMenu, Spinner } from '../components/ui';
 import { backend, type Invitation, type PersonRow, type SeatInfo } from '../lib/backend';
 import { InvitationNote } from '../components/Invitation';
@@ -18,7 +18,7 @@ const STATUS = {
   deactivated: 'bg-subtle text-muted',
 } as const;
 
-type TeamRole = Exclude<Role, 'super_admin'>;
+type TeamRole = Exclude<Role, 'super_admin' | 'individual' | 'organizer'>;
 type TeamStatus = PersonRow['status'];
 
 interface TeamFilters { roles: TeamRole[]; statuses: TeamStatus[]; event_ids: string[] }
@@ -75,29 +75,115 @@ export default function Team() {
   const events = (p: PersonRow) => (p.event_ids.length > 1 ? t('{n} events', { n: p.event_ids.length }) : p.event_name ?? '—');
   const until = (p: PersonRow) => (p.access_ends_on ? t('Access until {date}', { date: new Date(p.access_ends_on).toLocaleDateString() }) : t('No end date'));
 
+  async function togglePersonActive(p: PersonRow) {
+    if (p.id === session.get()?.person.id) {
+      toast(t('You cannot deactivate your own account.'), 'error');
+      return;
+    }
+    const nextActive = !p.active;
+    if (nextActive && full) {
+      toast(t('Cannot activate: all {n} seats are currently in use.', { n: seats?.seats ?? 0 }), 'error');
+      return;
+    }
+    try {
+      const b = await backend();
+      await b.updatePerson({
+        id: p.id,
+        name: p.name,
+        phone: p.phone,
+        role: p.role,
+        event_ids: p.event_ids,
+        default_event_id: p.default_event_id,
+        access_ends_on: p.access_ends_on,
+        active: nextActive,
+      });
+      toast(nextActive ? t('{name} activated', { name: p.name }) : t('{name} deactivated — seat freed', { name: p.name }), 'success');
+      await load();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    }
+  }
+
+  const currentPerson = session.get()?.person;
+  const isOrganizer = currentPerson?.role === 'organizer';
+  const orgSlug = (currentPerson?.name || 'organizer').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const vanityDomain = `wetano.${orgSlug}.com`;
+  const liveReferralUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/signin?ref=${currentPerson?.referral_code ?? ''}`
+    : `https://app.wetasnap.com/signin?ref=${currentPerson?.referral_code ?? ''}`;
+
   return (
     <div class="mx-auto w-full max-w-7xl">
-      <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 class="text-xl font-bold">{t('Team')}</h1>
-          <p class="text-sm text-muted">{t('Who can sign in, within your licensed seats.')}</p>
+          <h1 class="text-2xl font-bold tracking-tight text-ink">{isOrganizer ? t('Event Team & Scanners') : t('Team')}</h1>
+          <p class="text-sm text-muted mt-0.5">{isOrganizer ? t('Members who joined your event via your referral link.') : t('Manage team members, roles and event access')}</p>
         </div>
-        <button class="btn-primary" disabled={full} onClick={() => setEdit('new')} title={full ? t('All seats are in use') : ''}><UserPlus class="size-4" />{t('Invite person')}</button>
+        {!isOrganizer && (
+          <button class="btn-primary min-h-10 px-4 text-xs font-semibold gap-1.5" disabled={full} onClick={() => setEdit('new')} title={full ? t('All seats are in use') : ''}>
+            <UserPlus class="size-4" />{t('Invite person')}
+          </button>
+        )}
       </div>
 
-      {seats && (
-        <div class="card mb-4 p-4">
-          <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span class="font-semibold">{t('{used} of {seats} seats used', { used: seats.used, seats: seats.seats })}</span>
-            <span class="flex items-center gap-2 text-xs text-muted">
-              <span class={`pill ${LICENCE_META[seats.status].cls}`}>{t(LICENCE_META[seats.status].label)}</span>
-              {t('Licence valid till {date}', { date: new Date(seats.licence.ends_on).toLocaleDateString() })}
+      {isOrganizer && currentPerson?.referral_code && (
+        <div class="card mb-4 p-4 border-l-4 border-l-purple-600 bg-gradient-to-r from-purple-500/10 via-subtle to-transparent space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-1.5">
+              <Link class="size-3.5 text-purple-600" />
+              <span>{t('Your Event Referral Link')}</span>
+            </span>
+            <span class="font-mono text-xs font-bold text-purple-700 dark:text-purple-300 px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30">
+              {currentPerson.referral_code}
             </span>
           </div>
-          <div class="mt-2 h-2.5 overflow-hidden rounded-full bg-subtle">
-            <div class={`h-full rounded-full ${full ? 'bg-amber-500' : 'bg-gradient-to-r from-brand-500 to-ocean-600'}`} style={{ width: `${Math.min(100, (seats.used / seats.seats) * 100)}%` }} />
+
+          <div class="flex items-center gap-2 rounded-xl border border-line bg-surface p-2.5">
+            <div class="min-w-0 flex-1">
+              <span class="block font-mono text-xs font-bold text-ink truncate">{vanityDomain}</span>
+              <span class="block font-mono text-[11px] text-muted truncate">{liveReferralUrl}</span>
+            </div>
+            <button
+              class="btn-primary h-8 px-3 text-xs font-bold gap-1.5 shrink-0"
+              onClick={() => {
+                navigator.clipboard.writeText(liveReferralUrl);
+                toast(t('Referral link copied to clipboard!'), 'success');
+              }}
+            >
+              <Copy class="size-3.5 text-white" />
+              <span>{t('Copy link')}</span>
+            </button>
           </div>
-          {full && <p class="mt-2 text-xs font-medium text-amber-800">{t('All seats are in use. Deactivate someone or ask WeTano for more seats. People whose access ended free their seat automatically.')}</p>}
+          <p class="text-[11px] text-muted">
+            {t('Send this link to your team members or attendees. When they register, they automatically join your event as active scanners.')}
+          </p>
+        </div>
+      )}
+
+      {seats && (
+        <div class="card mb-4 p-4 border-l-4 border-l-brand-600 bg-subtle/40">
+          <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <div>
+              <span class="font-bold text-ink text-base">
+                {isOrganizer
+                  ? t('{used} of {seats} allowed team logins used', { used: seats.used, seats: seats.seats })
+                  : t('{used} of {seats} seats used', { used: seats.used, seats: seats.seats })}
+              </span>
+              <p class="text-xs text-muted mt-0.5">
+                {isOrganizer
+                  ? t('Login quota provisioned by your Super Admin. Active members can scan leads until 24 hours after the event.')
+                  : t('Seat capacity determined by your Super Admin licence. You can activate, deactivate and invite members within this limit.')}
+              </p>
+            </div>
+            <span class="flex items-center gap-2 text-xs text-muted">
+              <span class={`pill ${LICENCE_META[seats.status].cls}`}>{t(LICENCE_META[seats.status].label)}</span>
+              {t('Event concludes: {date}', { date: new Date(seats.licence.ends_on).toLocaleDateString() })}
+            </span>
+          </div>
+          <div class="mt-3 h-2.5 overflow-hidden rounded-full bg-subtle">
+            <div class={`h-full rounded-full transition-all ${full ? 'bg-amber-500' : 'bg-gradient-to-r from-brand-500 to-ocean-600'}`} style={{ width: `${Math.min(100, (seats.used / seats.seats) * 100)}%` }} />
+          </div>
+          {full && <p class="mt-2 text-xs font-semibold text-amber-800">{isOrganizer ? t('All allowed logins for this event have been claimed. Contact your Super Admin to expand your login quota.') : t('All seats are in use. Deactivate someone to free their seat, or request more seats from your WeTano Super Admin.')}</p>}
         </div>
       )}
 
@@ -128,7 +214,7 @@ export default function Team() {
                   <th class="px-4 py-2.5">{t('Events')}</th>
                   <SortHeader id="leads" sort={sort} onSort={setSort} align="right">{t('Leads captured')}</SortHeader>
                   <SortHeader id="status" sort={sort} onSort={setSort}>{t('Status')}</SortHeader>
-                  <th class="px-4 py-2.5"><span class="sr-only">{t('Edit')}</span></th>
+                  <th class="px-4 py-2.5 text-right"><span class="sr-only">{t('Actions')}</span></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line">
@@ -151,7 +237,33 @@ export default function Team() {
                     <td class="px-4 py-3 text-right tabular-nums">{p.lead_count}</td>
                     <td class="px-4 py-3"><span class={`pill capitalize ${STATUS[p.status]}`}>{t(p.status)}</span></td>
                     <td class="px-4 py-3 text-right">
-                      <button class="btn-ghost min-w-11 px-2" onClick={() => setEdit(p)} aria-label={t('Edit')}><Pencil class="size-4" /></button>
+                      <div class="inline-flex items-center gap-1.5 justify-end">
+                        {p.id !== session.get()?.person.id && (
+                          p.active ? (
+                            <button
+                              class="btn-secondary h-8 px-2.5 text-xs text-red-600 hover:bg-red-50 inline-flex items-center gap-1"
+                              onClick={() => void togglePersonActive(p)}
+                              title={t('Deactivate account (frees up seat)')}
+                            >
+                              <UserX class="size-3.5" />
+                              <span class="hidden sm:inline">{t('Deactivate')}</span>
+                            </button>
+                          ) : (
+                            <button
+                              class="btn-secondary h-8 px-2.5 text-xs text-emerald-700 hover:bg-emerald-50 inline-flex items-center gap-1"
+                              disabled={full}
+                              onClick={() => void togglePersonActive(p)}
+                              title={full ? t('All seats in use') : t('Activate account')}
+                            >
+                              <UserCheck class="size-3.5" />
+                              <span class="hidden sm:inline">{t('Activate')}</span>
+                            </button>
+                          )
+                        )}
+                        <button class="btn-ghost size-8 p-0 flex items-center justify-center rounded-lg hover:bg-subtle" onClick={() => setEdit(p)} aria-label={t('Edit')}>
+                          <Pencil class="size-4 text-muted" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -168,7 +280,31 @@ export default function Team() {
                     <p class="truncate text-xs text-muted">{events(p)}{p.access_ends_on ? ` · ${t('until {date}', { date: p.access_ends_on })}` : ''} · {tn(p.lead_count, '{n} lead', '{n} leads')}</p>
                   </div>
                   <span class={`pill capitalize ${STATUS[p.status]}`}>{t(p.status)}</span>
-                  <button class="btn-ghost min-h-11 min-w-11 px-2" onClick={() => setEdit(p)} aria-label={t('Edit')}><Pencil class="size-4" /></button>
+                  <div class="flex items-center gap-1 shrink-0">
+                    {p.id !== session.get()?.person.id && (
+                      p.active ? (
+                        <button
+                          class="btn-secondary h-8 px-2 text-xs text-red-600"
+                          onClick={() => void togglePersonActive(p)}
+                          title={t('Deactivate account')}
+                        >
+                          <UserX class="size-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          class="btn-secondary h-8 px-2 text-xs text-emerald-700"
+                          disabled={full}
+                          onClick={() => void togglePersonActive(p)}
+                          title={t('Activate account')}
+                        >
+                          <UserCheck class="size-3.5" />
+                        </button>
+                      )
+                    )}
+                    <button class="btn-ghost size-8 p-0 flex items-center justify-center rounded-lg" onClick={() => setEdit(p)} aria-label={t('Edit')}>
+                      <Pencil class="size-4 text-muted" />
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -226,7 +362,7 @@ function TeamFilterButton({ value, onChange, events }: { value: TeamFilters; onC
         {count > 0 && <span class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-ocean-600 text-[11px] font-bold text-white">{count}</span>}
       </button>
 
-      {open && <div class="fixed inset-0 z-30 bg-slate-900/25 sm:hidden" onClick={() => setOpen(false)} />}
+      {open && <div class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
         <div class="fixed inset-x-0 bottom-0 z-40 max-h-[80dvh] overflow-y-auto rounded-t-3xl border border-line bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:bottom-auto sm:mt-2 sm:max-h-[70vh] sm:w-[320px] sm:rounded-2xl sm:pb-4" role="dialog" aria-label={t('Filter people')}>
           <div class="mb-3 flex items-center justify-between">

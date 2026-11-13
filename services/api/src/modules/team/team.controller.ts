@@ -26,30 +26,27 @@ const updateBody = z.object({
   active: z.boolean().default(true),
 });
 
+@Roles('client_admin', 'organizer')
 @Controller('v1/team')
 export class TeamController {
   constructor(private readonly team: TeamService) {}
 
-  @Roles('client_admin')
   @Get()
   list(@Me() me: Caller) {
     return this.team.list(me);
   }
 
-  @Roles('client_admin')
   @Get('seats')
   seats(@Me() me: Caller) {
     return this.team.seats(me);
   }
 
-  @Roles('client_admin')
   @RateLimit(30, 60)
   @Post('invite')
   invite(@Me() me: Caller, @Body() body: unknown) {
     return this.team.invite(me, parse(inviteBody, body));
   }
 
-  @Roles('client_admin')
   @Put(':id')
   async update(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
     await this.team.update(me, { id: parse(uuid, id), ...parse(updateBody, body) });

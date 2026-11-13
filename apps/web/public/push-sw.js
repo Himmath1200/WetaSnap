@@ -28,3 +28,16 @@ self.addEventListener('notificationclick', (event) => {
     }),
   );
 });
+
+/* Background Sync API (triggers outbox flush when connectivity returns in background) */
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-leads' || event.tag === 'wetasnap-outbox') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        for (const client of clients) {
+          client.postMessage({ type: 'WETASNAP_TRIGGER_SYNC' });
+        }
+      }),
+    );
+  }
+});

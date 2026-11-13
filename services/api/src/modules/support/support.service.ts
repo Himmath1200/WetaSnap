@@ -17,13 +17,13 @@ export interface TicketDto {
 }
 
 const TICKET_SELECT = `
-  select t.id, t.number, t.company_id, c.name as company_name, t.opened_by, t.subject, t.body,
+  select t.id, t.number, t.company_id, coalesce(c.name, t.company_name, '') as company_name, t.opened_by, t.subject, t.body,
          t.status::text as status, t.priority::text as priority, t.assigned_to, t.created_at, t.updated_at,
          coalesce((select jsonb_agg(jsonb_build_object(
                       'id', m.id, 'at', m.at, 'author', m.author,
                       'from_wetano', m.from_wetano, 'body', m.body) order by m.at)
                      from support_messages m where m.ticket_id = t.id), '[]'::jsonb) as messages
-    from support_tickets t join companies c on c.id = t.company_id`;
+    from support_tickets t left join companies c on c.id::text = t.company_id::text`;
 
 @Injectable()
 export class SupportService {
@@ -35,31 +35,73 @@ export class SupportService {
   ) {}
 
   async list(me: Caller, filter: { status?: string; company_id?: string }): Promise<TicketDto[]> {
+    let whereClause = '';
+    const params: unknown[] = [filter.status ?? ''];
+
+    if (me.role === 'super_admin') {
+      whereClause = `where ($1 = '' or t.status::text = $1)
+                       and ($2::text is null or $2 = '' or t.company_id::text = $2)`;
+      params.push(filter.company_id ?? null);
+    } else if (me.role === 'client_admin') {
+      whereClause = `where ($1 = '' or t.status::text = $1)
+                       and t.company_id::text = $2::text`;
+      params.push(me.companyId ?? '');
+    } else if (me.role === 'individual') {
+      const person = await this.db.one<{ email: string }>('select email from people where id = $1', [me.personId]);
+      whereClause = `where ($1 = '' or t.status::text = $1)
+                       and (t.opened_by = $2 or t.company_id::text = $3::text)`;
+      params.push(person?.email ?? '', me.personId);
+    } else {
+      return [];
+    }
+
     return this.db.asQuery<TicketDto>(me,
       `${TICKET_SELECT}
-        where ($1 = '' or t.status = $1::ticket_status)
-          and ($2::uuid is null or t.company_id = $2)
+        ${whereClause}
         order by t.updated_at desc limit 500`,
-      [filter.status ?? '', filter.company_id ?? null]);
+      params);
   }
 
   async open(me: Caller, input: { subject: string; body: string; priority: string }): Promise<TicketDto> {
     const person = await this.db.one<{ email: string; name: string }>('select email, name from people where id = $1', [me.personId]);
     const number = await this.db.one<{ number: string }>(`select next_document_number('SUP') as number`);
+
+    let targetCompanyId: string;
+    let companyName: string;
+
+    if (me.role === 'organizer') {
+      targetCompanyId = me.personId;
+      companyName = `${person?.name ?? 'Event Organizer'} (Organizer)`;
+    } else if (me.role === 'individual' || !me.companyId) {
+      targetCompanyId = me.personId;
+      companyName = `${person?.name ?? 'Solo User'} (Individual)`;
+    } else {
+      targetCompanyId = me.companyId;
+      const co = await this.db.one<{ name: string }>('select name from companies where id = $1', [me.companyId]);
+      companyName = co?.name ?? 'Client Company';
+    }
+
     const id = await this.db.as(me, async (c) => {
       const row = await c.one<{ id: string }>(
-        `insert into support_tickets (number, company_id, opened_by, subject, body, priority)
-         values ($1, $2, $3, $4, $5, $6::ticket_priority) returning id`,
-        [number!.number, me.companyId, person?.email ?? '', input.subject.trim(), input.body.trim(), input.priority]);
+        `insert into support_tickets (number, company_id, company_name, opened_by, subject, body, priority)
+         values ($1, $2, $3, $4, $5, $6, $7::ticket_priority) returning id`,
+        [number!.number, targetCompanyId, companyName, person?.email ?? '', input.subject.trim(), input.body.trim(), input.priority]);
       await c.query(
         `insert into support_messages (ticket_id, author, from_wetano, body) values ($1, $2, false, $3)`,
         [row!.id, person?.name ?? person?.email ?? '', input.body.trim()]);
       return row!.id;
     });
-    await this.notifications.notify({
-      companyId: null, kind: 'support_reply', title: `New support request ${number!.number}`,
-      body: input.subject, link: '/support', dedupeKey: `support:new:${id}`,
-    });
+
+    try {
+      await this.notifications.notify({
+        companyId: null, kind: 'support_reply',
+        title: `New support request from ${companyName}`,
+        body: `${number!.number}: ${input.subject}`,
+        link: '/support', dedupeKey: `support:new:${id}`,
+      });
+    } catch (err: any) {
+      console.warn('[Support] notification warning on open:', err.message);
+    }
     await this.audit.write(me, { action: 'support.open', entity: 'support_tickets', entityId: id, details: { subject: input.subject } });
     return this.byId(me, id);
   }
@@ -67,39 +109,69 @@ export class SupportService {
   async reply(me: Caller, id: string, body: string): Promise<TicketDto> {
     const person = await this.db.one<{ email: string; name: string }>('select email, name from people where id = $1', [me.personId]);
     const fromWetano = me.role === 'super_admin';
-    const ticket = await this.db.asOne<{ company_id: string; number: string; subject: string }>(me,
-      'select company_id, number, subject from support_tickets where id = $1', [id]);
+    const ticket = await this.db.one<{ company_id: string; number: string; subject: string; opened_by: string }>(
+      'select company_id, number, subject, opened_by from support_tickets where id = $1', [id]);
     if (!ticket) throw notFound('That request');
+
+    // Isolation check: users can only reply to their own tickets
+    if (me.role === 'individual' && ticket.opened_by !== person?.email && ticket.company_id !== me.personId) {
+      throw notFound('That request');
+    }
+    if (me.role === 'client_admin' && ticket.company_id !== me.companyId) {
+      throw notFound('That request');
+    }
 
     await this.db.as(me, async (c) => {
       await c.query(
         `insert into support_messages (ticket_id, author, from_wetano, body) values ($1, $2, $3, $4)`,
-        [id, person?.name ?? '', fromWetano, body.trim()]);
+        [id, fromWetano ? 'WeTano Support' : (person?.name ?? person?.email ?? ''), fromWetano, body.trim()]);
       await c.query(
         `update support_tickets set status = case when $2 then 'waiting'::ticket_status else 'open'::ticket_status end,
                 updated_at = now() where id = $1`,
         [id, fromWetano]);
     });
 
-    if (fromWetano) {
-      await this.notifications.notify({
-        companyId: ticket.company_id, kind: 'support_reply',
-        title: `WeTano replied to ${ticket.number}`, body: ticket.subject, link: '/support',
-      });
-      const admins = await this.db.query<{ email: string }>(
-        `select email from people where company_id = $1 and role = 'client_admin' and active`, [ticket.company_id]);
-      for (const admin of admins) {
-        await this.mail.send({
-          to: admin.email,
-          subject: `WeTa Snap support — ${ticket.number}`,
-          html: this.mail.supportReply(ticket.number, ticket.subject, body),
+    try {
+      if (fromWetano) {
+        const co = await this.db.one<{ id: string }>('select id from companies where id::text = $1', [ticket.company_id]);
+        if (co) {
+          await this.notifications.notify({
+            companyId: co.id, kind: 'support_reply',
+            title: `WeTano replied to ${ticket.number}`, body: ticket.subject, link: '/support',
+          });
+          const admins = await this.db.query<{ email: string }>(
+            `select email from people where company_id = $1 and role = 'client_admin' and active`, [co.id]);
+          for (const admin of admins) {
+            await this.mail.send({
+              to: admin.email,
+              subject: `WeTa Snap support — ${ticket.number}`,
+              html: this.mail.supportReply(ticket.number, ticket.subject, body),
+            });
+          }
+        } else {
+          const ownerPerson = await this.db.one<{ id: string; email: string }>('select id, email from people where email = $1', [ticket.opened_by]);
+          if (ownerPerson) {
+            await this.notifications.notify({
+              companyId: null, personId: ownerPerson.id, kind: 'support_reply',
+              title: `WeTano replied to ${ticket.number}`, body: ticket.subject, link: '/support',
+            });
+            await this.mail.send({
+              to: ownerPerson.email,
+              subject: `WeTa Snap support — ${ticket.number}`,
+              html: this.mail.supportReply(ticket.number, ticket.subject, body),
+            });
+          }
+        }
+      } else {
+        await this.notifications.notify({
+          companyId: null, kind: 'support_reply',
+          title: `Reply on ${ticket.number}`, body: ticket.subject, link: '/support',
         });
       }
-    } else {
-      await this.notifications.notify({
-        companyId: null, kind: 'support_reply', title: `Reply on ${ticket.number}`, body: ticket.subject, link: '/super-admin/support',
-      });
+    } catch (err: any) {
+      console.warn('[Support] notification warning on reply:', err.message);
     }
+
     return this.byId(me, id);
   }
 

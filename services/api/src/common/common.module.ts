@@ -6,11 +6,12 @@ import { DbService } from './db.service';
 import { MailService } from './mail.service';
 import { QueueService } from './queue.service';
 import { SessionService } from './session.service';
+import { SmsService } from './sms.service';
 import { StorageService } from './storage.service';
 
 @Global()
 @Module({
-  providers: [DbService, CacheService, QueueService, StorageService, MailService, SessionService, AuditService],
-  exports: [DbService, CacheService, QueueService, StorageService, MailService, SessionService, AuditService],
+  providers: [DbService, CacheService, QueueService, StorageService, MailService, SmsService, SessionService, AuditService],
+  exports: [DbService, CacheService, QueueService, StorageService, MailService, SmsService, SessionService, AuditService],
 })
 export class CommonModule {}

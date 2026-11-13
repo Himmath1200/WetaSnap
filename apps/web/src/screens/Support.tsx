@@ -4,6 +4,7 @@ import { Avatar, Empty, Field, FilterChip, FilterPopover, Select, Sheet, Spinner
 import { backend } from '../lib/backend';
 import { toast, useStore } from '../lib/store';
 import { session } from '../lib/session';
+import { isOnline } from '../lib/net';
 import { timeAgo } from '../lib/id';
 import { t, tn } from '../lib/i18n';
 import type { SupportTicket, TicketPriority, TicketStatus } from '../lib/types';
@@ -11,7 +12,7 @@ import type { SupportTicket, TicketPriority, TicketStatus } from '../lib/types';
 /** S11 · Support — WeTano Super Admin answers tickets; a Client Admin raises and follows their own. */
 
 const STATUS_META: Record<TicketStatus, { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-slate-200 text-slate-700' },
+  open: { label: 'Open', cls: 'bg-subtle text-muted' },
   waiting: { label: 'Waiting', cls: 'bg-amber-100 text-amber-800' },
   resolved: { label: 'Resolved', cls: 'bg-brand-100 text-brand-800' },
   closed: { label: 'Closed', cls: 'bg-subtle text-muted' },
@@ -51,13 +52,30 @@ export default function Support() {
 
   const [rows, setRows] = useState<SupportTicket[] | null>(null);
   const [status, setStatus] = useState<TicketStatus | ''>('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'organizations' | 'organizers' | 'individuals'>('all');
   const [companyId, setCompanyId] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compose, setCompose] = useState(false);
 
   const load = async (keep?: string) => {
     try {
-      const list = await (await backend()).tickets({ status, company_id: isWetano ? companyId : (s.person.company_id ?? '') });
+      if (isOnline()) {
+        // First check and flush any queued offline tickets
+        try {
+          const raw = localStorage.getItem('wetasnap_offline_tickets');
+          const queue: { subject: string; body: string; priority: TicketPriority }[] = raw ? JSON.parse(raw) : [];
+          if (queue.length > 0) {
+            const b = await backend();
+            for (const item of queue) {
+              await b.openTicket(item).catch(() => {});
+            }
+            localStorage.removeItem('wetasnap_offline_tickets');
+            toast(t('Online: Your offline support requests have been submitted!'), 'success', 3000);
+          }
+        } catch {}
+      }
+
+      const list = await (await backend()).tickets({ status, company_id: isWetano ? companyId : (s.person.company_id ?? s.person.id) });
       setRows(list);
       setSelectedId((cur) => keep ?? (cur && list.some((x) => x.id === cur) ? cur : null));
     } catch (e) {
@@ -65,13 +83,31 @@ export default function Support() {
       toast((e as Error).message, 'error');
     }
   };
-  useEffect(() => { setRows(null); void load(); }, [status, companyId]);
+  useEffect(() => { setRows(null); void load(); }, [status, companyId, isOnline()]);
 
-  /** Newest activity first, with the ones waiting on you pulled to the top. */
-  const list = useMemo(() => [...(rows ?? [])].sort((a, b) => {
-    const d = Number(needsYou(b, isWetano)) - Number(needsYou(a, isWetano));
-    return d !== 0 ? d : b.updated_at.localeCompare(a.updated_at);
-  }), [rows, isWetano]);
+  /** Newest activity first, with the ones waiting on you pulled to the top, filtered by category. */
+  const list = useMemo(() => {
+    const sorted = [...(rows ?? [])].sort((a, b) => {
+      const d = Number(needsYou(b, isWetano)) - Number(needsYou(a, isWetano));
+      return d !== 0 ? d : b.updated_at.localeCompare(a.updated_at);
+    });
+
+    if (!isWetano || roleFilter === 'all') return sorted;
+
+    return sorted.filter((t) => {
+      const name = (t.company_name || '').toLowerCase();
+      if (roleFilter === 'individuals') {
+        return name.includes('(individual)') || !t.company_id;
+      }
+      if (roleFilter === 'organizers') {
+        return name.includes('(organizer)') || name.includes('organizer');
+      }
+      if (roleFilter === 'organizations') {
+        return !name.includes('(individual)') && !name.includes('(organizer)') && Boolean(t.company_id);
+      }
+      return true;
+    });
+  }, [rows, isWetano, roleFilter]);
 
   const companies = useMemo(() => {
     const by = new Map<string, string>();
@@ -91,10 +127,49 @@ export default function Support() {
       <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 class="text-xl font-bold">{t('Support')}</h1>
-          <p class="text-sm text-muted">{isWetano ? t('Requests from every client company.') : t('Ask WeTano for help and follow your requests here.')}</p>
+          <p class="text-sm text-muted">{isWetano ? t('Manage requests from organizations, event organizers, and solo individuals.') : t('Ask WeTano for help and follow your requests here.')}</p>
         </div>
         {!isWetano && <button class="btn-primary" onClick={() => setCompose(true)}><Plus class="size-4" />{t('New request')}</button>}
       </div>
+
+      {isWetano && (
+        <div class="mb-4 flex flex-wrap items-center gap-2">
+          {(
+            [
+              ['all', t('All Requests')],
+              ['organizations', t('Organizations')],
+              ['organizers', t('Event Organizers')],
+              ['individuals', t('Solo Individuals')],
+            ] as const
+          ).map(([key, label]) => {
+            const count = (rows ?? []).filter((t) => {
+              const name = (t.company_name || '').toLowerCase();
+              if (key === 'all') return true;
+              if (key === 'individuals') return name.includes('(individual)') || !t.company_id;
+              if (key === 'organizers') return name.includes('(organizer)') || name.includes('organizer');
+              return !name.includes('(individual)') && !name.includes('(organizer)') && Boolean(t.company_id);
+            }).length;
+
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRoleFilter(key)}
+                class={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition ${
+                  roleFilter === key
+                    ? 'border-brand-500 bg-brand-50 text-brand-700 shadow-sm font-bold'
+                    : 'border-line bg-surface text-muted hover:border-brand-300 hover:text-ink'
+                }`}
+              >
+                <span>{label}</span>
+                <span class={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${roleFilter === key ? 'bg-brand-600 text-white' : 'bg-subtle text-muted'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div class="mb-3 flex flex-wrap items-center gap-2">
         {/* Status and company live behind the filter button, as on every other list screen. */}
@@ -142,13 +217,21 @@ export default function Support() {
                 <ul class="divide-y divide-line">
                   {list.map((ticket) => {
                     const on = ticket.id === selectedId;
+                    const unread = needsYou(ticket, isWetano);
                     return (
                       <li key={ticket.id}>
-                        <button class={`flex min-h-11 w-full items-start gap-3 px-4 py-3 text-left transition ${on ? 'bg-brand-50' : 'hover:bg-brand-50/40'}`} onClick={() => setSelectedId(ticket.id)}>
-                          <span class={`mt-1.5 size-2 shrink-0 rounded-full ${needsYou(ticket, isWetano) ? 'bg-ocean-500' : 'bg-transparent'}`} aria-hidden="true" />
+                        <button class={`flex min-h-11 w-full items-start gap-3 px-4 py-3 text-left transition ${on ? 'bg-brand-50/80 border-l-4 border-l-brand-600' : unread ? 'bg-emerald-500/5 hover:bg-emerald-500/10' : 'hover:bg-subtle'}`} onClick={() => setSelectedId(ticket.id)}>
+                          <span class={`mt-1.5 size-2.5 shrink-0 rounded-full ${unread ? 'bg-emerald-500 animate-pulse' : 'bg-transparent'}`} aria-hidden="true" />
                           <span class="min-w-0 flex-1">
-                            <span class={`block truncate text-sm ${needsYou(ticket, isWetano) ? 'font-bold' : 'font-semibold'}`}>{ticket.subject}</span>
-                            <span class="block truncate text-xs text-muted">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                              <span class={`truncate text-sm ${unread ? 'font-bold text-ink' : 'font-semibold text-ink'}`}>{ticket.subject}</span>
+                              {unread && (
+                                <span class="pill bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                                  {isWetano ? t('Reply needed') : t('New reply')}
+                                </span>
+                              )}
+                            </div>
+                            <span class="block truncate text-xs text-muted mt-0.5">
                               {ticket.number}{isWetano ? ` · ${ticket.company_name}` : ''} · {timeAgo(ticket.updated_at)}
                             </span>
                             <span class="mt-1 flex flex-wrap gap-1"><StatusPill status={ticket.status} /><PriorityPill priority={ticket.priority} /></span>
@@ -288,6 +371,7 @@ function Message({ author, at, body, fromWetano, isWetano }: { author: string; a
 
 // ---------------------------------------------------------------- new request (Client Admin)
 function ComposeSheet({ onClose, onDone }: { onClose: () => void; onDone: (t: SupportTicket) => void }) {
+  const s = useStore(session);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [priority, setPriority] = useState<TicketPriority>('normal');
@@ -300,10 +384,56 @@ function ComposeSheet({ onClose, onDone }: { onClose: () => void; onDone: (t: Su
     if (body.trim().length < 5) { setErr(t('Please describe what is happening.')); return; }
     setBusy(true);
     try {
+      if (!isOnline()) {
+        // Queue ticket locally in offline outbox
+        const offlineId = `offline-${Date.now()}`;
+        const queuedTicket: SupportTicket = {
+          id: offlineId,
+          number: 'QUEUE',
+          company_id: '',
+          company_name: '',
+          opened_by: s?.person.email ?? '',
+          subject: subject.trim(),
+          body: body.trim(),
+          priority,
+          status: 'open',
+          assigned_to: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          messages: [
+            {
+              id: `msg-${Date.now()}`,
+              author: 'You',
+              from_wetano: false,
+              body: body.trim(),
+              at: new Date().toISOString(),
+            },
+          ],
+        };
+
+        const existingQueue = JSON.parse(localStorage.getItem('wetasnap_offline_tickets') || '[]');
+        existingQueue.push({ subject: subject.trim(), body: body.trim(), priority });
+        localStorage.setItem('wetasnap_offline_tickets', JSON.stringify(existingQueue));
+
+        toast(t('Offline: Support request saved locally. It will automatically send as soon as you reconnect to internet!'), 'info', 4000);
+        onDone(queuedTicket);
+        return;
+      }
+
       const made = await (await backend()).openTicket({ subject: subject.trim(), body: body.trim(), priority });
       toast(t('Request {number} sent — we will reply here.', { number: made.number }), 'success');
       onDone(made);
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) {
+      if ((e as Error).message === 'offline') {
+        const existingQueue = JSON.parse(localStorage.getItem('wetasnap_offline_tickets') || '[]');
+        existingQueue.push({ subject: subject.trim(), body: body.trim(), priority });
+        localStorage.setItem('wetasnap_offline_tickets', JSON.stringify(existingQueue));
+        toast(t('Offline: Request queued. Will auto-send when connection returns.'), 'info', 4000);
+        onClose();
+      } else {
+        setErr((e as Error).message);
+      }
+    } finally { setBusy(false); }
   }
 
   return (

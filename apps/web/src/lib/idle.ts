@@ -19,7 +19,7 @@ const ACTIVITY = ['pointerdown', 'keydown', 'wheel', 'touchstart', 'visibilitych
 export function startIdleWatch() {
   if (timer) return;
   ACTIVITY.forEach((e) => window.addEventListener(e, touch, { passive: true }));
-  timer = setInterval(() => void check(), 15_000);
+  timer = setInterval(() => void check(), 10_000);
   void loadPolicy();
 }
 
@@ -34,8 +34,8 @@ function touch() {
   const s = session.get();
   if (!s) return;
   const now = new Date().toISOString();
-  // Keep it cheap: only write every 30 s.
-  if (Date.now() - new Date(s.last_active_at).getTime() < 30_000) return;
+  // Keep it cheap: only write every 15 s.
+  if (Date.now() - new Date(s.last_active_at).getTime() < 15_000) return;
   session.set({ ...s, last_active_at: now });
   void db.session.update('current', { last_active_at: now });
 }
@@ -55,9 +55,30 @@ export async function loadPolicy() {
 
 async function check() {
   const s = session.get();
-  if (!s || !s.idle_timeout_minutes) return;
+  if (!s) return;
+
+  // Super Admin: strict 5-minute inactivity auto-logout & active heartbeat check
+  if (s.person.role === 'super_admin') {
+    const idleMs = Date.now() - new Date(s.last_active_at).getTime();
+    if (idleMs > 5 * 60_000) {
+      await endSession(true);
+      return;
+    }
+    // Ping backend to verify this session was not revoked by a 3rd active device
+    try {
+      await (await backend()).refresh();
+    } catch {
+      // 401 automatically triggers wetasnap:unauthorized
+    }
+    return;
+  }
+
+  // Other roles: policy-defined idle timeout
+  const timeoutMinutes = s.idle_timeout_minutes;
+  if (!timeoutMinutes) return;
+
   const idleMs = Date.now() - new Date(s.last_active_at).getTime();
-  const limitMs = s.idle_timeout_minutes * 60_000;
+  const limitMs = timeoutMinutes * 60_000;
   if (idleMs > limitMs) {
     // D-1: try to send what is still on the phone first; whatever cannot be sent now is kept.
     await syncNow().catch(() => {});

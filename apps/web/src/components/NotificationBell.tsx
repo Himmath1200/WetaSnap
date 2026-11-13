@@ -74,7 +74,7 @@ export function NotificationBell() {
         )}
       </button>
 
-      {open && <div class="fixed inset-0 z-40 bg-slate-900/30 sm:hidden" onClick={() => setOpen(false)} />}
+      {open && <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm sm:hidden" onClick={() => setOpen(false)} />}
       {open && <Panel onClose={() => setOpen(false)} />}
     </div>
   );
@@ -126,7 +126,7 @@ function Panel({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      class="pop fixed inset-x-2 bottom-2 z-50 flex max-h-[80dvh] flex-col overflow-hidden pb-[env(safe-area-inset-bottom)] sm:absolute sm:inset-x-auto sm:right-0 sm:bottom-auto sm:mt-2 sm:max-h-[32rem] sm:w-[26rem] sm:pb-0"
+      class="pop fixed inset-x-2 bottom-2 z-[60] flex max-h-[80dvh] flex-col overflow-hidden pb-[env(safe-area-inset-bottom)] sm:absolute sm:inset-x-auto sm:right-0 sm:bottom-auto sm:mt-2 sm:max-h-[32rem] sm:w-[26rem] sm:pb-0"
       role="dialog" aria-label={t('Notifications')}
     >
       <header class="flex items-center gap-2 border-b border-line px-4 py-3">

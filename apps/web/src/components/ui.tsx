@@ -38,14 +38,16 @@ export function Avatar({ name, src, size = 'size-9' }: { name: string; src?: str
 }
 
 /** Panel that slides from the right on laptops and up from the bottom on phones (lead panel, company panel). */
-export function Sheet(props: { open: boolean; onClose: () => void; title: ComponentChildren; children: ComponentChildren; footer?: ComponentChildren; wide?: boolean }) {
+export function Sheet(props: { open: boolean; onClose: () => void; title: ComponentChildren; children: ComponentChildren; footer?: ComponentChildren; wide?: boolean; centered?: boolean }) {
   useEscape(props.open, props.onClose);
   if (!props.open) return null;
+  const desktop = props.centered
+    ? `md:my-auto md:max-h-[85dvh] md:rounded-3xl ${props.wide ? 'md:w-[680px]' : 'md:w-[540px]'}`
+    : `md:max-h-none md:rounded-none md:rounded-l-3xl ${props.wide ? 'md:w-[560px]' : 'md:w-[460px]'}`;
   return (
-    <div class="fixed inset-0 z-40 flex items-end justify-end md:items-stretch" role="dialog" aria-modal="true">
-      <div class="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]" onClick={props.onClose} />
-      <div class={`relative flex max-h-[92dvh] w-full flex-col rounded-t-3xl bg-surface shadow-2xl md:max-h-none md:rounded-none md:rounded-l-3xl ${props.wide ? 'md:w-[560px]' : 'md:w-[460px]'}`}>
-        <div class="accent-bar rounded-t-3xl md:rounded-tl-3xl md:rounded-tr-none" />
+    <div class={`fixed inset-0 z-50 flex items-end ${props.centered ? 'justify-center md:items-center md:p-6' : 'justify-end md:items-stretch'}`} role="dialog" aria-modal="true">
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={props.onClose} />
+      <div class={`relative flex max-h-[92dvh] w-full flex-col rounded-t-3xl bg-surface shadow-2xl ${desktop} ${props.centered ? 'md:border md:border-line' : 'md:border-l md:border-line'}`}>
         <header class="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
           <h2 class="min-w-0 truncate text-base font-bold">{props.title}</h2>
           <button class="btn-ghost -mr-2 size-11 px-0" onClick={props.onClose} aria-label={t('Close')}><X class="size-5" /></button>
@@ -62,10 +64,9 @@ export function Dialog(props: { open: boolean; onClose: () => void; title: strin
   if (!props.open) return null;
   return (
     <div class="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
-      <div class="absolute inset-0 bg-slate-900/30" onClick={props.onClose} />
-      <div class="relative w-full overflow-hidden rounded-t-3xl bg-surface shadow-2xl sm:max-w-md sm:rounded-3xl">
-        <div class="accent-bar" />
-        <div class="px-5 pt-4 pb-2">
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={props.onClose} />
+      <div class="relative w-full overflow-hidden rounded-t-3xl border border-line bg-surface shadow-2xl sm:max-w-md sm:rounded-3xl">
+        <div class="px-5 pt-5 pb-2">
           <h2 class="text-base font-bold">{props.title}</h2>
         </div>
         <div class="max-h-[70dvh] overflow-y-auto px-5 py-2">{props.children}</div>
@@ -306,7 +307,7 @@ export function FilterPopover({ label, count, onClear, children }: {
         {count > 0 && <span class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-ocean-600 text-[11px] font-bold text-white">{count}</span>}
       </button>
 
-      {open && <div class="fixed inset-0 z-30 bg-slate-900/25 sm:hidden" onClick={() => setOpen(false)} />}
+      {open && <div class="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm sm:hidden" onClick={() => setOpen(false)} />}
       {open && (
         <div class="fixed inset-x-0 bottom-0 z-40 max-h-[80dvh] overflow-y-auto rounded-t-3xl border border-line bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:bottom-auto sm:mt-2 sm:max-h-[70vh] sm:w-[340px] sm:rounded-2xl sm:pb-4"
           role="dialog" aria-label={label}>

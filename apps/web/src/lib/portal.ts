@@ -34,13 +34,22 @@ export const ROLE_META: Record<Role, { name: string; tagline: string; home: stri
   client_admin: {
     name: 'Admin',
     tagline: 'Your leads, team, events and CRM.',
-    home: '/leads',
+    home: '/home',
   },
   staff: {
     name: 'Scanner',
     tagline: 'Scan cards at the booth — with or without internet.',
-    // ponytail: lands on the scanner until the Home screen exists; then '/home'.
-    home: '/scan-v2',
+    home: '/home',
+  },
+  individual: {
+    name: 'Individual',
+    tagline: 'Personal card scanning, instant export and lead organizer.',
+    home: '/home',
+  },
+  organizer: {
+    name: 'Event Organizer',
+    tagline: 'Event lead capture, referral management and temporary team access.',
+    home: '/home',
   },
 };
 

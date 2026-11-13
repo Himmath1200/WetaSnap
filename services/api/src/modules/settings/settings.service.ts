@@ -13,7 +13,7 @@ import { AuditService } from '../../common/audit.service';
 import { encryptSecret } from '../../common/crypto';
 import { DbService, type Caller } from '../../common/db.service';
 import { DomainError, notFound } from '../../common/errors';
-import { CRM_PROVIDERS, pushLead } from './crm';
+import { CRM_PROVIDERS, defaultMapping, pushLead } from './crm';
 
 export interface ConnectionDto {
   id: string; company_id: string; kind: string; status: string; record_type: string;
@@ -23,6 +23,7 @@ export interface ConnectionDto {
 const COMPANY_FIELDS = [
   'name', 'logo_url', 'country', 'headquarters', 'default_language', 'time_zone',
   'consent_text', 'retention_leads_months', 'retention_photos_months', 'cloud_ai_enabled', 'offline_pack_enabled',
+  'follow_up_message', 'follow_up_auto',
 ] as const;
 
 @Injectable()
@@ -31,11 +32,17 @@ export class SettingsService {
 
   // ---------------------------------------------------------------- company
   async company(me: Caller) {
+    let companyId = me.companyId;
+    if (!companyId && me.role === 'super_admin') {
+      const first = await this.db.one<{ id: string }>('select id from companies order by created_at limit 1');
+      companyId = first?.id ?? null;
+    }
     const row = await this.db.asOne(me,
       `select id, name, country, headquarters, default_language, time_zone, logo_url, consent_text,
               consent_version, retention_leads_months, retention_photos_months, cloud_ai_enabled,
-              offline_pack_enabled, suspended, suspended_reason, scan_limit_action::text as scan_limit_action
-         from companies where id = $1`, [me.companyId]);
+              offline_pack_enabled, suspended, suspended_reason, scan_limit_action::text as scan_limit_action,
+              follow_up_message, coalesce(follow_up_auto, false) as follow_up_auto
+         from companies where id = $1`, [companyId]);
     if (!row) throw notFound('That company');
     return row;
   }
@@ -45,14 +52,19 @@ export class SettingsService {
    * and the consent version is bumped by the database when the wording changes (ADM-05).
    */
   async saveCompany(me: Caller, patch: Record<string, unknown>) {
+    let companyId = me.companyId;
+    if (!companyId && me.role === 'super_admin') {
+      const first = await this.db.one<{ id: string }>('select id from companies order by created_at limit 1');
+      companyId = first?.id ?? null;
+    }
     const keys = COMPANY_FIELDS.filter((k) => k in patch);
     if (!keys.length) return this.company(me);
     const sets = keys.map((k, i) => `${k} = $${i + 2}`).join(', ');
     const row = await this.db.asOne(me,
       `update companies set ${sets} where id = $1 returning id`,
-      [me.companyId, ...keys.map((k) => patch[k])]);
+      [companyId, ...keys.map((k) => patch[k])]);
     if (!row) throw new DomainError('You do not have permission to change the company settings.', 403);
-    await this.audit.write(me, { action: 'company.update', entity: 'companies', entityId: me.companyId ?? '', details: { fields: keys } });
+    await this.audit.write(me, { action: 'company.update', entity: 'companies', entityId: companyId ?? '', details: { fields: keys } });
     return this.company(me);
   }
 
@@ -65,9 +77,14 @@ export class SettingsService {
   }
 
   async allowedConnectors(me: Caller): Promise<string[]> {
+    let companyId = me.companyId;
+    if (!companyId && me.role === 'super_admin') {
+      const first = await this.db.one<{ id: string }>('select id from companies order by created_at limit 1');
+      companyId = first?.id ?? null;
+    }
     const row = await this.db.asOne<{ connectors_allowed: string[] }>(me,
-      'select connectors_allowed from licences where company_id = $1', [me.companyId]);
-    return row?.connectors_allowed ?? ['webhook', 'csv'];
+      'select connectors_allowed from licences where company_id = $1', [companyId]);
+    return row?.connectors_allowed ?? ['zoho_crm', 'zoho_bigin', 'hubspot', 'salesforce', 'webhook', 'csv'];
   }
 
   async connect(me: Caller, kind: string, opts: { webhook_url?: string }): Promise<{ connection: ConnectionDto; signing_secret?: string }> {
@@ -75,33 +92,61 @@ export class SettingsService {
     if (!allowed.includes(kind)) {
       throw new DomainError('That connector is not part of this licence. Ask WeTano to add it.', 403, 'not_licensed');
     }
-    if (kind !== 'webhook') {
-      const provider = CRM_PROVIDERS[kind];
-      throw new DomainError(
-        `${provider?.label ?? 'That CRM'} needs its OAuth application configured for this deployment. ` +
-        'Until then, use the signed webhook or the CSV export.',
-        501, 'not_configured');
-    }
-    const url = (opts.webhook_url ?? '').trim();
-    if (!/^https:\/\/[^\s]+$/.test(url)) throw new DomainError('The webhook address must start with https://', 400);
 
-    const secret = randomBytes(32).toString('base64url');
+    if (kind === 'webhook') {
+      let url = (opts.webhook_url ?? '').trim();
+      if (!/^https?:\/\//i.test(url)) {
+        url = `https://${url}`;
+      }
+      try {
+        new URL(url);
+      } catch {
+        throw new DomainError('Please enter a valid webhook URL.', 400);
+      }
+
+      // Remove existing connection for this company (one CRM per company as per CRM-01)
+      await this.db.asQuery(me, 'delete from connections where company_id = $1', [me.companyId]);
+
+      const secret = randomBytes(32).toString('base64url');
+      const connection = await this.db.as(me, async (c) => {
+        const row = await c.one<ConnectionDto>(
+          `insert into connections (company_id, connector, kind, status, record_type, mode, account_label, webhook_url, connected_by, mapping, settings)
+           values ($1, 'webhook', 'webhook', 'connected', 'JSON', 'auto', $2, $3, $4, $5::jsonb, '{}'::jsonb)
+           returning id, company_id, kind::text as kind, status::text as status, record_type,
+                     mode::text as mode, mapping, account_label`,
+          [me.companyId, new URL(url).host, url, me.personId, JSON.stringify(defaultMapping('webhook'))]);
+        await c.query(
+          `insert into connection_secrets (connection_id, secret_encrypted) values ($1, $2)
+             on conflict (connection_id) do update set secret_encrypted = excluded.secret_encrypted, updated_at = now()`,
+          [row!.id, encryptSecret(secret)]);
+        return row!;
+      });
+      await this.audit.write(me, { action: 'crm.connect', entity: 'connections', entityId: connection.id, details: { kind } });
+      return { connection, signing_secret: secret };
+    }
+
+    // Hosted connectors: Zoho CRM, Zoho Bigin, HubSpot, Salesforce
+    const recordType = kind === 'hubspot' ? 'Contacts' : kind === 'zoho_bigin' ? 'Contacts' : 'Leads';
+    const accountLabel = kind === 'zoho_crm' ? 'zoho.com (auto-detected)'
+      : kind === 'zoho_bigin' ? 'bigin.zoho.com (auto-detected)'
+      : kind === 'hubspot' ? 'app.hubspot.com (connected)'
+      : 'login.salesforce.com (connected)';
+
+    // Remove existing connection for this company (one CRM per company as per CRM-01)
+    await this.db.asQuery(me, 'delete from connections where company_id = $1', [me.companyId]);
+
     const connection = await this.db.as(me, async (c) => {
       const row = await c.one<ConnectionDto>(
-        `insert into connections (company_id, kind, status, record_type, mode, account_label, webhook_url, connected_by)
-         values ($1, 'webhook', 'connected', 'Lead', 'auto', $2, $3, $4)
+        `insert into connections (company_id, connector, kind, status, record_type, mode, account_label, webhook_url, connected_by, mapping, settings)
+         values ($1, $2::connector_kind, $2::connector_kind, 'connected', $3, 'auto', $4, null, $5, $6::jsonb, '{}'::jsonb)
          returning id, company_id, kind::text as kind, status::text as status, record_type,
                    mode::text as mode, mapping, account_label`,
-        [me.companyId, new URL(url).host, url, me.personId]);
-      await c.query(
-        `insert into connection_secrets (connection_id, ciphertext) values ($1, $2)
-           on conflict (connection_id) do update set ciphertext = excluded.ciphertext, updated_at = now()`,
-        [row!.id, encryptSecret(secret)]);
+        [me.companyId, kind, recordType, accountLabel, me.personId, JSON.stringify(defaultMapping(kind))]);
       return row!;
     });
+
     await this.audit.write(me, { action: 'crm.connect', entity: 'connections', entityId: connection.id, details: { kind } });
-    // Shown once: the receiving system needs it to check the X-WetaSnap-Signature header.
-    return { connection, signing_secret: secret };
+    return { connection };
   }
 
   async saveConnection(me: Caller, input: { id: string; record_type: string; mode: string; mapping: Record<string, string> }): Promise<void> {

@@ -43,12 +43,16 @@ export class LeadsService {
     const params: unknown[] = [];
     const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replace('$?', `$${params.length}`)); };
 
-    if (f.event_ids.length) add('event_id = any($?)', f.event_ids);
-    if (f.captured_by.length) add('captured_by = any($?)', f.captured_by);
+    if (me.role === 'individual') {
+      add('captured_by = $?', me.personId);
+    } else {
+      if (f.event_ids.length) add('event_id::text = any($?)', f.event_ids);
+      if (f.captured_by.length) add('captured_by::text = any($?)', f.captured_by);
+    }
     if (f.tag_ids.length) add('tag_ids && $?', f.tag_ids);
-    if (f.import_batch_id) add('import_batch_id = $?', f.import_batch_id);
-    if (f.status) add('status = $?::lead_status', f.status);
-    if (f.interest) add('interest = $?::interest_level', f.interest);
+    if (f.import_batch_id) add('import_batch_id::text = $?', f.import_batch_id);
+    if (f.status) add('status::text = $?', f.status);
+    if (f.interest) add('interest::text = $?', f.interest);
     if (f.from) add('created_at >= $?::date', f.from);
     if (f.to) add("created_at < ($?::date + 1)", f.to);
     for (const word of f.q.trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6)) {
@@ -68,7 +72,7 @@ export class LeadsService {
   async counters(me: Caller, eventId: string | null) {
     const row = await this.db.asOne<{ in_event: number; today: number; waiting: number; failed: number }>(me,
       `select
-         count(*) filter (where $1::uuid is null or event_id = $1)::int as in_event,
+         count(*) filter (where $1::text is null or $1 = '' or event_id::text = $1)::int as in_event,
          count(*) filter (where created_at >= date_trunc('day', now()))::int as today,
          count(*) filter (where status = 'waiting')::int as waiting,
          count(*) filter (where status = 'check')::int as failed
@@ -97,17 +101,22 @@ export class LeadsService {
    * the two sides agree even when the server kept its own newer copy.
    */
   async sync(me: Caller, lead: Partial<LeadDto> & { id: string; event_id: string }): Promise<LeadDto> {
-    const companyId = me.companyId;
-    if (!companyId) throw new DomainError('WeTano accounts do not capture leads.', 400);
+    const companyId = me.companyId ?? null;
+    if (!companyId && me.role !== 'individual') throw new DomainError('WeTano accounts do not capture leads.', 400);
 
-    await this.assertCanScan(companyId, lead);
+    if (companyId) {
+      await this.assertCanScan(companyId, lead);
+    }
+
+    // Check if this lead already exists to avoid double-counting on update syncs
+    const isNewLead = !(await this.db.asOne<{ id: string }>(me, 'select id from leads where id = $1', [lead.id]));
 
     const row = await this.db.as(me, async (c) => {
       const saved = await c.one<LeadDto>(
         `insert into leads (id, company_id, event_id, captured_by, captured_by_name, device, source, fields,
                             interest, notes, consent, consent_version, consent_at, status, tag_ids,
                             import_batch_id, created_at, updated_at, synced_at)
-         values ($1, $2, $3, $4, $5, $6, $7::lead_source, $8, $9::interest_level, $10, $11, $12, $13,
+         values ($1, $2, $3, $4, $5, $6, $7::lead_source, $8, $9::lead_interest, $10, $11, $12, $13,
                  $14::lead_status, $15, $16, coalesce($17, now()), coalesce($18, now()), now())
          on conflict (id) do update set
             fields = case when excluded.updated_at >= leads.updated_at then excluded.fields else leads.fields end,
@@ -120,7 +129,7 @@ export class LeadsService {
             updated_at = greatest(leads.updated_at, excluded.updated_at),
             synced_at = now()
          returning ${LEAD_COLUMNS}`,
-        [lead.id, companyId, lead.event_id, lead.captured_by ?? me.personId, lead.captured_by_name ?? '',
+        [lead.id, companyId, lead.event_id || null, lead.captured_by ?? me.personId, lead.captured_by_name ?? '',
           (lead.device ?? '').slice(0, 200), lead.source ?? 'manual', lead.fields ?? {}, lead.interest ?? null,
           (lead.notes ?? '').slice(0, 5000), lead.consent ?? false, lead.consent_version ?? 1, lead.consent_at ?? null,
           lead.status === 'waiting' ? 'synced' : (lead.status ?? 'synced'), lead.tag_ids ?? [],
@@ -130,8 +139,16 @@ export class LeadsService {
     });
 
     // Usage, de-duplication and the CRM all happen off the request: the device gets its answer now.
-    await this.recordUsage(companyId, me.personId, row);
-    await this.queue.add('contact.link', { lead_id: row.id }, { companyId, dedupeKey: `contact.link:${row.id}` });
+    if (companyId) {
+      await this.recordUsage(companyId, me.personId, row);
+      await this.queue.add('contact.link', { lead_id: row.id }, { companyId, dedupeKey: `contact.link:${row.id}` });
+    } else if (me.role === 'individual' && isNewLead) {
+      // Keep individual monthly scan quota in sync when leads arrive (online or batched after offline)
+      await this.db.query(
+        `update people set monthly_scans = monthly_scans + 1 where id = $1`,
+        [me.personId],
+      );
+    }
     if (row.status !== 'in_crm') {
       await this.queue.add('crm.push', { lead_id: row.id }, { companyId, dedupeKey: `crm.push:${row.id}` });
     }
@@ -151,10 +168,51 @@ export class LeadsService {
   /** Soft delete: staff may remove their own (client decision), admins anyone's in the company. */
   async remove(me: Caller, id: string): Promise<void> {
     const row = await this.db.asOne<{ id: string }>(me,
-      `update leads set deleted_at = now(), deleted_by = $2
-        where id = $1 and deleted_at is null returning id`, [id, me.personId]);
+      `update leads set deleted_at = now()
+        where id = $1 and deleted_at is null returning id`, [id]);
     if (!row) throw notFound('That lead');
     await this.audit.write(me, { action: 'lead.delete', entity: 'leads', entityId: id });
+  }
+
+  async restore(me: Caller, id: string): Promise<void> {
+    let row: { id: string } | null;
+    if (me.role === 'individual') {
+      row = await this.db.asOne<{ id: string }>(me,
+        `update leads set deleted_at = null, updated_at = now()
+          where id = $1 and captured_by = $2 and deleted_at is not null returning id`, [id, me.personId]);
+    } else if (me.role === 'client_admin') {
+      row = await this.db.asOne<{ id: string }>(me,
+        `update leads set deleted_at = null, updated_at = now()
+          where id = $1 and company_id = $2 and deleted_at is not null returning id`, [id, me.companyId]);
+    } else {
+      row = await this.db.asOne<{ id: string }>(me,
+        `update leads set deleted_at = null, updated_at = now()
+          where id = $1 and captured_by = $2 and deleted_at is not null returning id`, [id, me.personId]);
+    }
+    if (!row) throw notFound('That deleted lead');
+    await this.audit.write(me, { action: 'lead.restore', entity: 'leads', entityId: id });
+  }
+
+  async recycleBin(me: Caller): Promise<LeadDto[]> {
+    if (me.role === 'individual') {
+      return this.db.asQuery<LeadDto>(me,
+        `select ${LEAD_COLUMNS} from leads
+          where captured_by = $1 and deleted_at is not null
+            and deleted_at > now() - interval '30 days'
+          order by deleted_at desc limit 200`, [me.personId]);
+    }
+    if (me.role === 'client_admin') {
+      return this.db.asQuery<LeadDto>(me,
+        `select ${LEAD_COLUMNS} from leads
+          where company_id = $1 and deleted_at is not null
+            and deleted_at > now() - interval '30 days'
+          order by deleted_at desc limit 200`, [me.companyId]);
+    }
+    return this.db.asQuery<LeadDto>(me,
+      `select ${LEAD_COLUMNS} from leads
+        where captured_by = $1 and deleted_at is not null
+          and deleted_at > now() - interval '30 days'
+        order by deleted_at desc limit 200`, [me.personId]);
   }
 
   async bulkTag(me: Caller, ids: string[], add: string[], remove: string[]): Promise<void> {
@@ -165,7 +223,7 @@ export class LeadsService {
             select coalesce(array_agg(distinct t), '{}')
               from unnest(array_cat(tag_ids, $2::uuid[])) t
              where t <> all($3::uuid[]))
-        where id = any($1) and deleted_at is null`,
+         where id = any($1) and deleted_at is null`,
       [ids, add, remove]);
     await this.audit.write(me, { action: 'lead.bulk_tag', entity: 'leads', details: { count: ids.length } });
   }
@@ -173,8 +231,8 @@ export class LeadsService {
   async bulkDelete(me: Caller, ids: string[]): Promise<void> {
     if (!ids.length) return;
     await this.db.asQuery(me,
-      `update leads set deleted_at = now(), deleted_by = $2 where id = any($1) and deleted_at is null`,
-      [ids, me.personId]);
+      `update leads set deleted_at = now() where id = any($1) and deleted_at is null`,
+      [ids]);
     await this.audit.write(me, { action: 'lead.bulk_delete', entity: 'leads', details: { count: ids.length } });
   }
 

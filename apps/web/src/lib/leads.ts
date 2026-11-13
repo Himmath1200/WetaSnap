@@ -56,11 +56,14 @@ export const TAG_META: Record<import('./types').TagColour, { chip: string; dot: 
   slate: { chip: 'bg-subtle text-slate-700 border-line', dot: 'bg-slate-400' },
 };
 
-export const INTEREST_META = {
+export const INTEREST_META: Record<string, { label: string; cls: string; dot: string }> = {
+  wetaloop: { label: 'WeTaLoop', cls: 'bg-brand-50 text-brand-700 border-brand-200', dot: 'bg-brand-500' },
+  wetanalytics: { label: 'WeTaAnalytics', cls: 'bg-ocean-50 text-ocean-700 border-ocean-200', dot: 'bg-ocean-500' },
+  other: { label: 'Other', cls: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
   hot: { label: 'Hot', cls: 'bg-red-50 text-red-700 border-red-200', dot: 'bg-red-500' },
   warm: { label: 'Warm', cls: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
   cold: { label: 'Cold', cls: 'bg-subtle text-muted border-line', dot: 'bg-slate-400' },
-} as const;
+};
 
 /** CSV export (ADM-06). Excel opens UTF-8 CSV with BOM correctly. */
 export function leadsToCsv(leads: Lead[], fieldKeys: { key: string; label: string }[], photoLink: (l: Lead) => string, tagName: (id: string) => string = (i) => i) {

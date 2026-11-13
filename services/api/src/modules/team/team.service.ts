@@ -33,6 +33,21 @@ export class TeamService {
   ) {}
 
   async list(me: Caller) {
+    if (me.role === 'organizer') {
+      return this.db.asQuery(me,
+        `select ${PERSON_COLUMNS},
+                (select e.name from events e where e.id = p.default_event_id) as event_name,
+                (select count(*)::int from leads l where l.captured_by = p.id and l.deleted_at is null) as lead_count,
+                case when not p.active then 'deactivated'
+                     when p.access_ends_on is not null and p.access_ends_on < current_date then 'expired'
+                     when p.invited then 'invited'
+                     else 'active' end as status
+           from people p
+          where p.organizer_id = $1 or p.id = $1
+          order by case when p.id = $1 then 0 else 1 end, p.name`,
+        [me.personId]);
+    }
+
     return this.db.asQuery(me,
       `select ${PERSON_COLUMNS},
               (select e.name from events e where e.id = p.default_event_id) as event_name,
@@ -48,6 +63,22 @@ export class TeamService {
   }
 
   async seats(me: Caller): Promise<SeatInfo> {
+    if (me.role === 'organizer') {
+      const org = await this.db.one<any>(`select max_logins, to_char(event_ends_on, 'YYYY-MM-DD') as event_ends_on from people where id = $1`, [me.personId]);
+      const usedRow = await this.db.one<{ n: number }>(`select count(*)::int as n from people where organizer_id = $1 and active`, [me.personId]);
+      const maxLogins = org?.max_logins ?? 10;
+      const used = usedRow?.n ?? 0;
+      return {
+        used,
+        seats: maxLogins,
+        status: 'active',
+        licence: {
+          ends_on: org?.event_ends_on || new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+          seats: maxLogins,
+        },
+      };
+    }
+
     const row = await this.db.asOne<SeatInfo>(me,
       `select seats_used($1) as used,
               coalesce(l.seats, 0) as seats,
@@ -75,9 +106,17 @@ export class TeamService {
       'select id, company_id, name, to_char(access_ends_on, \'YYYY-MM-DD\') as access_ends_on from people where lower(email) = lower($1)',
       [input.email]);
 
-    // The same answer whatever the other company is, so nobody learns who else uses WeTa Snap.
-    if (existing && existing.company_id !== companyId) {
-      throw new DomainError('This email address cannot be invited. Please use a different one.', 409, 'email_taken');
+    // If already belongs to a different company, block
+    if (existing && existing.company_id && existing.company_id !== companyId) {
+      throw new DomainError('This email address belongs to another company team. Please use a different email.', 409, 'email_taken');
+    }
+
+    // If was an individual solo user, adopt them into this company
+    if (existing && !existing.company_id) {
+      await this.db.query(
+        `update people set company_id = $2, role = $3::app_role, invited = true, has_password = false where id = $1`,
+        [existing.id, companyId, input.role],
+      );
     }
 
     const person = existing ?? await this.create(companyId, input);
@@ -89,6 +128,10 @@ export class TeamService {
       subject: `${company.name} invited you to WeTa Snap`,
       html: this.mail.invitation(company.name, input.name || person.name, link, code, input.access_ends_on),
     });
+
+    if (!sent.sent && loadEnv().MAIL_DRIVER === 'smtp') {
+      throw new DomainError(`Failed to send email to ${input.email}: ${sent.error ?? 'Check SMTP settings'}`, 500);
+    }
 
     await this.audit.write(me, {
       action: existing ? 'person.reinvite' : 'person.invite', entity: 'people', entityId: person.id,
@@ -118,8 +161,8 @@ export class TeamService {
 
       for (const eventId of allowed) {
         await c.query(
-          'insert into person_events (person_id, event_id, company_id) values ($1, $2, $3) on conflict do nothing',
-          [person!.id, eventId, companyId]);
+          'insert into person_events (person_id, event_id) values ($1, $2) on conflict do nothing',
+          [person!.id, eventId]);
       }
       await c.query(
         `insert into notifications (company_id, kind, title, body, link)
@@ -140,12 +183,46 @@ export class TeamService {
       throw new DomainError('You cannot remove your own admin role. Ask another admin to do it.', 409);
     }
 
+    if (me.role === 'organizer') {
+      const target = await this.db.one<any>(`select id, role from people where id = $1 and organizer_id = $2`, [input.id, me.personId]);
+      if (!target) throw notFound('That team member');
+      await this.db.query(
+        `update people set name = $2, phone = $3, active = $4,
+                deactivated_at = case when $4 then null else coalesce(deactivated_at, now()) end
+           where id = $1`,
+        [input.id, input.name, input.phone, input.active],
+      );
+      await this.audit.write(me, { action: 'team.update', entity: 'people', entityId: input.id, details: { active: input.active } });
+      return;
+    }
+
     await this.db.as(me, async (c) => {
       const events = await c.query<{ id: string }>(
         'select id from events where company_id = $1 and id = any($2)', [me.companyId, input.event_ids]);
       const allowed = events.map((e) => e.id);
       const defaultEvent = input.default_event_id && allowed.includes(input.default_event_id)
         ? input.default_event_id : allowed[0] ?? null;
+
+      // If deactivated / removed from company team:
+      // Directly transition them to an individual solo account (plan: 'free', monthly 5 free scans) so they keep their personal account!
+      if (!input.active) {
+        await c.query(
+          `update people
+              set company_id = null,
+                  role = 'individual'::app_role,
+                  plan = 'free',
+                  monthly_scans = 0,
+                  scans_reset_at = now() + interval '30 days',
+                  default_event_id = null,
+                  access_ends_on = null,
+                  active = true,
+                  deactivated_at = null
+            where id = $1`,
+          [input.id],
+        );
+        await c.query('delete from person_events where person_id = $1', [input.id]);
+        return;
+      }
 
       const row = await c.one<{ id: string }>(
         `update people set name = $2, phone = $3, role = $4::app_role, default_event_id = $5,
@@ -157,8 +234,8 @@ export class TeamService {
 
       await c.query('delete from person_events where person_id = $1', [input.id]);
       for (const eventId of allowed) {
-        await c.query('insert into person_events (person_id, event_id, company_id) values ($1, $2, $3)',
-          [input.id, eventId, me.companyId]);
+        await c.query('insert into person_events (person_id, event_id) values ($1, $2) on conflict do nothing',
+          [input.id, eventId]);
       }
     });
 

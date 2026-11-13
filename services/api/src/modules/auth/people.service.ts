@@ -13,7 +13,13 @@ export interface PersonDto {
   email: string;
   name: string;
   phone: string;
-  role: 'super_admin' | 'client_admin' | 'staff';
+  role: 'super_admin' | 'client_admin' | 'staff' | 'individual' | 'organizer';
+  plan?: 'free' | 'pro';
+  monthly_scans?: number;
+  referral_code?: string;
+  organizer_id?: string | null;
+  max_logins?: number;
+  event_ends_on?: string | null;
   event_ids: string[];
   default_event_id: string | null;
   access_ends_on: string | null;
@@ -41,10 +47,19 @@ export interface CompanyDto {
   suspended: boolean;
   suspended_reason: string;
   scan_limit_action: 'block' | 'overage' | 'notify';
+  follow_up_message?: string | null;
+  follow_up_auto?: boolean;
 }
 
 export const PERSON_COLUMNS = `
   p.id, p.company_id, p.email, p.name, p.phone, p.role::text as role,
+  coalesce(p.plan, 'free') as plan,
+  case
+    when p.role = 'individual' then coalesce((select count(*)::int from leads l where l.captured_by = p.id and l.deleted_at is null), p.monthly_scans, 0)
+    else coalesce(p.monthly_scans, 0)
+  end as monthly_scans,
+  p.referral_code, p.organizer_id, coalesce(p.max_logins, 5) as max_logins,
+  to_char(p.event_ends_on, 'YYYY-MM-DD') as event_ends_on,
   p.default_event_id, to_char(p.access_ends_on, 'YYYY-MM-DD') as access_ends_on,
   p.active, p.invited, p.avatar_url, p.has_password, p.mfa_enabled,
   coalesce((select array_agg(pe.event_id order by pe.created_at)
@@ -54,7 +69,8 @@ export const COMPANY_COLUMNS = `
   c.id, c.name, c.country, c.headquarters, c.default_language, c.time_zone, c.logo_url,
   c.consent_text, c.consent_version, c.retention_leads_months, c.retention_photos_months,
   c.cloud_ai_enabled, c.offline_pack_enabled, c.suspended, c.suspended_reason,
-  c.scan_limit_action::text as scan_limit_action`;
+  c.scan_limit_action::text as scan_limit_action,
+  c.follow_up_message, coalesce(c.follow_up_auto, false) as follow_up_auto`;
 
 @Injectable()
 export class PeopleService {

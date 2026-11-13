@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { Plus, Search, History, Ban, Undo2, Users, Gauge, X } from 'lucide-preact';
+import { Plus, Search, History, Ban, Undo2, Users, Gauge, X, Building, Crown, RotateCcw, Sparkles, Trash2, Ticket, AlertCircle, Copy, Check, Link, Edit3, UserCheck, UserX, ChevronRight, Store, Mail } from 'lucide-preact';
 import { Avatar, Counter, Dialog, Empty, Field, FilterChip, FilterPopover, SearchInput, Select, Sheet, SortHeader, SortMenu, Spinner } from '../components/ui';
 import { backend, type CompanyDetail, type Invitation, type LicenceChange, type NewCompanyInput } from '../lib/backend';
 import { InvitationNote } from '../components/Invitation';
@@ -8,7 +8,7 @@ import { LICENCE_META, daysLeft } from '../lib/licence';
 import { CONNECTOR_LABEL, CONNECTOR_ORDER } from '../lib/connectors';
 import { isEmail } from '../lib/validate';
 import { t } from '../lib/i18n';
-import type { CompanySummary, Licence, LicenceStatus, LicenceType, Plan, ScanLimitAction, Sort, Subscription } from '../lib/types';
+import type { CompanySummary, EventItem, Licence, LicenceStatus, LicenceType, OrganizerDetail, Person, Plan, ScanLimitAction, Sort, Subscription } from '../lib/types';
 
 type LicenceInput = Omit<Licence, 'id' | 'company_id'>;
 type SubRow = Subscription & { company_name: string; plan_name: string; mrr: number; currency: string };
@@ -111,6 +111,30 @@ export default function Companies() {
   const [f, setF] = useState<CompanyFilters>(noFilters);
   const [sort, setSort] = useState<Sort>({ key: 'name', dir: 'asc' });
   const [open, setOpen] = useState<CompanySummary | 'new' | null>(null);
+  const [segment, setSegment] = useState<'organizations' | 'individuals' | 'organizers'>('organizations');
+  const [individuals, setIndividuals] = useState<Person[]>([]);
+  const [organizers, setOrganizers] = useState<OrganizerDetail[]>([]);
+  const [newOrgOpen, setNewOrgOpen] = useState(false);
+
+  const loadIndividuals = async () => {
+    try {
+      const list = await (await backend()).listIndividuals();
+      setIndividuals(list);
+    } catch {
+      setIndividuals([]);
+    }
+  };
+  useEffect(() => { void loadIndividuals(); }, []);
+
+  const loadOrganizers = async () => {
+    try {
+      const list = await (await backend()).listOrganizers();
+      setOrganizers(list);
+    } catch {
+      setOrganizers([]);
+    }
+  };
+  useEffect(() => { void loadOrganizers(); }, []);
 
   const load = async () => {
     try {
@@ -144,18 +168,75 @@ export default function Companies() {
     <div class="mx-auto max-w-7xl">
       <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 class="text-xl font-bold">{t('Companies')}</h1>
-          <p class="text-sm text-muted">{t('Clients, their licences and what they use.')}</p>
+          <h1 class="text-2xl font-bold tracking-tight text-ink">{t('Accounts & Directory')}</h1>
+          <p class="text-sm text-muted">{t('Manage organizations, solo operators, event organizers and their limits.')}</p>
         </div>
-        <button class="btn-primary" onClick={() => setOpen('new')}><Plus class="size-4" />{t('New company')}</button>
+        {segment === 'organizations' && (
+          <button class="btn-primary" onClick={() => setOpen('new')}><Plus class="size-4" />{t('New company')}</button>
+        )}
+        {segment === 'organizers' && (
+          <button class="btn-primary" onClick={() => setNewOrgOpen(true)}><Plus class="size-4" />{t('New event organizer')}</button>
+        )}
       </div>
 
-      <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Counter label={t('Active companies')} value={all.filter((c) => c.licence_status !== 'read_only' && !c.suspended).length} />
-        <Counter label={t('Seats in use')} value={`${all.reduce((a, c) => a + c.seats_used, 0)} / ${all.reduce((a, c) => a + c.licence.seats, 0)}`} tone="ocean" />
-        <Counter label={t('Scans this month')} value={all.reduce((a, c) => a + c.scans_this_month, 0).toLocaleString()} tone="brand" />
-        <Counter label={t('Licences expiring in 30 days')} value={all.filter((c) => daysLeft(c.licence.ends_on) <= 30 && daysLeft(c.licence.ends_on) >= 0).length} tone="amber" />
+      {/* ── Segment Toggle: Organizations vs Individuals vs Organizers ── */}
+      <div class="mb-5 flex items-center p-1 rounded-2xl border border-line bg-subtle max-w-lg">
+        <button
+          class={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            segment === 'organizations'
+              ? 'bg-surface text-ink shadow-sm border border-line'
+              : 'text-muted hover:text-ink'
+          }`}
+          onClick={() => setSegment('organizations')}
+        >
+          <Building class="size-3.5 text-brand-600" />
+          <span>{t('Organizations')}</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-subtle border border-line text-muted">
+            {all.length}
+          </span>
+        </button>
+        <button
+          class={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            segment === 'individuals'
+              ? 'bg-surface text-ink shadow-sm border border-line'
+              : 'text-muted hover:text-ink'
+          }`}
+          onClick={() => setSegment('individuals')}
+        >
+          <Users class="size-3.5 text-ocean-600" />
+          <span>{t('Individuals')}</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-brand-50 text-brand-700 border border-brand-200">
+            {individuals.length}
+          </span>
+        </button>
+        <button
+          class={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            segment === 'organizers'
+              ? 'bg-surface text-ink shadow-sm border border-line'
+              : 'text-muted hover:text-ink'
+          }`}
+          onClick={() => setSegment('organizers')}
+        >
+          <Ticket class="size-3.5 text-purple-600" />
+          <span>{t('Organizers')}</span>
+          <span class="px-1.5 py-0.5 rounded text-[10px] bg-purple-50 text-purple-700 border border-purple-200">
+            {organizers.length}
+          </span>
+        </button>
       </div>
+
+      {segment === 'individuals' ? (
+        <IndividualsSection individuals={individuals} reload={loadIndividuals} />
+      ) : segment === 'organizers' ? (
+        <OrganizersSection organizers={organizers} reload={loadOrganizers} onNew={() => setNewOrgOpen(true)} />
+      ) : (
+        <>
+          <div class="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Counter label={t('Active companies')} value={all.filter((c) => c.licence_status !== 'read_only' && !c.suspended).length} />
+            <Counter label={t('Seats in use')} value={`${all.reduce((a, c) => a + c.seats_used, 0)} / ${all.reduce((a, c) => a + c.licence.seats, 0)}`} tone="ocean" />
+            <Counter label={t('Scans this month')} value={all.reduce((a, c) => a + c.scans_this_month, 0).toLocaleString()} tone="brand" />
+            <Counter label={t('Licences expiring in 30 days')} value={all.filter((c) => daysLeft(c.licence.ends_on) <= 30 && daysLeft(c.licence.ends_on) >= 0).length} tone="amber" />
+          </div>
 
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <div class="flex min-w-0 basis-full sm:max-w-sm sm:flex-1 sm:basis-auto">
@@ -295,6 +376,244 @@ export default function Companies() {
 
       {open === 'new' && <NewCompany existingIds={all.map((c) => c.id)} onClose={() => setOpen(null)} onDone={() => { setOpen(null); void load(); }} />}
       {open && open !== 'new' && <CompanyPanel company={open} onClose={() => setOpen(null)} onDone={() => { setOpen(null); void load(); }} onRefresh={() => void load()} />}
+        </>
+      )}
+
+      {newOrgOpen && (
+        <NewOrganizerModal
+          onClose={() => setNewOrgOpen(false)}
+          onDone={() => {
+            setNewOrgOpen(false);
+            void loadOrganizers();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function IndividualsSection({ individuals, reload }: { individuals: Person[]; reload: () => Promise<void> }) {
+  const [q, setQ] = useState('');
+  const [planFilter, setPlanFilter] = useState<'all' | 'pro' | 'free'>('all');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const total = individuals.length;
+  const proCount = individuals.filter((i) => i.plan === 'pro').length;
+  const freeCount = individuals.filter((i) => i.plan !== 'pro').length;
+  const totalScans = individuals.reduce((acc, i) => acc + (i.monthly_scans ?? 0), 0);
+
+  const filtered = individuals.filter((i) => {
+    if (planFilter === 'pro' && i.plan !== 'pro') return false;
+    if (planFilter === 'free' && i.plan === 'pro') return false;
+    if (q) {
+      const hay = `${i.name} ${i.email} ${i.phone}`.toLowerCase();
+      if (!hay.includes(q.toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  async function handleTogglePlan(person: Person) {
+    setBusyId(person.id);
+    const nextPlan = person.plan === 'pro' ? 'free' : 'pro';
+    try {
+      await (await backend()).updateIndividualPlan(person.id, nextPlan);
+      toast(t('Plan updated for {name}', { name: person.name }), 'success');
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleResetScans(person: Person) {
+    setBusyId(person.id);
+    try {
+      await (await backend()).resetIndividualScans(person.id);
+      toast(t('Monthly scans reset for {name}', { name: person.name }), 'success');
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleToggleStatus(person: Person) {
+    setBusyId(person.id);
+    try {
+      await (await backend()).toggleIndividualStatus(person.id, !person.active);
+      toast(person.active ? t('Account suspended') : t('Account restored'), 'success');
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleDelete(person: Person) {
+    if (!confirm(`Delete individual account ${person.email}?`)) return;
+    setBusyId(person.id);
+    try {
+      await (await backend()).deleteIndividual(person.id);
+      toast(t('Account deleted'), 'success');
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div class="space-y-4">
+      {/* 4 Telemetry Cards */}
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Counter label={t('Total Individuals')} value={total} tone="ocean" />
+        <Counter label={t('Pro Subscribers ($100/mo)')} value={proCount} tone="brand" />
+        <Counter label={t('Free Tier (5 limit)')} value={freeCount} tone="amber" />
+        <Counter label={t('Total Scans This Month')} value={totalScans.toLocaleString()} />
+      </div>
+
+      {/* Filter & Search Bar */}
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex-1 min-w-[240px]">
+          <SearchInput value={q} onChange={setQ} placeholder={t('Search by name or email...')} label={t('Search individuals')} />
+        </div>
+        <div class="flex items-center gap-1.5 p-1 rounded-xl border border-line bg-subtle">
+          <button
+            class={`px-3 py-1 rounded-lg text-xs font-semibold ${planFilter === 'all' ? 'bg-surface text-ink shadow-sm border border-line' : 'text-muted'}`}
+            onClick={() => setPlanFilter('all')}
+          >
+            {t('All')} ({total})
+          </button>
+          <button
+            class={`px-3 py-1 rounded-lg text-xs font-semibold ${planFilter === 'pro' ? 'bg-surface text-emerald-600 dark:text-emerald-400 shadow-sm border border-line' : 'text-muted'}`}
+            onClick={() => setPlanFilter('pro')}
+          >
+            {t('Pro')} ({proCount})
+          </button>
+          <button
+            class={`px-3 py-1 rounded-lg text-xs font-semibold ${planFilter === 'free' ? 'bg-surface text-amber-700 shadow-sm border border-line' : 'text-muted'}`}
+            onClick={() => setPlanFilter('free')}
+          >
+            {t('Free')} ({freeCount})
+          </button>
+        </div>
+      </div>
+
+      {/* List / Table */}
+      <div class="card overflow-hidden">
+        {filtered.length === 0 ? (
+          <Empty icon={<Search class="size-6" />} title={t('No individuals match')} />
+        ) : (
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[680px]">
+              <thead class="bg-subtle text-left text-xs font-semibold text-muted border-b border-line">
+                <tr>
+                  <th class="px-4 py-3">{t('User')}</th>
+                  <th class="px-4 py-3">{t('Plan')}</th>
+                  <th class="px-4 py-3">{t('Scans this month')}</th>
+                  <th class="px-4 py-3">{t('Status')}</th>
+                  <th class="px-4 py-3 text-right">{t('Actions')}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line">
+                {filtered.map((person) => {
+                  const isPro = person.plan === 'pro';
+                  const scans = person.monthly_scans ?? 0;
+                  return (
+                    <tr key={person.id} class="hover:bg-subtle/50 transition-colors">
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-3">
+                          <Avatar name={person.name} src={person.avatar_url} />
+                          <div>
+                            <span class="block font-bold text-ink">{person.name}</span>
+                            <span class="block text-xs text-muted">{person.email}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="px-4 py-3">
+                        {isPro ? (
+                          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                            <Crown class="size-3" />
+                            {t('Pro Plan ($100/mo)')}
+                          </span>
+                        ) : (
+                          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-subtle text-muted border border-line">
+                            {t('Free Tier')}
+                          </span>
+                        )}
+                      </td>
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-2">
+                          <span class={`font-bold tabular-nums ${!isPro && scans >= 5 ? 'text-red-600' : 'text-ink'}`}>
+                            {scans} {isPro ? '/ ∞' : '/ 5'}
+                          </span>
+                          {!isPro && scans >= 5 && (
+                            <span class="text-[10px] font-bold text-red-600 uppercase">
+                              {t('Limit reached')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td class="px-4 py-3">
+                        {person.active ? (
+                          <span class="pill bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            {t('Active')}
+                          </span>
+                        ) : (
+                          <span class="pill bg-red-50 text-red-700 border border-red-200">
+                            {t('Suspended')}
+                          </span>
+                        )}
+                      </td>
+                      <td class="px-4 py-3 text-right">
+                        <div class="inline-flex items-center gap-1.5">
+                          <button
+                            class="btn-secondary h-8 px-2.5 text-xs font-semibold"
+                            disabled={busyId === person.id}
+                            onClick={() => void handleTogglePlan(person)}
+                            title={isPro ? t('Downgrade to Free') : t('Upgrade to Pro')}
+                          >
+                            <Sparkles class="size-3 text-brand-600" />
+                            <span>{isPro ? t('Set Free') : t('Set Pro')}</span>
+                          </button>
+                          <button
+                            class="btn-secondary h-8 px-2 text-xs"
+                            disabled={busyId === person.id}
+                            onClick={() => void handleResetScans(person)}
+                            title={t('Reset monthly scans count')}
+                          >
+                            <RotateCcw class="size-3" />
+                          </button>
+                          <button
+                            class="btn-secondary h-8 px-2 text-xs text-red-600"
+                            disabled={busyId === person.id}
+                            onClick={() => void handleToggleStatus(person)}
+                            title={person.active ? t('Suspend account') : t('Activate account')}
+                          >
+                            <Ban class="size-3" />
+                          </button>
+                          <button
+                            class="btn-ghost h-8 px-2 text-xs text-muted hover:text-red-600"
+                            disabled={busyId === person.id}
+                            onClick={() => void handleDelete(person)}
+                            title={t('Delete account')}
+                          >
+                            <Trash2 class="size-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -323,7 +642,7 @@ function LicenceFields({ l, set }: { l: LicenceInput; set: (l: LicenceInput) => 
           {CONNECTOR_ORDER.map((k) => {
             const on = l.connectors_allowed.includes(k);
             return <button key={k} type="button" aria-pressed={on} onClick={() => set({ ...l, connectors_allowed: on ? l.connectors_allowed.filter((x) => x !== k) : [...l.connectors_allowed, k] })}
-              class={`chip text-xs ${on ? 'border-ocean-600 bg-ocean-50 text-ocean-800' : 'border-line bg-surface text-slate-500'}`}>{CONNECTOR_LABEL[k]}</button>;
+              class={`chip text-xs ${on ? 'border-ocean-600 bg-ocean-100 text-ocean-600' : 'border-line bg-surface text-muted'}`}>{CONNECTOR_LABEL[k]}</button>;
           })}
         </div>
       </div>
@@ -393,7 +712,7 @@ function NewCompany({ existingIds, onClose, onDone }: { existingIds: string[]; o
 
   if (sent) {
     return (
-      <Sheet open onClose={onDone} title={t('{name} created', { name: f.name.trim() })}
+      <Sheet open onClose={onDone} centered wide title={t('{name} created', { name: f.name.trim() })}
         footer={<button class="btn-primary ml-auto" onClick={onDone}>{t('Done')}</button>}>
         <InvitationNote email={f.admin_email.trim().toLowerCase()} invitation={sent} />
       </Sheet>
@@ -401,7 +720,7 @@ function NewCompany({ existingIds, onClose, onDone }: { existingIds: string[]; o
   }
 
   return (
-    <Sheet open onClose={onClose} title={t('New company')} wide
+    <Sheet open onClose={onClose} centered wide title={t('New company')}
       footer={<button class="btn-primary ml-auto" disabled={busy} onClick={() => void create()}>{busy ? <Spinner /> : t('Create & send invite')}</button>}>
       <div class="space-y-5">
         <section class="space-y-3">
@@ -448,6 +767,10 @@ function CompanyPanel({ company, onClose, onDone, onRefresh }: { company: Compan
   const [busy, setBusy] = useState(false);
   const [askSuspend, setAskSuspend] = useState(false);
   const [reason, setReason] = useState('');
+  const [editingAdmin, setEditingAdmin] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [reinviteAdmin, setReinviteAdmin] = useState(true);
+  const [adminSaving, setAdminSaving] = useState(false);
 
   const loadDetail = () => backend().then((b) => b.companyDetail(company.id)).then(setDetail).catch((e) => toast((e as Error).message, 'error'));
   useEffect(() => { void loadDetail(); }, [company.id]);
@@ -485,9 +808,30 @@ function CompanyPanel({ company, onClose, onDone, onRefresh }: { company: Compan
     } catch (e) { toast((e as Error).message, 'error'); }
   }
 
+  async function saveAdminEmail() {
+    if (!editingAdmin) return;
+    const addr = newAdminEmail.trim().toLowerCase();
+    if (!isEmail(addr)) {
+      toast(t('Please enter a valid email address.'), 'error');
+      return;
+    }
+    setAdminSaving(true);
+    try {
+      await (await backend()).updatePersonEmail(editingAdmin.id, addr, reinviteAdmin);
+      toast(reinviteAdmin ? t('Admin email updated and invitation sent!') : t('Admin email updated!'), 'success');
+      setEditingAdmin(null);
+      await loadDetail();
+      onRefresh();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setAdminSaving(false);
+    }
+  }
+
   return (
     <>
-      <Sheet open onClose={onClose} wide
+      <Sheet open onClose={onClose} centered wide
         title={<span class="flex flex-wrap items-center gap-2">{company.name}
           <span class={`pill ${LICENCE_META[company.licence_status].cls}`}>{t(LICENCE_META[company.licence_status].label)}</span>
           {suspended && <SuspendedPill />}
@@ -506,9 +850,14 @@ function CompanyPanel({ company, onClose, onDone, onRefresh }: { company: Compan
           </header>
 
           <div class="grid grid-cols-3 gap-2 text-center">
-            <div class="rounded-xl bg-subtle p-2"><p class="text-lg font-bold tabular-nums">{detail?.seats_used ?? company.seats_used}/{company.licence.seats}</p><p class="text-xs text-muted">{t('Seats')}</p></div>
+            <div class="rounded-xl bg-subtle p-2"><p class="text-lg font-bold tabular-nums">{detail?.seats_used ?? company.seats_used}/{company.licence.seats}</p><p class="text-xs text-muted">{t('Seats used')}</p></div>
             <div class="rounded-xl bg-subtle p-2"><p class="text-lg font-bold tabular-nums">{detail?.scans_this_month ?? company.scans_this_month}</p><p class="text-xs text-muted">{t('Scans this month')}</p></div>
             <div class="rounded-xl bg-subtle p-2"><p class="text-lg font-bold tabular-nums">{daysLeft(company.licence.ends_on)}</p><p class="text-xs text-muted">{t('Days left')}</p></div>
+          </div>
+
+          <div class="rounded-xl border border-line bg-subtle/50 p-3 text-xs text-muted leading-relaxed">
+            <span class="font-semibold text-ink">{t('Team capacity control:')}</span>{' '}
+            {t('Configure the staff seats allowance below. The company admin manages, invites, activates, and deactivates individual team members within this licensed limit.')}
           </div>
 
           <section>
@@ -518,16 +867,33 @@ function CompanyPanel({ company, onClose, onDone, onRefresh }: { company: Compan
               : (
                 <ul class="rounded-xl border border-line">
                   {detail.admins.map((a) => (
-                    <li key={a.id} class="flex items-start gap-3 border-t border-line px-3 py-2.5 first:border-t-0">
+                    <li key={a.id} class="flex items-center gap-3 border-t border-line px-3 py-2.5 first:border-t-0">
                       <Avatar name={a.name} size="size-8" />
                       <div class="min-w-0 flex-1">
-                        <p class="truncate text-sm font-semibold">{a.name}</p>
-                        <a class="link block truncate text-xs leading-[2.75rem]" href={`mailto:${a.email}`}>{a.email}</a>
-                        {a.phone && <a class="link -mt-3 block truncate text-xs leading-[2.75rem]" href={`tel:${a.phone}`}>{a.phone}</a>}
+                        <div class="flex items-center gap-2">
+                          <p class="truncate text-sm font-semibold">{a.name}</p>
+                          <span class={`pill ${a.invited ? 'bg-amber-100 text-amber-800' : a.active ? 'bg-brand-100 text-brand-800' : 'bg-subtle text-muted'}`}>
+                            {a.invited ? t('Invited') : a.active ? t('Active') : t('Inactive')}
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-2 mt-0.5">
+                          <span class="truncate text-xs text-muted">{a.email}</span>
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:text-brand-800 hover:underline shrink-0"
+                            onClick={() => {
+                              setEditingAdmin({ id: a.id, name: a.name, email: a.email });
+                              setNewAdminEmail(a.email);
+                              setReinviteAdmin(true);
+                            }}
+                            title={t('Edit email address')}
+                          >
+                            <Edit3 class="size-3" />
+                            <span>{t('Edit mail')}</span>
+                          </button>
+                        </div>
+                        {a.phone && <a class="link block truncate text-xs mt-0.5" href={`tel:${a.phone}`}>{a.phone}</a>}
                       </div>
-                      <span class={`pill ${a.invited ? 'bg-amber-100 text-amber-800' : a.active ? 'bg-brand-100 text-brand-800' : 'bg-subtle text-muted'}`}>
-                        {a.invited ? t('Invited') : a.active ? t('Active') : t('Inactive')}
-                      </span>
                     </li>
                   ))}
                 </ul>
@@ -594,6 +960,49 @@ function CompanyPanel({ company, onClose, onDone, onRefresh }: { company: Compan
           )}
         </div>
       </Dialog>
+
+      <Dialog
+        open={editingAdmin !== null}
+        onClose={() => setEditingAdmin(null)}
+        title={t('Edit Admin Email Address')}
+        footer={<>
+          <button class="btn-ghost" onClick={() => setEditingAdmin(null)}>{t('Cancel')}</button>
+          <button class="btn-primary min-w-32" disabled={adminSaving || !newAdminEmail.trim()} onClick={() => void saveAdminEmail()}>
+            {adminSaving ? <Spinner /> : t('Save & update')}
+          </button>
+        </>}
+      >
+        <div class="space-y-4">
+          <p class="text-sm text-muted">
+            {t('Update the login email address for admin {name}. Active sessions under the old email will be signed out.', {
+              name: editingAdmin?.name || '',
+            })}
+          </p>
+          <Field label={t('Admin Email Address')} for="admin-new-email">
+            <div class="relative">
+              <Mail class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+              <input
+                id="admin-new-email"
+                type="email"
+                class="input pl-9"
+                value={newAdminEmail}
+                onInput={(e) => setNewAdminEmail(e.currentTarget.value)}
+                placeholder="admin@company.com"
+                autoFocus
+              />
+            </div>
+          </Field>
+          <label class="flex items-center gap-2 text-xs font-semibold text-ink cursor-pointer pt-1">
+            <input
+              type="checkbox"
+              class="size-4 accent-emerald-600 rounded"
+              checked={reinviteAdmin}
+              onChange={(e) => setReinviteAdmin(e.currentTarget.checked)}
+            />
+            <span>{t('Send invitation / password setup link to the new email address')}</span>
+          </label>
+        </div>
+      </Dialog>
     </>
   );
 }
@@ -602,4 +1011,777 @@ function extend(l: LicenceInput, set: (l: LicenceInput) => void) {
   const d = new Date(l.ends_on);
   d.setFullYear(d.getFullYear() + 1);
   set({ ...l, ends_on: d.toISOString().slice(0, 10), type: l.type === 'trial' ? 'annual' : l.type });
+}
+
+function OrganizersSection({
+  organizers,
+  reload,
+  onNew,
+}: {
+  organizers: OrganizerDetail[];
+  reload: () => Promise<void>;
+  onNew: () => void;
+}) {
+  const [q, setQ] = useState('');
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [editLimit, setEditLimit] = useState<{ id: string; name: string; current: number } | null>(null);
+  const [newLimitVal, setNewLimitVal] = useState(10);
+  const [savingLimit, setSavingLimit] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  const total = organizers.length;
+  const activeCount = organizers.filter((o) => !o.is_expired && o.active).length;
+  const totalMembers = organizers.reduce((sum, o) => sum + (o.members_count ?? 0), 0);
+  const expiredCount = organizers.filter((o) => o.is_expired).length;
+
+  const filtered = organizers.filter((o) => {
+    if (!q) return true;
+    const hay = `${o.name} ${o.email} ${o.event_name} ${o.referral_code} ${o.venue}`.toLowerCase();
+    return hay.includes(q.toLowerCase());
+  });
+
+  const copy = (linkOrCode: string) => {
+    navigator.clipboard.writeText(linkOrCode);
+    setCopiedCode(linkOrCode);
+    toast(t('Referral link copied to clipboard!'), 'success');
+    setTimeout(() => setCopiedCode(null), 2500);
+  };
+
+  async function saveNewLimit() {
+    if (!editLimit) return;
+    setSavingLimit(true);
+    try {
+      await (await backend()).updateOrganizerLogins(editLimit.id, newLimitVal);
+      toast(t('Logins limit updated to {n}', { n: newLimitVal }), 'success');
+      setEditLimit(null);
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setSavingLimit(false);
+    }
+  }
+
+  return (
+    <div class="space-y-4">
+      {/* 4 Telemetry Counters */}
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Counter label={t('Event Organizers')} value={total} tone="ocean" />
+        <Counter label={t('Active Event Campaigns')} value={activeCount} tone="brand" />
+        <Counter label={t('Team Logins Used')} value={totalMembers} tone="amber" />
+        <Counter label={t('Concluded / Deactivated')} value={expiredCount} />
+      </div>
+
+      {/* Organizer Policy Disclaimer Banner */}
+      <div class="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-relaxed text-amber-950 dark:text-amber-200 flex items-start gap-3">
+        <AlertCircle class="size-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+        <div>
+          <span class="font-bold text-sm text-amber-900 dark:text-amber-100">{t('Event Organizer Retention Policy')}</span>
+          <p class="mt-1 text-muted">
+            {t('Organizers receive an exclusive auto-generated referral link with an allowed login quota. When attendees open the link, they register directly with name, email and password. All attendee logins and scanned leads permanently deactivate 24 hours after the event completes.')}
+          </p>
+        </div>
+      </div>
+
+      {/* Search and Action Bar */}
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex-1 min-w-[260px]">
+          <SearchInput value={q} onChange={setQ} placeholder={t('Search organizers, events or referral links...')} label={t('Search')} />
+        </div>
+        <button class="btn-primary" onClick={onNew}>
+          <Plus class="size-4" />{t('New event organizer')}
+        </button>
+      </div>
+
+      {/* Directory Table */}
+      <div class="card overflow-hidden">
+        {filtered.length === 0 ? (
+          <Empty icon={<Ticket class="size-6" />} title={t('No organizers found')} text={t('Create your first event organizer to generate referral links.')} />
+        ) : (
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm min-w-[760px]">
+              <thead class="bg-subtle text-left text-xs font-semibold text-muted border-b border-line">
+                <tr>
+                  <th class="px-4 py-3">{t('Event')}</th>
+                  <th class="px-4 py-3">{t('Organizer')}</th>
+                  <th class="px-4 py-3">{t('Referral Link')}</th>
+                  <th class="px-4 py-3">{t('Team Logins')}</th>
+                  <th class="px-4 py-3">{t('Status')}</th>
+                  <th class="px-4 py-3 text-right">{t('Actions')}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line">
+                {filtered.map((org) => {
+                  const maxL = org.max_logins ?? 10;
+                  const usedL = org.members_count ?? 0;
+                  const isFull = usedL >= maxL;
+                  const slug = (org.name || 'organizer').toLowerCase().replace(/[^a-z0-9]/g, '');
+                  const vanityDomain = `wetano.${slug}.com`;
+                  const liveReferralUrl = typeof window !== 'undefined'
+                    ? `${window.location.origin}/signin?ref=${org.referral_code}`
+                    : `https://app.wetasnap.com/signin?ref=${org.referral_code}`;
+
+                  return (
+                    <tr key={org.id} class="hover:bg-subtle/50 transition-colors cursor-pointer" onClick={() => setSelectedOrgId(org.id)}>
+                      <td class="px-4 py-3">
+                        <div>
+                          <span class="block font-bold text-ink hover:text-brand-600 transition-colors">{org.event_name}</span>
+                          <span class="block text-xs text-muted">
+                            {org.starts_on && org.ends_on ? `${new Date(org.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${new Date(org.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                            {org.venue ? ` · ${org.venue}` : ''}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-2.5">
+                          <Avatar name={org.name} src={org.avatar_url} />
+                          <div>
+                            <span class="block font-semibold text-ink">{org.name}</span>
+                            <span class="block text-xs text-muted">{org.email}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td class="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-subtle border border-line text-xs font-semibold text-brand-700">
+                          <Link class="size-3.5 text-brand-600 shrink-0" />
+                          <span class="font-mono text-[11px] truncate max-w-[130px] text-ink">{vanityDomain}</span>
+                          <button
+                            class="text-muted hover:text-brand-600 ml-1 p-0.5"
+                            onClick={() => copy(liveReferralUrl)}
+                            title={t('Copy direct referral link')}
+                          >
+                            {copiedCode === liveReferralUrl ? <Check class="size-3.5 text-brand-600" /> : <Copy class="size-3.5" />}
+                          </button>
+                        </div>
+                      </td>
+
+                      <td class="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div class="flex items-center gap-2">
+                          <span class={`font-bold tabular-nums ${isFull ? 'text-amber-700' : 'text-ink'}`}>
+                            {usedL} / {maxL} {t('logins')}
+                          </span>
+                          <button
+                            class="text-xs text-brand-700 hover:underline font-semibold"
+                            onClick={() => { setEditLimit({ id: org.id, name: org.name, current: maxL }); setNewLimitVal(maxL); }}
+                            title={t('Edit maximum logins allowance')}
+                          >
+                            {t('Edit limit')}
+                          </button>
+                        </div>
+                      </td>
+
+                      <td class="px-4 py-3">
+                        {org.is_expired ? (
+                          <span class="pill bg-subtle text-muted border border-line text-[10px]">
+                            {t('Concluded (24h past)')}
+                          </span>
+                        ) : org.active ? (
+                          <span class="pill bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
+                            {t('Active')}
+                          </span>
+                        ) : (
+                          <span class="pill bg-red-50 text-red-700 border border-red-200 text-[10px]">
+                            {t('Deactivated')}
+                          </span>
+                        )}
+                      </td>
+
+                      <td class="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          class="btn-secondary h-8 px-2.5 text-xs font-semibold gap-1"
+                          onClick={() => setSelectedOrgId(org.id)}
+                        >
+                          <span>{t('Details & team')}</span>
+                          <ChevronRight class="size-3.5 text-muted" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Edit Max Logins Dialog */}
+      <Dialog
+        open={editLimit !== null}
+        onClose={() => setEditLimit(null)}
+        title={t('Update Logins Allowance')}
+        footer={<>
+          <button class="btn-ghost" onClick={() => setEditLimit(null)}>{t('Cancel')}</button>
+          <button class="btn-primary" disabled={savingLimit} onClick={() => void saveNewLimit()}>
+            {savingLimit ? <Spinner class="size-4" /> : t('Save allowance')}
+          </button>
+        </>}
+      >
+        <div class="space-y-3">
+          <p class="text-sm text-muted">
+            {t('Set the maximum number of referral user accounts that can register under {name}.', { name: editLimit?.name ?? '' })}
+          </p>
+          <Field label={t('Allowed logins limit')} for="edit-max-logins" hint={t('Restricted based on the plan or package chosen by the organizer.')}>
+            <input
+              id="edit-max-logins"
+              type="number"
+              min={1}
+              max={10000}
+              class="input text-sm font-semibold"
+              value={newLimitVal}
+              onInput={(e) => setNewLimitVal(Number(e.currentTarget.value))}
+            />
+          </Field>
+        </div>
+      </Dialog>
+
+      {/* Organizer Details & Team Management Panel */}
+      {selectedOrgId && (
+        <OrganizerDetailPanel
+          organizerId={selectedOrgId}
+          onClose={() => setSelectedOrgId(null)}
+          onRefresh={reload}
+        />
+      )}
+    </div>
+  );
+}
+
+function NewOrganizerModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [eventsList, setEventsList] = useState<EventItem[]>([]);
+  const [attachMode, setAttachMode] = useState<'new' | 'existing'>('new');
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [eventName, setEventName] = useState('');
+  const [startsOn, setStartsOn] = useState(new Date().toISOString().slice(0, 10));
+  const [endsOn, setEndsOn] = useState(new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10));
+  const [venue, setVenue] = useState('');
+  const [orgName, setOrgName] = useState('');
+  const [orgEmail, setOrgEmail] = useState('');
+  const [password, setPassword] = useState('WetaSnap#2026');
+  const [maxLogins, setMaxLogins] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [createdResult, setCreatedResult] = useState<{ referral_code: string; organizer: Person } | null>(null);
+
+  useEffect(() => {
+    backend().then((b) => b.events()).then((evs) => {
+      setEventsList(evs);
+      if (evs.length > 0 && !selectedEventId) {
+        setSelectedEventId(evs[0].id);
+      }
+    }).catch(() => {});
+  }, []);
+
+  async function create() {
+    if (attachMode === 'new') {
+      if (!eventName.trim()) { toast(t('Please enter event name.'), 'error'); return; }
+      if (new Date(startsOn).getTime() > new Date(endsOn).getTime()) {
+        toast(t('Event start date must be before or on end date.'), 'error'); return;
+      }
+    } else {
+      if (!selectedEventId) { toast(t('Please select an event.'), 'error'); return; }
+    }
+    if (!orgName.trim()) { toast(t('Please enter organizer name.'), 'error'); return; }
+    if (!isEmail(orgEmail)) { toast(t('Please enter a valid email address.'), 'error'); return; }
+
+    const chosen = attachMode === 'existing' ? eventsList.find((e) => e.id === selectedEventId) : null;
+
+    setBusy(true);
+    try {
+      const res = await (await backend()).createOrganizer({
+        event_id: attachMode === 'existing' ? selectedEventId : undefined,
+        event_name: chosen ? chosen.name : eventName,
+        starts_on: chosen ? chosen.starts_on : startsOn,
+        ends_on: chosen ? chosen.ends_on : endsOn,
+        venue: chosen ? chosen.venue : venue,
+        organizer_name: orgName,
+        organizer_email: orgEmail,
+        password,
+        max_logins: maxLogins,
+      });
+      setCreatedResult(res);
+      toast(t('Organizer account provisioned successfully!'), 'success');
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (createdResult) {
+    return (
+      <Sheet open onClose={onDone} centered title={t('Organizer Event Ready!')}
+        footer={<button class="btn-primary w-full justify-center font-bold" onClick={onDone}>{t('Done')}</button>}>
+        <div class="space-y-4 py-2">
+          <div class="rounded-2xl border border-brand-500/30 bg-brand-50/50 p-5 text-center space-y-2">
+            <span class="text-xs uppercase tracking-wider font-bold text-muted">{t('Shareable Event Referral Code')}</span>
+            <div class="text-3xl font-mono font-extrabold text-brand-700 tracking-wider">
+              {createdResult.referral_code}
+            </div>
+            <button
+              class="btn-secondary mx-auto text-xs gap-1.5 px-4"
+              onClick={() => {
+                navigator.clipboard.writeText(createdResult.referral_code);
+                toast(t('Referral code copied!'), 'success');
+              }}
+            >
+              <Copy class="size-3.5" />
+              <span>{t('Copy referral code')}</span>
+            </button>
+          </div>
+
+          <div class="rounded-xl border border-line bg-subtle p-3.5 space-y-1.5 text-xs">
+            <p><strong class="text-ink">{t('Organizer:')}</strong> {createdResult.organizer.name} ({createdResult.organizer.email})</p>
+            <p><strong class="text-ink">{t('Max Allowed Logins:')}</strong> {maxLogins} {t('accounts')}</p>
+            <p><strong class="text-ink">{t('Event End Date:')}</strong> {endsOn}</p>
+          </div>
+
+          <div class="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-950 dark:text-amber-200">
+            <p class="font-bold">{t('24-Hour Cutoff Disclaimer:')}</p>
+            <p class="mt-0.5 text-muted">{t('Participant accounts and all captured lead scans will automatically deactivate 24 hours after {date}. Attendees must export data before that time.', { date: endsOn })}</p>
+          </div>
+        </div>
+      </Sheet>
+    );
+  }
+
+  return (
+    <Sheet open onClose={onClose} centered wide title={t('Create Event & Organizer')}
+      footer={<>
+        <button class="btn-ghost" onClick={onClose}>{t('Cancel')}</button>
+        <button class="btn-primary min-w-36 font-bold" disabled={busy} onClick={() => void create()}>
+          {busy ? <Spinner class="size-4" /> : t('Create event & organizer')}
+        </button>
+      </>}>
+      <div class="space-y-4">
+        <div class="rounded-xl border border-line bg-subtle/50 p-3 text-xs text-muted leading-relaxed">
+          {t('Super Admin provisions an organizer account. You can create a fresh event or assign this organizer to an existing active event so multiple organizers can share the same event.')}
+        </div>
+
+        {eventsList.length > 0 && (
+          <div class="flex items-center gap-2 rounded-xl bg-subtle p-1 border border-line">
+            <button
+              type="button"
+              class={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition ${attachMode === 'new' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
+              onClick={() => setAttachMode('new')}
+            >
+              {t('Create new event')}
+            </button>
+            <button
+              type="button"
+              class={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition ${attachMode === 'existing' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
+              onClick={() => setAttachMode('existing')}
+            >
+              {t('Assign to existing event')}
+            </button>
+          </div>
+        )}
+
+        {attachMode === 'existing' && eventsList.length > 0 ? (
+          <Field label={t('Select existing event')} for="org-select-ev" hint={t('Multiple organizers can be linked to the same event')}>
+            <select
+              id="org-select-ev"
+              class="input font-semibold"
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.currentTarget.value)}
+            >
+              {eventsList.map((ev) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.name} ({new Date(ev.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' })} – {new Date(ev.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })})
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : (
+          <>
+            <Field label={t('Event name')} for="org-ev-name">
+              <input id="org-ev-name" class="input" placeholder="e.g. Hannover Messe 2026" value={eventName} onInput={(e) => setEventName(e.currentTarget.value)} />
+            </Field>
+
+            <div class="grid grid-cols-2 gap-3">
+              <Field label={t('Starts on')} for="org-ev-start">
+                <input id="org-ev-start" type="date" class="input" value={startsOn} onChange={(e) => setStartsOn(e.currentTarget.value)} />
+              </Field>
+              <Field label={t('Ends on')} for="org-ev-end" hint={t('Deactivates 24h after')}>
+                <input id="org-ev-end" type="date" class="input" value={endsOn} onChange={(e) => setEndsOn(e.currentTarget.value)} />
+              </Field>
+            </div>
+
+            <Field label={t('Venue & booth')} for="org-ev-venue">
+              <input id="org-ev-venue" class="input" placeholder="e.g. Hall 4 · Booth 212" value={venue} onInput={(e) => setVenue(e.currentTarget.value)} />
+            </Field>
+          </>
+        )}
+
+        <div class="border-t border-line pt-3 space-y-3">
+          <h3 class="text-xs font-bold text-muted uppercase tracking-wider">{t('Organizer Account Details')}</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <Field label={t('Organizer name')} for="org-name">
+              <input id="org-name" class="input" placeholder="David Miller" value={orgName} onInput={(e) => setOrgName(e.currentTarget.value)} />
+            </Field>
+            <Field label={t('Organizer email')} for="org-email">
+              <input id="org-email" type="email" class="input" placeholder="david@eventpro.com" value={orgEmail} onInput={(e) => setOrgEmail(e.currentTarget.value)} />
+            </Field>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <Field label={t('Password')} for="org-pw" hint={t('Defaults to WetaSnap#2026')}>
+              <input id="org-pw" class="input" value={password} onInput={(e) => setPassword(e.currentTarget.value)} />
+            </Field>
+            <Field label={t('Allowed participant logins limit')} for="org-max" hint={t('Restricted by plan/tier')}>
+              <input id="org-max" type="number" min={1} max={10000} class="input font-semibold" value={maxLogins} onInput={(e) => setMaxLogins(Number(e.currentTarget.value))} />
+            </Field>
+          </div>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+function OrganizerDetailPanel({
+  organizerId,
+  onClose,
+  onRefresh,
+}: {
+  organizerId: string;
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const [data, setData] = useState<{
+    organizer: OrganizerDetail;
+    members: (Person & { lead_count?: number })[];
+    total_scans: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editEventOpen, setEditEventOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await (await backend()).getOrganizerDetails(organizerId);
+      setData(res);
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, [organizerId]);
+
+  if (loading || !data) {
+    return (
+      <Sheet open onClose={onClose} centered wide title={t('Organizer Details')}>
+        <div class="flex justify-center py-16"><Spinner class="size-6 text-brand-700" /></div>
+      </Sheet>
+    );
+  }
+
+  const { organizer: org, members, total_scans } = data;
+  const slug = (org.name || 'organizer').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const vanityDomain = `wetano.${slug}.com`;
+  const liveReferralUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/signin?ref=${org.referral_code}`
+    : `https://app.wetasnap.com/signin?ref=${org.referral_code}`;
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(liveReferralUrl);
+    setCopiedLink(true);
+    toast(t('Referral link copied to clipboard!'), 'success');
+    setTimeout(() => setCopiedLink(false), 2500);
+  };
+
+  async function toggleMember(member: Person) {
+    setBusyMemberId(member.id);
+    try {
+      await (await backend()).updateOrganizerMember(org.id, member.id, { active: !member.active });
+      toast(member.active ? t('Member deactivated') : t('Member activated'), 'success');
+      await load();
+      await onRefresh();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusyMemberId(null);
+    }
+  }
+
+  async function deleteMember(member: Person) {
+    if (!confirm(t('Remove {name} from this event team?', { name: member.name }))) return;
+    setBusyMemberId(member.id);
+    try {
+      await (await backend()).deleteOrganizerMember(org.id, member.id);
+      toast(t('Team member removed'), 'success');
+      await load();
+      await onRefresh();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusyMemberId(null);
+    }
+  }
+
+  return (
+    <>
+      <Sheet
+        open
+        onClose={onClose}
+        centered
+        wide
+        title={
+          <span class="flex flex-wrap items-center gap-2">
+            <span>{org.name}</span>
+            <span class="pill bg-purple-100 text-purple-800 text-[10px] font-bold uppercase">{t('Organizer')}</span>
+            {org.is_expired ? (
+              <span class="pill bg-subtle text-muted text-[10px]">{t('Concluded')}</span>
+            ) : org.active ? (
+              <span class="pill bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">{t('Active')}</span>
+            ) : (
+              <span class="pill bg-red-50 text-red-700 border border-red-200 text-[10px]">{t('Deactivated')}</span>
+            )}
+          </span>
+        }
+        footer={<button class="btn-primary ml-auto" onClick={onClose}>{t('Done')}</button>}
+      >
+        <div class="space-y-5">
+          {/* Summary Metric Cards */}
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="rounded-xl bg-subtle p-2.5">
+              <p class="text-xl font-bold tabular-nums text-ink">{members.length} / {org.max_logins ?? 10}</p>
+              <p class="text-xs text-muted">{t('Logins used')}</p>
+            </div>
+            <div class="rounded-xl bg-subtle p-2.5">
+              <p class="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{total_scans}</p>
+              <p class="text-xs text-muted">{t('Total team scans')}</p>
+            </div>
+            <div class="rounded-xl bg-subtle p-2.5">
+              <p class="text-xl font-bold text-ink">{org.is_expired ? t('Expired') : t('Active')}</p>
+              <p class="text-xs text-muted">{t('Campaign status')}</p>
+            </div>
+          </div>
+
+          {/* Auto-generated Referral Link Card */}
+          <div class="rounded-2xl border border-brand-500/30 bg-gradient-to-br from-brand-50/40 via-surface to-surface p-4 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-muted uppercase tracking-wider flex items-center gap-1.5">
+                <Link class="size-3.5 text-brand-600" />
+                <span>{t('Auto-Generated Referral Link')}</span>
+              </span>
+              <span class="font-mono text-xs font-bold text-brand-700 px-2 py-0.5 rounded bg-brand-50 border border-brand-200">
+                {org.referral_code}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-2 rounded-xl border border-line bg-surface p-2.5">
+              <div class="min-w-0 flex-1">
+                <span class="block font-mono text-xs font-bold text-ink truncate">{vanityDomain}</span>
+                <span class="block font-mono text-[11px] text-muted truncate">{liveReferralUrl}</span>
+              </div>
+              <button
+                class="btn-primary h-8 px-3 text-xs font-bold gap-1.5 shrink-0"
+                onClick={copyLink}
+              >
+                {copiedLink ? <Check class="size-3.5 text-white" /> : <Copy class="size-3.5 text-white" />}
+                <span>{copiedLink ? t('Copied!') : t('Copy link')}</span>
+              </button>
+            </div>
+            <p class="text-[11px] text-muted">
+              {t('The organizer shares this link with attendees. Attendees open the link and register directly with name, email & password; the event referral code is auto-applied.')}
+            </p>
+          </div>
+
+          {/* Event Details Card */}
+          <div class="card p-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                <Store class="size-3.5 text-ocean-600" />
+                <span>{t('Assigned Event Details')}</span>
+              </h3>
+              <button
+                class="btn-secondary h-7 px-2.5 text-xs font-semibold gap-1"
+                onClick={() => setEditEventOpen(true)}
+              >
+                <Edit3 class="size-3" />
+                <span>{t('Edit event')}</span>
+              </button>
+            </div>
+
+            <div class="space-y-1.5 text-xs">
+              <p><strong class="text-ink">{t('Event Name:')}</strong> {org.event_name}</p>
+              {org.venue && <p><strong class="text-ink">{t('Venue:')}</strong> {org.venue}</p>}
+              <p>
+                <strong class="text-ink">{t('Dates:')}</strong>{' '}
+                {org.starts_on && org.ends_on ? `${new Date(org.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${new Date(org.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : '—'}
+              </p>
+              <p><strong class="text-ink">{t('Allowed Logins:')}</strong> {org.max_logins ?? 10} {t('participants max')}</p>
+            </div>
+          </div>
+
+          {/* Referred Team Members (Super Admin Full Management) */}
+          <div class="space-y-2">
+            <div class="flex items-center justify-between px-1">
+              <div>
+                <h3 class="text-sm font-bold text-ink">{t('Event Team Members ({n})', { n: members.length })}</h3>
+                <p class="text-xs text-muted">{t('Users who registered via this organizer’s referral link.')}</p>
+              </div>
+            </div>
+
+            <div class="card overflow-hidden">
+              {members.length === 0 ? (
+                <div class="p-6 text-center text-xs text-muted">
+                  <p>{t('No members have registered with this referral link yet.')}</p>
+                </div>
+              ) : (
+                <div class="overflow-x-auto">
+                  <table class="w-full text-xs min-w-[540px]">
+                    <thead class="bg-subtle text-left font-semibold text-muted border-b border-line">
+                      <tr>
+                        <th class="px-3.5 py-2.5">{t('Member')}</th>
+                        <th class="px-3.5 py-2.5">{t('Scans captured')}</th>
+                        <th class="px-3.5 py-2.5">{t('Joined')}</th>
+                        <th class="px-3.5 py-2.5">{t('Status')}</th>
+                        <th class="px-3.5 py-2.5 text-right">{t('Action')}</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-line">
+                      {members.map((m) => (
+                        <tr key={m.id} class="hover:bg-subtle/40 transition-colors">
+                          <td class="px-3.5 py-2.5">
+                            <div class="flex items-center gap-2">
+                              <Avatar name={m.name} size="size-6 text-[10px]" />
+                              <div>
+                                <span class="block font-semibold text-ink">{m.name}</span>
+                                <span class="block text-[10px] text-muted">{m.email}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td class="px-3.5 py-2.5 font-bold tabular-nums text-ink">
+                            {m.lead_count ?? 0} {t('leads')}
+                          </td>
+                          <td class="px-3.5 py-2.5 text-muted">
+                            {m.created_at ? new Date(m.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—'}
+                          </td>
+                          <td class="px-3.5 py-2.5">
+                            {m.active ? (
+                              <span class="pill bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px]">{t('Active')}</span>
+                            ) : (
+                              <span class="pill bg-red-50 text-red-700 border border-red-200 text-[9px]">{t('Deactivated')}</span>
+                            )}
+                          </td>
+                          <td class="px-3.5 py-2.5 text-right">
+                            <div class="inline-flex items-center gap-1 justify-end">
+                              <button
+                                class={`btn-secondary h-7 px-2 text-[11px] gap-1 ${m.active ? 'text-amber-700 hover:bg-amber-50' : 'text-emerald-700 hover:bg-emerald-50'}`}
+                                disabled={busyMemberId === m.id}
+                                onClick={() => void toggleMember(m)}
+                                title={m.active ? t('Deactivate account') : t('Activate account')}
+                              >
+                                {m.active ? <UserX class="size-3" /> : <UserCheck class="size-3" />}
+                                <span>{m.active ? t('Deactivate') : t('Activate')}</span>
+                              </button>
+                              <button
+                                class="btn-ghost size-7 p-0 flex items-center justify-center text-muted hover:text-red-600"
+                                disabled={busyMemberId === m.id}
+                                onClick={() => void deleteMember(m)}
+                                title={t('Remove from event team')}
+                              >
+                                <Trash2 class="size-3" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Sheet>
+
+      {editEventOpen && (
+        <EditOrganizerEventModal
+          organizer={org}
+          onClose={() => setEditEventOpen(false)}
+          onDone={() => {
+            setEditEventOpen(false);
+            void load();
+            void onRefresh();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function EditOrganizerEventModal({
+  organizer,
+  onClose,
+  onDone,
+}: {
+  organizer: OrganizerDetail;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [eventName, setEventName] = useState(organizer.event_name || '');
+  const [startsOn, setStartsOn] = useState(organizer.starts_on || new Date().toISOString().slice(0, 10));
+  const [endsOn, setEndsOn] = useState(organizer.ends_on || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10));
+  const [venue, setVenue] = useState(organizer.venue || '');
+  const [maxLogins, setMaxLogins] = useState(organizer.max_logins || 10);
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    if (!eventName.trim()) { toast(t('Please enter event name.'), 'error'); return; }
+    setBusy(true);
+    try {
+      await (await backend()).updateOrganizerEvent(organizer.id, {
+        event_name: eventName,
+        starts_on: startsOn,
+        ends_on: endsOn,
+        venue,
+        max_logins: maxLogins,
+      });
+      toast(t('Event and organizer limits updated successfully!'), 'success');
+      onDone();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet open onClose={onClose} centered wide title={t('Edit Organizer Event & Limits')}
+      footer={<>
+        <button class="btn-ghost" onClick={onClose}>{t('Cancel')}</button>
+        <button class="btn-primary min-w-32 font-bold" disabled={busy} onClick={() => void save()}>
+          {busy ? <Spinner class="size-4" /> : t('Save changes')}
+        </button>
+      </>}>
+      <div class="space-y-4">
+        <Field label={t('Event name')} for="edit-org-ev-name">
+          <input id="edit-org-ev-name" class="input" value={eventName} onInput={(e) => setEventName(e.currentTarget.value)} />
+        </Field>
+
+        <div class="grid grid-cols-2 gap-3">
+          <Field label={t('Starts on')} for="edit-org-ev-start">
+            <input id="edit-org-ev-start" type="date" class="input" value={startsOn} onChange={(e) => setStartsOn(e.currentTarget.value)} />
+          </Field>
+          <Field label={t('Ends on')} for="edit-org-ev-end" hint={t('Deactivates 24h after')}>
+            <input id="edit-org-ev-end" type="date" class="input" value={endsOn} onChange={(e) => setEndsOn(e.currentTarget.value)} />
+          </Field>
+        </div>
+
+        <Field label={t('Venue & booth')} for="edit-org-ev-venue">
+          <input id="edit-org-ev-venue" class="input" value={venue} onInput={(e) => setVenue(e.currentTarget.value)} />
+        </Field>
+
+        <Field label={t('Allowed participant logins limit')} for="edit-org-max" hint={t('Restricted based on organizer plan')}>
+          <input id="edit-org-max" type="number" min={1} max={10000} class="input font-semibold" value={maxLogins} onInput={(e) => setMaxLogins(Number(e.currentTarget.value))} />
+        </Field>
+      </div>
+    </Sheet>
+  );
 }

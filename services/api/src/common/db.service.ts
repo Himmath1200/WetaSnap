@@ -16,10 +16,14 @@ import { DomainError } from './errors';
 export interface Caller {
   personId: string;
   companyId: string | null;
-  role: 'super_admin' | 'client_admin' | 'staff';
+  role: 'super_admin' | 'client_admin' | 'staff' | 'individual' | 'organizer';
 }
 
 export type Sql = TemplateStringsArray;
+
+function cleanDbUrl(url: string): string {
+  return url.replace(/([?&])sslmode=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
+}
 
 @Injectable()
 export class DbService implements OnModuleDestroy {
@@ -30,9 +34,9 @@ export class DbService implements OnModuleDestroy {
   constructor() {
     const env = loadEnv();
     const ssl = env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined;
-    const common = { max: env.DATABASE_POOL_MAX, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 5_000, ssl };
-    this.app = new Pool({ connectionString: env.DATABASE_URL, ...common });
-    this.service = new Pool({ connectionString: env.SERVICE_DATABASE_URL, ...common });
+    const common = { max: env.DATABASE_POOL_MAX, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl };
+    this.app = new Pool({ connectionString: cleanDbUrl(env.DATABASE_URL), ...common });
+    this.service = new Pool({ connectionString: cleanDbUrl(env.SERVICE_DATABASE_URL), ...common });
     for (const [name, pool] of [['app', this.app], ['service', this.service]] as const) {
       pool.on('error', (e) => this.log.error(`${name} pool: ${e.message}`));
     }
@@ -144,6 +148,9 @@ export function translate(e: unknown): Error {
   const err = e as { code?: string; message?: string; constraint?: string; hint?: string; detail?: string };
   const code = err?.code ?? '';
   const message = err?.message ?? 'Something went wrong.';
+  if (code === '42P01' || code === '42703') {
+    console.error('RAW SCHEMA ERROR:', message, 'code:', code);
+  }
 
   if (code === '23505') {
     if (/people_email/.test(err.constraint ?? '')) return new DomainError('This person already has access.', 409, 'email_taken');
@@ -152,6 +159,7 @@ export function translate(e: unknown): Error {
   }
   if (code === '23503') return new DomainError(cleanMessage(message, 'That is still in use somewhere else.'), 409);
   if (code === '23514' || code === '23502') {
+    console.error('DATABASE CONSTRAINT ERROR:', message, 'constraint:', err.constraint, 'detail:', err.detail);
     if (err.hint === 'seats_exhausted') return new DomainError(message, 409, 'seats_exhausted');
     return new DomainError(cleanMessage(message, 'Some of those details are not valid.'), 400);
   }

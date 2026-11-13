@@ -6,6 +6,8 @@
  * again, so a mistake in one of them is not enough to open a door.
  */
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { hashPassword } from '../../common/crypto';
 import { AuditService } from '../../common/audit.service';
 import { DbService, type Caller } from '../../common/db.service';
 import { DomainError, notFound } from '../../common/errors';
@@ -164,6 +166,47 @@ export class AdminService {
       `select changed_at, changed_by::text, summary from licence_history
         where company_id = $1 order by changed_at desc limit 100`, [companyId]);
     return rows.map((r) => ({ at: r.changed_at, by: r.changed_by ? 'WeTano' : 'system', summary: r.summary }));
+  }
+
+  async updatePersonEmail(me: Caller, personId: string, newEmail: string, reinvite: boolean) {
+    const address = newEmail.trim().toLowerCase();
+    const existing = await this.db.one<{ id: string; email: string; name: string; phone: string; role: 'staff' | 'client_admin'; company_id: string; default_event_id: string | null; access_ends_on: string | null }>(
+      `select id, email, name, phone, role::text as role, company_id, default_event_id, to_char(access_ends_on, 'YYYY-MM-DD') as access_ends_on
+         from people where id = $1`,
+      [personId],
+    );
+    if (!existing) throw notFound('That person');
+
+    if (existing.email.toLowerCase() !== address) {
+      const taken = await this.db.one<{ id: string }>('select id from people where lower(email) = lower($1) and id <> $2', [address, personId]);
+      if (taken) throw new DomainError('An account with this email address already exists.', 409, 'email_taken');
+      await this.db.query('update people set email = $2, updated_at = now() where id = $1', [personId, address]);
+      // Revoke any existing active sessions so they must log in with the new email
+      await this.db.query('update device_sessions set revoked_at = now() where person_id = $1 and revoked_at is null', [personId]);
+      await this.audit.write(me, {
+        action: 'person.email_update',
+        entity: 'people',
+        entityId: personId,
+        companyId: existing.company_id,
+        details: { oldEmail: existing.email, newEmail: address },
+      });
+    }
+
+    let invitation: Invitation | null = null;
+    if (reinvite && existing.company_id) {
+      invitation = await this.team.invite(me, {
+        email: address,
+        name: existing.name,
+        phone: existing.phone || '',
+        role: existing.role,
+        event_ids: existing.default_event_id ? [existing.default_event_id] : [],
+        default_event_id: existing.default_event_id,
+        access_ends_on: existing.access_ends_on,
+        company_id: existing.company_id,
+      });
+    }
+
+    return { ok: true, email: address, invitation };
   }
 
   // ---------------------------------------------------------------- usage
@@ -336,5 +379,241 @@ export class AdminService {
         order by a.at desc limit 500`,
       [filter.q, filter.company_id || null, filter.action,
         filter.from ? `${filter.from}T00:00:00Z` : null, filter.to ? `${filter.to}T23:59:59Z` : null]);
+  }
+
+  // ---------------------------------------------------------------- individuals
+  async listIndividuals(me: Caller) {
+    return this.db.query(
+      `select p.id, p.email, p.name, p.phone, p.role::text as role,
+              coalesce(p.plan, 'free') as plan, coalesce(p.monthly_scans, 0) as monthly_scans,
+              to_char(p.scans_reset_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as scans_reset_at,
+              to_char(p.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+              p.active, p.invited, p.avatar_url
+         from people p
+        where p.role = 'individual'
+        order by p.created_at desc`,
+    );
+  }
+
+  async updateIndividualPlan(me: Caller, id: string, plan: 'free' | 'pro') {
+    await this.db.query(
+      `update people set plan = $2, monthly_scans = case when $2 = 'pro' then 0 else monthly_scans end where id = $1`,
+      [id, plan],
+    );
+    await this.audit.write(me, { action: 'individual.plan', entity: 'people', entityId: id, details: { plan } });
+  }
+
+  async resetIndividualScans(me: Caller, id: string) {
+    await this.db.query(`update people set monthly_scans = 0 where id = $1`, [id]);
+    await this.audit.write(me, { action: 'individual.reset_scans', entity: 'people', entityId: id });
+  }
+
+  async toggleIndividualStatus(me: Caller, id: string, active: boolean) {
+    await this.db.query(`update people set active = $2 where id = $1`, [id, active]);
+    await this.audit.write(me, { action: 'individual.status', entity: 'people', entityId: id, details: { active } });
+  }
+
+  async deleteIndividual(me: Caller, id: string) {
+    await this.db.query(`delete from people where id = $1`, [id]);
+    await this.audit.write(me, { action: 'individual.delete', entity: 'people', entityId: id });
+  }
+
+  async updateIndividualPricing(me: Caller, input: Record<string, unknown>) {
+    await this.db.query(
+      `update individual_pricing set
+         free_scans_limit = coalesce($1, free_scans_limit),
+         pro_price_month = coalesce($2, pro_price_month),
+         pro_price_year = coalesce($3, pro_price_year),
+         currency = coalesce($4, currency),
+         free_features = coalesce($5, free_features),
+         pro_features = coalesce($6, pro_features),
+         updated_at = now()`,
+      [input.free_scans_limit ?? null, input.pro_price_month ?? null, input.pro_price_year ?? null,
+       input.currency ?? null, input.free_features ?? null, input.pro_features ?? null],
+    );
+    await this.audit.write(me, { action: 'individual_pricing.update', entity: 'individual_pricing' });
+  }
+
+  // ---------------------------------------------------------------- organizers
+  async listOrganizers(me: Caller) {
+    return this.db.query(
+      `select p.id, p.email, p.name, p.phone, p.role::text as role,
+              p.referral_code, coalesce(p.max_logins, 10) as max_logins,
+              to_char(p.event_ends_on, 'YYYY-MM-DD') as event_ends_on,
+              p.active, p.invited, p.avatar_url,
+              e.id as event_id, e.name as event_name, to_char(e.starts_on, 'YYYY-MM-DD') as starts_on,
+              to_char(e.ends_on, 'YYYY-MM-DD') as ends_on, e.venue,
+              (select count(*)::int from people m where m.organizer_id = p.id) as members_count,
+              case when e.ends_on is not null and now() > (e.ends_on + interval '24 hours') then true else false end as is_expired
+         from people p
+    left join events e on e.organizer_id = p.id or e.id = p.default_event_id
+        where p.role = 'organizer'
+        order by p.created_at desc`,
+    );
+  }
+
+  async createOrganizer(me: Caller, input: {
+    event_id?: string;
+    event_name: string;
+    starts_on: string;
+    ends_on: string;
+    venue?: string;
+    organizer_name: string;
+    organizer_email: string;
+    password?: string;
+    max_logins: number;
+  }) {
+    const address = input.organizer_email.trim().toLowerCase();
+    const existing = await this.db.one<{ id: string }>(`select id from people where lower(email) = lower($1)`, [address]);
+    if (existing) {
+      throw new DomainError('An account with this email already exists.', 409, 'email_taken');
+    }
+
+    const orgId = randomUUID();
+    const referralCode = 'ORG-' + Math.random().toString(36).substring(2, 7).toUpperCase();
+    const pw = input.password || 'WetaSnap#2026';
+    const hash = await hashPassword(pw);
+
+    // If super admin chose an existing event, attach this organizer to that event
+    let targetEvent: any = null;
+    if (input.event_id) {
+      targetEvent = await this.db.one<any>(
+        `select id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, to_char(ends_on, 'YYYY-MM-DD') as ends_on, venue
+           from events where id = $1`,
+        [input.event_id],
+      );
+    }
+
+    const evId = targetEvent ? targetEvent.id : randomUUID();
+    const effectiveStartsOn = targetEvent ? targetEvent.starts_on : input.starts_on;
+    const effectiveEndsOn = targetEvent ? targetEvent.ends_on : input.ends_on;
+
+    // 1. Create organizer person
+    const org = await this.db.one<any>(
+      `insert into people (id, company_id, email, name, phone, role, referral_code, max_logins, event_ends_on, access_ends_on, active, invited, has_password, mfa_enabled, default_event_id)
+       values ($1, null, $2, $3, '', 'organizer', $4, $5, $6, $7, true, false, true, false, $8)
+       returning id, email, name, role::text as role, referral_code, max_logins`,
+      [orgId, address, input.organizer_name.trim(), referralCode, input.max_logins, effectiveEndsOn, effectiveEndsOn, evId],
+    );
+
+    await this.db.query(
+      `insert into person_credentials (person_id, password_hash, history, changed_at, failed, locked_until)
+       values ($1, $2, '{}', now(), 0, null)`,
+      [orgId, hash],
+    );
+
+    // 2. If new event, create it; otherwise use existing event
+    let ev = targetEvent;
+    if (!ev) {
+      ev = await this.db.one<any>(
+        `insert into events (id, company_id, name, starts_on, ends_on, venue, booth, status, description, organizer_id, max_logins)
+         values ($1, null, $2, $3, $4, $5, '', 'open', 'Organizer event', $6, $7)
+         returning id, name, to_char(starts_on, 'YYYY-MM-DD') as starts_on, to_char(ends_on, 'YYYY-MM-DD') as ends_on, venue`,
+        [evId, input.event_name.trim(), input.starts_on, input.ends_on, input.venue?.trim() || '', orgId, input.max_logins],
+      );
+    }
+
+    // 3. Link person_events
+    await this.db.query(
+      `insert into person_events (person_id, event_id) values ($1, $2) on conflict do nothing`,
+      [orgId, evId],
+    );
+
+    await this.audit.write(me, { action: 'organizer.create', entity: 'people', entityId: orgId, details: { event_name: ev.name, referralCode } });
+
+    return { organizer: org, event: ev, referral_code: referralCode };
+  }
+
+  async updateOrganizerLogins(me: Caller, id: string, max_logins: number) {
+    await this.db.query(`update people set max_logins = $2 where id = $1`, [id, max_logins]);
+    await this.db.query(`update events set max_logins = $2 where organizer_id = $1`, [id, max_logins]);
+    await this.audit.write(me, { action: 'organizer.update_logins', entity: 'people', entityId: id, details: { max_logins } });
+  }
+
+  async getOrganizerDetails(me: Caller, id: string) {
+    const org = await this.db.one<any>(
+      `select p.id, p.email, p.name, p.phone, p.role::text as role,
+              p.referral_code, coalesce(p.max_logins, 10) as max_logins,
+              to_char(p.event_ends_on, 'YYYY-MM-DD') as event_ends_on,
+              p.active, p.invited, p.avatar_url,
+              e.id as event_id, e.name as event_name, to_char(e.starts_on, 'YYYY-MM-DD') as starts_on,
+              to_char(e.ends_on, 'YYYY-MM-DD') as ends_on, e.venue,
+              case when e.ends_on is not null and now() > (e.ends_on + interval '24 hours') then true else false end as is_expired
+         from people p
+    left join events e on e.organizer_id = p.id or e.id = p.default_event_id
+        where p.id = $1 and p.role = 'organizer'`,
+      [id],
+    );
+    if (!org) throw notFound('That organizer');
+
+    const members = await this.db.query<any>(
+      `select m.id, m.email, m.name, m.phone, m.role::text as role, m.active,
+              to_char(m.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+              (select count(*)::int from leads l where l.captured_by = m.id and l.deleted_at is null) as lead_count
+         from people m
+        where m.organizer_id = $1
+        order by m.name`,
+      [id],
+    );
+
+    const totalScansRow = await this.db.one<{ count: number }>(
+      `select count(*)::int as count from leads
+        where (captured_by = $1 or captured_by in (select id from people where organizer_id = $1))
+          and deleted_at is null`,
+      [id],
+    );
+
+    return {
+      organizer: org,
+      members,
+      total_scans: totalScansRow?.count ?? 0,
+    };
+  }
+
+  async updateOrganizerMember(me: Caller, organizerId: string, memberId: string, input: { active?: boolean; name?: string; phone?: string }) {
+    const member = await this.db.one<any>(`select id from people where id = $1 and organizer_id = $2`, [memberId, organizerId]);
+    if (!member) throw notFound('That team member');
+
+    const sets: string[] = [];
+    const params: unknown[] = [memberId];
+    if (input.active !== undefined) {
+      params.push(input.active);
+      sets.push(`active = $${params.length}`);
+    }
+    if (input.name !== undefined) {
+      params.push(input.name.trim());
+      sets.push(`name = $${params.length}`);
+    }
+    if (input.phone !== undefined) {
+      params.push(input.phone.trim());
+      sets.push(`phone = $${params.length}`);
+    }
+
+    if (sets.length > 0) {
+      await this.db.query(`update people set ${sets.join(', ')} where id = $1`, params);
+      await this.audit.write(me, { action: 'organizer.member_update', entity: 'people', entityId: memberId, details: input });
+    }
+  }
+
+  async deleteOrganizerMember(me: Caller, organizerId: string, memberId: string) {
+    const member = await this.db.one<any>(`select id from people where id = $1 and organizer_id = $2`, [memberId, organizerId]);
+    if (!member) throw notFound('That team member');
+
+    await this.db.query(`delete from people where id = $1`, [memberId]);
+    await this.audit.write(me, { action: 'organizer.member_delete', entity: 'people', entityId: memberId });
+  }
+
+  async updateOrganizerEvent(me: Caller, organizerId: string, input: { event_name: string; starts_on: string; ends_on: string; venue?: string; max_logins?: number }) {
+    await this.db.query(
+      `update events set name = $2, starts_on = $3, ends_on = $4, venue = $5, max_logins = coalesce($6, max_logins)
+        where organizer_id = $1`,
+      [organizerId, input.event_name.trim(), input.starts_on, input.ends_on, input.venue?.trim() || '', input.max_logins ?? null],
+    );
+    await this.db.query(
+      `update people set event_ends_on = $2, access_ends_on = $2, max_logins = coalesce($3, max_logins)
+        where id = $1`,
+      [organizerId, input.ends_on, input.max_logins ?? null],
+    );
+    await this.audit.write(me, { action: 'organizer.event_update', entity: 'events', details: input });
   }
 }

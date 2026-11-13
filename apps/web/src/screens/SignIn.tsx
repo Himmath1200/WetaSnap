@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
-import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, KeyRound, Lock, Mail, MailCheck, ShieldCheck } from 'lucide-preact';
+import { ArrowLeft, ArrowRight, CheckCircle2, Eye, EyeOff, KeyRound, Lock, Mail, MailCheck, ShieldCheck, User, AlertCircle, Ticket, Phone, Smartphone } from 'lucide-preact';
 import { backend, isDemo } from '../lib/backend';
-import { devAccounts, devCode, type DevAccounts } from '../lib/devAccounts';
+import { devCode } from '../lib/devAccounts';
 import { startSession } from '../lib/session';
 import { isEmail } from '../lib/validate';
 import { toast } from '../lib/store';
@@ -14,7 +14,7 @@ import { Copyright, Spinner } from '../components/ui';
 import { homeFor } from '../routes';
 import type { SecurityPolicy } from '../lib/types';
 
-type Step = 'password' | 'email_code' | 'totp' | 'forgot' | 'setup' | 'reset' | 'done';
+type Step = 'password' | 'email_code' | 'totp' | 'forgot' | 'setup' | 'reset' | 'done' | 'register';
 
 /**
  * S1 · Sign-in. Two doors (client decision, 26 Sep 2026): the WeTano Console at /super-admin/signin
@@ -35,24 +35,125 @@ type Step = 'password' | 'email_code' | 'totp' | 'forgot' | 'setup' | 'reset' | 
  * one colour in both themes, with mint as the only accent. It is the first screen anyone sees,
  * so it wears the brand colour rather than the theme's.
  */
+const PENDING_SIGNIN_KEY = 'wetasnap_pending_signin';
+
+function getPendingSignIn(door: Door) {
+  try {
+    const raw = sessionStorage.getItem(PENDING_SIGNIN_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data && data.door === door && Date.now() - (data.at ?? 0) < 15 * 60_000) {
+      return data;
+    }
+  } catch {}
+  return null;
+}
+
 export default function SignIn({ door }: { door: Door }) {
   const console_ = door === 'console';
   const { route } = useLocation();
   const hash = new URLSearchParams(location.hash.slice(1));
   const setupEmail = hash.get('setup'); // invitation link: the first-time setup, code in hand
-  const [step, setStep] = useState<Step>(setupEmail ? 'setup' : 'password');
-  const [email, setEmail] = useState(setupEmail ?? hash.get('email') ?? '');
+  const pendingAuth = getPendingSignIn(door);
+  const [step, setStep] = useState<Step>(setupEmail ? 'setup' : (pendingAuth?.step ?? 'password'));
+  const [email, setEmail] = useState(setupEmail ?? hash.get('email') ?? (pendingAuth?.email ?? ''));
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [resendIn, setResendIn] = useState(0);
-  const [demoCode, setDemoCode] = useState<string | undefined>();
-  /** Demo help, when the API offers it: the accounts to pick from and the code it just sent. */
-  const [demo, setDemo] = useState<DevAccounts>({ password: '', accounts: [] });
+  const [resendIn, setResendIn] = useState(pendingAuth?.resendIn ?? 0);
+  const [demoCode, setDemoCode] = useState<string | undefined>(pendingAuth?.demoCode);
   const [policy, setPolicy] = useState<SecurityPolicy>(DEFAULT_POLICY);
   const [ended] = useState(() => sessionStorage.getItem('wetasnap-ended') === '1');
   const [kept] = useState(() => Number(sessionStorage.getItem('wetasnap-kept') ?? 0));
+
+  const [regType, setRegType] = useState<'individual' | 'referral'>('individual');
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regCode, setRegCode] = useState('');
+  const [phoneOtpStage, setPhoneOtpStage] = useState(false);
+  const [phoneOtpCode, setPhoneOtpCode] = useState('');
+  const [expectedPhoneOtp, setExpectedPhoneOtp] = useState('');
+
+  async function submitRegister(e: Event) {
+    e.preventDefault();
+    if (!regName.trim()) { setError(t('Please enter your full name.')); return; }
+    if (!isEmail(regEmail)) { setError(t('Please enter a valid email address.')); return; }
+    const digitsOnly = regPhone.replace(/\D/g, '');
+    if (digitsOnly.length < 10) {
+      setError(t('Mobile number must be at least 10 digits.'));
+      return;
+    }
+    if (regPassword.length < 6) { setError(t('Password must be at least 6 characters.')); return; }
+    if (regType === 'referral' && !regCode.trim()) { setError(t('Please enter the event referral code provided by your organizer.')); return; }
+
+    // Normalize phone number: if exactly 10 digits, default to +91 country code for SMS delivery
+    const normalizedPhone = regPhone.trim().startsWith('+')
+      ? regPhone.trim()
+      : digitsOnly.length === 10
+      ? `+91${digitsOnly}`
+      : `+${digitsOnly}`;
+
+    // If phone OTP hasn't been sent yet, trigger SMS OTP verification via backend
+    if (!phoneOtpStage) {
+      setBusy(true); setError('');
+      try {
+        const b = await backend();
+        const res = await b.sendPhoneOtp(normalizedPhone);
+        setExpectedPhoneOtp(res.demoCode || '');
+        setPhoneOtpStage(true);
+        toast(t('Verification code sent to {phone}. Please check your phone messages.', { phone: normalizedPhone }), 'success', 5000);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // Verify phone OTP
+    if (expectedPhoneOtp && phoneOtpCode.trim() !== expectedPhoneOtp) {
+      setError(t('Incorrect mobile verification OTP. Please check the code sent to your phone.'));
+      return;
+    }
+
+    setBusy(true); setError('');
+    try {
+      const signed = regType === 'referral'
+        ? await (await backend()).registerReferral({
+          name: regName.trim(),
+          email: regEmail.trim(),
+          phone: normalizedPhone,
+          password: regPassword,
+          referral_code: regCode.trim(),
+        })
+        : await (await backend()).registerIndividual({
+          name: regName.trim(),
+          email: regEmail.trim(),
+          phone: normalizedPhone,
+          password: regPassword,
+        });
+      await finish(signed);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      const ref = p.get('ref') || p.get('code');
+      if (ref) {
+        setRegCode(ref.trim().toUpperCase());
+        setRegType('referral');
+        setStep('register');
+      }
+    }
+  }, []);
 
   useEffect(() => { sessionStorage.removeItem('wetasnap-ended'); sessionStorage.removeItem('wetasnap-kept'); }, []);
   // Opening the invitation while this page is already up changes only the fragment, which no
@@ -71,35 +172,53 @@ export default function SignIn({ door }: { door: Door }) {
     return () => removeEventListener('hashchange', onHash);
   }, []);
   useEffect(() => { void backend().then((b) => b.securityPolicy()).then(setPolicy).catch(() => {}); }, []);
-  // A development deployment lists its own accounts; anywhere else this answers nothing and the
-  // panel never appears.
-  useEffect(() => { void devAccounts().then(setDemo).catch(() => {}); }, []);
 
   /**
    * While the code step is open on a development deployment, fetch the code that was just sent and
    * show it — so demonstrating the app never means opening a terminal or a second tab.
    */
   useEffect(() => {
-    if (isDemo || !demo.password || step !== 'email_code' || demoCode) return;
+    if (step !== 'email_code' || demoCode) return;
     let stop = false;
     const tick = async () => {
       const code = await devCode(email);
       if (!stop && code) setDemoCode(code);
     };
     void tick();
-    const h = setInterval(() => { void tick(); }, 1500);
+    const h = setInterval(() => { void tick(); }, 1000);
     return () => { stop = true; clearInterval(h); };
-  }, [step, email, demo.password, demoCode]);
+  }, [step, email, demoCode]);
   useEffect(() => {
     if (resendIn <= 0) return;
-    const h = setTimeout(() => setResendIn((x) => x - 1), 1000);
+    const h = setTimeout(() => setResendIn((x: number) => x - 1), 1000);
     return () => clearTimeout(h);
   }, [resendIn]);
 
-  const fail = (e: unknown) => setError(e instanceof Error && e.message !== 'offline' ? e.message : t('You are offline. Connect to the internet to sign in.'));
-  const go = (to: Step) => { setStep(to); setError(''); };
+  const fail = (e: unknown) => {
+    if (e instanceof Error && e.message !== 'offline') {
+      setError(e.message);
+    } else if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setError(t('You are offline. Connect to the internet to sign in.'));
+    } else {
+      setError(t('Unable to reach server. Please try again in a moment.'));
+    }
+  };
+  const go = (to: Step) => {
+    setStep(to);
+    setError('');
+    if (to === 'password' || to === 'done') {
+      try { sessionStorage.removeItem(PENDING_SIGNIN_KEY); } catch {}
+    } else {
+      try {
+        sessionStorage.setItem(PENDING_SIGNIN_KEY, JSON.stringify({
+          door, step: to, email, demoCode, resendIn, at: Date.now(),
+        }));
+      } catch {}
+    }
+  };
 
   async function finish(si: import('../lib/backend').SignedIn) {
+    try { sessionStorage.removeItem(PENDING_SIGNIN_KEY); } catch {}
     await startSession(si);
     toast(t('Welcome, {name}', { name: si.person.name.split(' ')[0]! }), 'success');
     route(homeFor(si.person.role), true);
@@ -113,7 +232,22 @@ export default function SignIn({ door }: { door: Door }) {
     try {
       const r = await (await backend()).signInWithPassword(email, password, door);
       if (r.next === 'done') { await finish(r); return; }
-      if (r.next === 'email_code') { setDemoCode(r.demoCode); setResendIn(30); go('email_code'); return; }
+      if (r.next === 'email_code') {
+        setDemoCode(r.demoCode);
+        setResendIn(30);
+        try {
+          sessionStorage.setItem(PENDING_SIGNIN_KEY, JSON.stringify({
+            door, step: 'email_code', email, demoCode: r.demoCode, resendIn: 30, at: Date.now(),
+          }));
+        } catch {}
+        go('email_code');
+        return;
+      }
+      try {
+        sessionStorage.setItem(PENDING_SIGNIN_KEY, JSON.stringify({
+          door, step: 'totp', email, at: Date.now(),
+        }));
+      } catch {}
       go('totp');
     } catch (err) { fail(err); } finally { setBusy(false); }
   }
@@ -150,6 +284,11 @@ export default function SignIn({ door }: { door: Door }) {
       const r = await (await backend()).requestPasswordReset(email);
       setDemoCode(r.demoCode);
       setResendIn(30);
+      try {
+        sessionStorage.setItem(PENDING_SIGNIN_KEY, JSON.stringify({
+          door, step: step === 'setup' ? 'setup' : 'reset', email, demoCode: r.demoCode, resendIn: 30, at: Date.now(),
+        }));
+      } catch {}
       // On the setup step this is “Email me a new code”: stay there, the form is already open.
       if (step === 'setup') setError(''); else go('reset');
     } catch (err) { fail(err); } finally { setBusy(false); }
@@ -176,28 +315,27 @@ export default function SignIn({ door }: { door: Door }) {
   const stepNo = step === 'email_code' ? 2 : step === 'totp' ? 3 : 1;
 
   return (
-    <div class="door-scope flex min-h-dvh flex-col justify-between bg-door px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] text-door-ink sm:justify-center sm:p-6">
-      {/* Ambient glow behind the mark, and nothing to read: it is decoration. */}
+    <div class="door-scope flex min-h-dvh flex-col justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] sm:justify-center sm:p-6" style={{ background: 'var(--color-door)' }}>
+      {/* Ambient glow — subtle in light, vivid in dark */}
       <div aria-hidden="true" class="pointer-events-none fixed -top-40 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-500/10 blur-[120px]" />
 
       <div class="relative z-10 mx-auto my-auto flex w-full max-w-[420px] flex-col pt-2 pb-6">
-        <header class="mb-6 flex items-center justify-center gap-3">
-          <SnapMark />
-          <div class="wordmark flex items-baseline text-xl">
-            <span class="text-door-ink">WeTa</span>
-            <span class="ml-1.5 text-mint">Snap</span>
+        <header class="mb-6 flex items-center justify-center gap-2">
+          <img src="/logo.png" alt="" width="36" height="36" class="size-9" />
+          <div class="wordmark text-[22px]" style={{ color: 'var(--color-door-ink)' }}>
+            <span style={{ color: 'var(--color-mint)' }}>WeTa</span><span class="ml-1.5">Snap</span>
           </div>
         </header>
 
         {console_ && (
-          <span class="mx-auto mb-4 inline-flex items-center gap-1.5 rounded-full border border-door-line bg-door-card px-3 py-1 text-xs font-semibold text-door-ink">
-            <ShieldCheck class="size-3.5 text-mint" />{t('WeTano Console')}
+          <span class="mx-auto mb-4 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold" style={{ borderColor: 'var(--color-door-line)', background: 'var(--color-door-card)', color: 'var(--color-door-ink)' }}>
+            <ShieldCheck class="size-3.5" style={{ color: 'var(--color-mint)' }} />{t('WeTano Console')}
           </span>
         )}
 
         <main class="door-card relative rounded-2xl p-5 sm:p-7">
           {/* The card's top edge catches a little mint, so it reads as lit from above. */}
-          <div aria-hidden="true" class="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent" />
+          <div aria-hidden="true" class="absolute inset-x-8 top-0 h-px" style={{ background: 'linear-gradient(to right, transparent, color-mix(in srgb, var(--color-mint) 40%, transparent), transparent)' }} />
 
           {stepsFor > 1 && (step === 'password' || step === 'email_code' || step === 'totp') && (
             <ol class="mb-4 flex items-center gap-1.5" aria-label={t('Sign-in steps')}>
@@ -207,11 +345,174 @@ export default function SignIn({ door }: { door: Door }) {
             </ol>
           )}
 
+          {!console_ && (step === 'password' || step === 'register') && (
+            <div class="mb-5 flex p-1 rounded-xl border border-door-line bg-door-input">
+              <button
+                type="button"
+                class={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                  step === 'password' ? 'bg-door-card text-mint shadow-sm border border-door-line' : 'text-door-muted hover:text-door-ink'
+                }`}
+                onClick={() => { setStep('password'); setError(''); }}
+              >
+                {t('Sign in')}
+              </button>
+              <button
+                type="button"
+                class={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                  step === 'register' ? 'bg-door-card text-mint shadow-sm border border-door-line' : 'text-door-muted hover:text-door-ink'
+                }`}
+                onClick={() => { setStep('register'); setError(''); }}
+              >
+                {t('Register')}
+              </button>
+            </div>
+          )}
+
+          {step === 'register' && (
+            <form onSubmit={submitRegister} noValidate>
+              <div class="mb-4">
+                <h1 class="mb-1.5 text-xl font-bold" style={{ color: 'var(--color-door-ink)' }}>
+                  {regType === 'referral' ? t('Join Event via Referral') : t('Create Individual Account')}
+                </h1>
+                <p class="text-xs leading-relaxed sm:text-sm" style={{ color: 'var(--color-door-muted)' }}>
+                  {regType === 'referral'
+                    ? t('Register with an event organizer code. Access is granted for the duration of the event.')
+                    : t('Direct access to business card scanning. Includes 5 free scans each month.')}
+                </p>
+              </div>
+
+              {/* Sub-toggle: Solo Account vs Event Referral */}
+              <div class="mb-4 flex p-1 rounded-xl border border-door-line bg-door-input text-xs">
+                <button
+                  type="button"
+                  class={`flex-1 py-1 px-2.5 rounded-lg font-semibold transition-all ${
+                    regType === 'individual' ? 'bg-door-card text-mint shadow-sm border border-door-line' : 'text-door-muted hover:text-door-ink'
+                  }`}
+                  onClick={() => { setRegType('individual'); setError(''); }}
+                >
+                  {t('Solo Account')}
+                </button>
+                <button
+                  type="button"
+                  class={`flex-1 py-1 px-2.5 rounded-lg font-semibold transition-all ${
+                    regType === 'referral' ? 'bg-door-card text-mint shadow-sm border border-door-line' : 'text-door-muted hover:text-door-ink'
+                  }`}
+                  onClick={() => { setRegType('referral'); setError(''); }}
+                >
+                  {t('Event Referral')}
+                </button>
+              </div>
+
+              {regType === 'referral' && (
+                <div class="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-300">
+                  <div class="flex items-start gap-2">
+                    <AlertCircle class="size-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div>
+                      <span class="font-bold text-amber-200">{t('Important Event Notice:')}</span>
+                      <p class="mt-0.5 text-amber-300/90">
+                        {t('All scanned lead records will be permanently removed 24 hours after the event completes. Remember to export all leads before the deadline.')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {regType === 'referral' && (
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1">
+                    <label class="door-label mb-0" for="reg-code">{t('Event Referral Code / Link')}</label>
+                    {regCode && (
+                      <span class="pill bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                        {t('Linked to Event')}
+                      </span>
+                    )}
+                  </div>
+                  <div class="group relative">
+                    <Ticket class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                    <input id="reg-code" type="text" class="door-input pl-10 uppercase tracking-widest font-mono font-bold"
+                      placeholder="ORG-ABC12" value={regCode} onInput={(e) => setRegCode(e.currentTarget.value.toUpperCase())} />
+                  </div>
+                  <span class="mt-1 block text-[11px] text-door-muted">
+                    {regCode ? t('Auto-applied from your organizer link.') : t('Provided in the invite link sent by your event organizer.')}
+                  </span>
+                </div>
+              )}
+
+              <label class="door-label" for="reg-name">{t('Full name')}</label>
+              <div class="group relative">
+                <User class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                <input id="reg-name" type="text" autoFocus={regType === 'individual'} class="door-input pl-10"
+                  placeholder="Alex Morgan" value={regName} onInput={(e) => setRegName(e.currentTarget.value)} />
+              </div>
+
+              <label class="door-label mt-4" for="reg-email">{t('Email address')}</label>
+              <div class="group relative">
+                <Mail class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                <input id="reg-email" type="email" inputMode="email" autoComplete="email" class="door-input pl-10"
+                  placeholder="alex@example.com" value={regEmail} onInput={(e) => setRegEmail(e.currentTarget.value)} />
+              </div>
+
+              <label class="door-label mt-4" for="reg-phone">{t('Mobile Number')}</label>
+              <div class="group relative">
+                <Phone class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                <input id="reg-phone" type="tel" inputMode="tel" autoComplete="tel" class="door-input pl-10"
+                  placeholder="+1 234 567 8900" value={regPhone} onInput={(e) => { setRegPhone(e.currentTarget.value); setPhoneOtpStage(false); }} />
+              </div>
+
+              {phoneOtpStage && (
+                <div class="mt-4 p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <label class="door-label text-emerald-400 font-bold mb-0" for="reg-phone-otp">
+                      {t('Enter Mobile Verification Code (OTP)')}
+                    </label>
+                    <span class="text-[10px] font-mono text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded">
+                      SMS Sent
+                    </span>
+                  </div>
+                  <div class="group relative">
+                    <Smartphone class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-emerald-400" />
+                    <input
+                      id="reg-phone-otp"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      class="door-input pl-10 font-mono tracking-[0.25em] font-bold text-emerald-300 border-emerald-500/40"
+                      placeholder="123456"
+                      value={phoneOtpCode}
+                      onInput={(e) => setPhoneOtpCode(e.currentTarget.value.replace(/\D/g, ''))}
+                      autoFocus
+                    />
+                  </div>
+                  <p class="text-[11px] text-emerald-300/80 mt-1">
+                    {t('One mobile number can only be registered to one account.')}
+                  </p>
+                </div>
+              )}
+
+              <label class="door-label mt-4" for="reg-pw">{t('Choose password')}</label>
+              <div class="group relative">
+                <Lock class="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-door-muted transition-colors group-focus-within:text-mint" />
+                <input id="reg-pw" type={showPw ? 'text' : 'password'} class="door-input pr-11 pl-10 tracking-wide"
+                  placeholder="••••••••••••" value={regPassword} onInput={(e) => setRegPassword(e.currentTarget.value)} />
+                <button type="button" class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-door-muted hover:text-door-ink"
+                  onClick={() => setShowPw((v) => !v)} aria-label={showPw ? t('Hide password') : t('Show password')}>
+                  {showPw ? <EyeOff class="size-4" /> : <Eye class="size-4" />}
+                </button>
+              </div>
+
+              {error && <p class="door-error mt-4">{error}</p>}
+
+              <button class="door-cta mt-6 w-full" type="submit" disabled={busy}>
+                {busy ? <Spinner class="size-5" /> : !phoneOtpStage ? t('Verify Phone & Continue') : regType === 'referral' ? t('Verify & Join Event') : t('Verify & Create Account')}
+              </button>
+            </form>
+          )}
+
           {step === 'password' && (
             <form onSubmit={submitPassword} noValidate>
               <div class="mb-5">
-                <h1 class="mb-1.5 text-xl font-bold text-door-ink">{t('Sign in to WeTa Snap')}</h1>
-                <p class="text-xs leading-relaxed text-door-muted sm:text-sm">
+                <h1 class="mb-1.5 text-xl font-bold" style={{ color: 'var(--color-door-ink)' }}>{t('Sign in to WeTa Snap')}</h1>
+                <p class="text-xs leading-relaxed sm:text-sm" style={{ color: 'var(--color-door-muted)' }}>
                   {console_ ? t('Companies, licences and support for every client.') : t('Scanning, leads and everything else — all in one place.')}
                 </p>
               </div>
@@ -260,7 +561,11 @@ export default function SignIn({ door }: { door: Door }) {
               {back('password')}
               <h1 class="flex items-center gap-2 text-xl font-bold text-door-ink"><MailCheck class="size-5 text-mint" />{t('Check your email')}</h1>
               <p class="mt-1 text-sm text-door-muted">{t('We sent a 6-digit code to {email}. It lasts 10 minutes.', { email })}</p>
-              {demoCode && <DemoNote>{t('Demo mode — your code is')} <b class="font-mono tracking-widest">{demoCode}</b></DemoNote>}
+              {demoCode ? (
+                <DemoNote>{t('Testing code:')} <b class="font-mono tracking-widest text-mint">{demoCode}</b></DemoNote>
+              ) : (
+                <DemoNote>{t('Waiting for code... (check your email or use test code)')} <button type="button" class="underline ml-1 font-mono" onClick={() => void devCode(email).then((c) => c && setDemoCode(c))}>{t('Fetch code')}</button></DemoNote>
+              )}
               <CodeBoxes key="email" disabled={busy} onComplete={(c) => void submitEmailCode(c)} />
               {error && <p class="door-error mt-3" role="alert">{error}</p>}
               <div class="mt-4 flex items-center justify-between">
@@ -318,29 +623,7 @@ export default function SignIn({ door }: { door: Door }) {
           )}
         </main>
 
-        {step === 'password' && (isDemo
-          ? <DemoAccounts door={door} onPick={(e) => { setEmail(e); setPassword('WetaSnap#2026'); }} />
-          : <DevAccountsPanel door={door} demo={demo} onPick={(e) => { setEmail(e); setPassword(demo.password); }} />)}
         <Copyright class="mt-6" />
-      </div>
-    </div>
-  );
-}
-
-/** The viewfinder mark on the door: four corner brackets around a sensor dot. */
-function SnapMark() {
-  return (
-    <div class="relative size-10 rounded-xl bg-gradient-to-b from-white/10 to-white/0 p-px shadow-lg shadow-black/40">
-      <div class="relative flex size-full items-center justify-center overflow-hidden rounded-[11px] bg-door-card">
-        <svg class="size-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 8V5a1 1 0 0 1 1-1h3" stroke-linecap="round" />
-          <path d="M16 4h3a1 1 0 0 1 1 1v3" stroke-linecap="round" />
-          <path d="M4 16v3a1 1 0 0 0 1 1h3" stroke-linecap="round" />
-          <path d="M16 20h3a1 1 0 0 0 1-1v-3" stroke-linecap="round" />
-          <circle class="fill-emerald-400/20" cx="12" cy="12" r="3" />
-          <path d="M9 12h6" stroke-dasharray="0.5 2" stroke-linecap="round" />
-        </svg>
-        <div class="pointer-events-none absolute inset-0 bg-emerald-400/10 mix-blend-screen" />
       </div>
     </div>
   );
@@ -486,77 +769,5 @@ function CodeBoxes({ onComplete, disabled }: { onComplete: (code: string) => voi
           }} />
       ))}
     </div>
-  );
-}
-
-/** The role tag on a demo account chip: mint for the people who scan, blue for the ones who run it. */
-function RoleTag({ children, admin }: { children: preact.ComponentChildren; admin?: boolean }) {
-  return (
-    <span class={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${admin ? 'border-sky-500/20 bg-sky-500/10 text-sky-400' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'}`}>
-      {children}
-    </span>
-  );
-}
-
-/**
- * The accounts this deployment has, for demonstrating — one tap fills the address and the password.
- * It only draws anything when the API said it is a development one (lib/devAccounts.ts), so a real
- * deployment shows nothing at all.
- */
-function DevAccountsPanel({ door, demo, onPick }: { door: Door; demo: DevAccounts; onPick: (email: string) => void }) {
-  const wanted = door === 'console' ? ['super_admin'] : ['client_admin', 'staff'];
-  const accounts = demo.accounts.filter((a) => wanted.includes(a.role));
-  if (!demo.password || !accounts.length) return null;
-
-  return (
-    <section class="mt-4 rounded-2xl border border-door-line bg-door-card/60 p-4">
-      <div class="mb-3 flex items-center justify-between px-1">
-        <span class="text-xs font-medium text-door-muted">{t('Demo accounts — tap to fill')}</span>
-        <span class="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">{demo.password}</span>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        {accounts.map((a) => (
-          <button key={a.email} type="button" class="door-chip" onClick={() => onPick(a.email)} title={a.email}>
-            <span class="truncate text-xs font-medium text-door-ink">{a.name || a.email}</span>
-            <RoleTag admin={a.role === 'super_admin' || a.role === 'client_admin'}>
-              {a.role === 'super_admin' ? t('WeTano') : a.role === 'client_admin' ? t('Admin') : t('Scanner')}
-            </RoleTag>
-          </button>
-        ))}
-      </div>
-      <p class="mt-2 px-1 text-[11px] text-door-muted">
-        {door === 'console'
-          ? t('The 6-digit code appears here on the next screen.')
-          : t('Scanner accounts need no code; an admin\u2019s code appears on the next screen.')}
-      </p>
-    </section>
-  );
-}
-
-/** Demo only: the accounts this door accepts, with the shared demo password filled in. */
-function DemoAccounts({ door, onPick }: { door: Door; onPick: (email: string) => void }) {
-  const accounts: [string, string, string][] = door === 'console'
-    ? [['super@wetano.com', 'WeTano Support', 'WeTano']]
-    : [
-      ['anna@agroexpo.de', 'Anna Weber', 'Scanner'],
-      ['ben@agroexpo.de', 'Ben Keller', 'Scanner'],
-      ['admin@agroexpo.de', 'Julia Hoffmann', 'Admin'],
-      ['admin@nordicseeds.se', 'Erik Lund', 'Admin'],
-    ];
-  return (
-    <section class="mt-4 rounded-2xl border border-door-line bg-door-card/60 p-4">
-      <div class="mb-3 flex items-center justify-between px-1">
-        <span class="text-xs font-medium text-door-muted">{t('Demo accounts — tap to fill')}</span>
-        <span class="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-400">WetaSnap#2026</span>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        {accounts.map(([e, name, role]) => (
-          <button key={e} type="button" class="door-chip" onClick={() => onPick(e)} title={e}>
-            <span class="truncate text-xs font-medium text-door-ink">{name}</span>
-            <RoleTag admin={role === 'Admin'}>{t(role)}</RoleTag>
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }

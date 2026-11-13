@@ -13,7 +13,7 @@ const filtersSchema = z.object({
   captured_by: idList(100),
   tag_ids: idList(50),
   status: z.enum(['waiting', 'synced', 'in_crm', 'check', '']).default(''),
-  interest: z.enum(['hot', 'warm', 'cold', '']).default(''),
+  interest: z.enum(['wetaloop', 'wetanalytics', 'other', 'hot', 'warm', 'cold', '']).default(''),
   from: z.union([isoDate, z.literal('')]).default(''),
   to: z.union([isoDate, z.literal('')]).default(''),
   import_batch_id: uuid.optional(),
@@ -34,7 +34,7 @@ const leadBody = z.object({
   device: z.string().max(200).default(''),
   source: z.enum(['camera', 'upload', 'manual']).default('manual'),
   fields: z.record(z.string().max(40), fieldValue).default({}),
-  interest: z.enum(['hot', 'warm', 'cold']).nullable().default(null),
+  interest: z.enum(['wetaloop', 'wetanalytics', 'other', 'hot', 'warm', 'cold']).nullable().default(null),
   notes: z.string().max(5000).default(''),
   consent: z.boolean().default(false),
   consent_version: z.number().int().min(1).max(10_000).default(1),
@@ -92,6 +92,17 @@ export class LeadsController {
   async remove(@Me() me: Caller, @Param('id') id: string) {
     await this.leads.remove(me, parse(uuid, id));
     return { ok: true };
+  }
+
+  @Post(':id/restore')
+  async restore(@Me() me: Caller, @Param('id') id: string) {
+    await this.leads.restore(me, parse(uuid, id));
+    return { ok: true };
+  }
+
+  @Get('recycle-bin')
+  recycleBin(@Me() me: Caller) {
+    return this.leads.recycleBin(me);
   }
 
   // ---------------------------------------------------------------- bulk

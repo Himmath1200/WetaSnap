@@ -54,8 +54,7 @@ export function OcrPopup() {
       aria-label={t('Raw OCR text')}
     >
       <div class="overflow-hidden rounded-2xl border border-line bg-surface shadow-2xl">
-        <div class="accent-bar" />
-        <header class="flex items-center gap-2 px-3 py-2">
+        <header class="flex items-center gap-2 px-3 py-2 border-b border-line">
           <span class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-ocean-100 text-ocean-700">
             <ScanText class="size-4" />
           </span>

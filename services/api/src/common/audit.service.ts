@@ -22,7 +22,7 @@ export interface AuditInput {
 export interface Actor {
   personId: string | null;
   companyId: string | null;
-  role: 'super_admin' | 'client_admin' | 'staff' | null;
+  role: 'super_admin' | 'client_admin' | 'staff' | 'individual' | 'organizer' | null;
   email?: string;
 }
 

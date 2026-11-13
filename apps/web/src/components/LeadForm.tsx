@@ -1,15 +1,14 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { AlertTriangle, Sparkles, Flame, Mic, Square, Sun, Snowflake } from 'lucide-preact';
+import { AlertTriangle, Sparkles, Layers, BarChart3, MoreHorizontal, Flame, Sun, Snowflake } from 'lucide-preact';
 import { fieldError, normalisePhone, normaliseUrl } from '../lib/validate';
 import { t } from '../lib/i18n';
-import { dictate, voiceLang, voiceSupported, type VoiceSession } from '../lib/voice';
-import { toast } from '../lib/store';
 import { Field, Spinner } from './ui';
 import type { Company, FieldDefinition, FieldValue, Interest } from '../lib/types';
 
 export interface Draft {
   fields: Record<string, FieldValue>;
   interest: Interest | null;
+  leadRating?: 'hot' | 'warm' | 'cold' | null;
+  otherInterestText?: string;
   notes: string;
   consent: boolean;
 }
@@ -28,10 +27,16 @@ interface Props {
   idPrefix?: string;
 }
 
-const INTERESTS: { id: Interest; label: string; icon: typeof Flame; on: string }[] = [
-  { id: 'hot', label: 'Hot', icon: Flame, on: 'border-red-500 bg-red-50 text-red-700' },
-  { id: 'warm', label: 'Warm', icon: Sun, on: 'border-amber-500 bg-amber-50 text-amber-800' },
-  { id: 'cold', label: 'Cold', icon: Snowflake, on: 'border-ocean-500 bg-ocean-50 text-ocean-700' },
+const PRODUCTS: { id: Interest; label: string; icon: typeof Layers; on: string }[] = [
+  { id: 'wetaloop', label: 'WeTaLoop', icon: Layers, on: 'border-brand-500 bg-brand-50 text-brand-700 font-bold' },
+  { id: 'wetanalytics', label: 'WeTaAnalytics', icon: BarChart3, on: 'border-ocean-500 bg-ocean-50 text-ocean-700 font-bold' },
+  { id: 'other', label: 'Other', icon: MoreHorizontal, on: 'border-amber-500 bg-amber-50 text-amber-800 font-bold' },
+];
+
+const RATINGS: { id: 'hot' | 'warm' | 'cold'; label: string; icon: typeof Flame; on: string }[] = [
+  { id: 'hot', label: 'Hot', icon: Flame, on: 'border-red-500 bg-red-500/15 text-red-600 font-bold ring-2 ring-red-400' },
+  { id: 'warm', label: 'Warm', icon: Sun, on: 'border-amber-500 bg-amber-500/15 text-amber-700 font-bold ring-2 ring-amber-400' },
+  { id: 'cold', label: 'Cold', icon: Snowflake, on: 'border-sky-500 bg-sky-500/15 text-sky-600 font-bold ring-2 ring-sky-400' },
 ];
 
 /** S3 · Review & save form — the company's own fields in its chosen order (AI-02, LEAD-01). */
@@ -102,23 +107,45 @@ export function LeadForm({ defs, draft, onChange, company, showErrors, readState
       </div>
 
       <div>
-        <span class="label">{t('Interest')}</span>
+        <span class="label">{t('Product Interest')}</span>
         <div class="flex gap-2">
-          {INTERESTS.map((i) => (
+          {PRODUCTS.map((i) => (
             <button key={i.id} type="button" aria-pressed={draft.interest === i.id} onClick={() => onChange({ ...draft, interest: draft.interest === i.id ? null : i.id })}
-              class={`chip flex-1 justify-center ${draft.interest === i.id ? i.on : 'border-line bg-surface text-slate-600'}`}>
+              class={`chip flex-1 justify-center py-2 text-xs transition ${draft.interest === i.id ? i.on : 'border-line bg-surface text-slate-600'}`}>
               <i.icon class="size-4" />{t(i.label)}
             </button>
           ))}
         </div>
+        {draft.interest === 'other' && (
+          <div class="mt-2.5">
+            <input
+              type="text"
+              class="input text-xs"
+              placeholder={t('Specify other product / service of interest...')}
+              value={draft.otherInterestText ?? ''}
+              onInput={(e) => onChange({ ...draft, otherInterestText: e.currentTarget.value })}
+              autoFocus
+            />
+          </div>
+        )}
       </div>
 
       <div>
-        <div class="flex items-baseline justify-between">
-          <label class="label" for={`${idPrefix}-notes`}>{t('Notes')}</label>
-          <VoiceNote lang={voiceLang(company?.default_language ?? 'en')} onText={(text) => onChange({ ...draft, notes: text })} current={draft.notes} />
+        <span class="label">{t('Lead Priority Indicator')}</span>
+        <div class="flex gap-2">
+          {RATINGS.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              aria-pressed={draft.leadRating === r.id}
+              onClick={() => onChange({ ...draft, leadRating: draft.leadRating === r.id ? null : r.id })}
+              class={`chip flex-1 justify-center py-2 text-xs transition ${draft.leadRating === r.id ? r.on : 'border-line bg-surface text-slate-600'}`}
+            >
+              <r.icon class="size-4" />
+              <span>{t(r.label)}</span>
+            </button>
+          ))}
         </div>
-        <textarea id={`${idPrefix}-notes`} rows={2} class="input" placeholder={t('What did you talk about?')} value={draft.notes} onInput={(e) => onChange({ ...draft, notes: e.currentTarget.value })} />
       </div>
 
       <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-surface p-3">
@@ -126,34 +153,6 @@ export function LeadForm({ defs, draft, onChange, company, showErrors, readState
         <span class="text-sm text-slate-700">{company?.consent_text ?? t('The visitor agrees to be contacted.')}</span>
       </label>
     </div>
-  );
-}
-
-/** Hold-free dictation: tap to start, tap to stop. The text is appended to whatever is typed. */
-function VoiceNote({ lang, current, onText }: { lang: string; current: string; onText: (text: string) => void }) {
-  const [on, setOn] = useState(false);
-  const sessionRef = useRef<VoiceSession | null>(null);
-  const baseRef = useRef('');
-  useEffect(() => () => sessionRef.current?.stop(), []);
-  if (!voiceSupported()) return null;
-
-  function toggle() {
-    if (on) { sessionRef.current?.stop(); sessionRef.current = null; setOn(false); return; }
-    baseRef.current = current ? current.trimEnd() + ' ' : '';
-    setOn(true);
-    sessionRef.current = dictate(
-      lang,
-      (text, final) => { onText((baseRef.current + text).trim()); if (final) setOn(false); },
-      (msg) => { toast(t(msg), 'error'); setOn(false); },
-    );
-  }
-
-  return (
-    <button type="button" onClick={toggle} aria-pressed={on}
-      class={`mb-1 inline-flex min-h-11 items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold transition ${on ? 'bg-red-50 text-red-700' : 'text-ocean-700 hover:bg-ocean-50'}`}>
-      {on ? <><Square class="size-3 fill-current" />{t('Stop')}</> : <><Mic class="size-3.5" />{t('Dictate')}</>}
-      {on && <span class="ml-0.5 size-1.5 animate-pulse rounded-full bg-red-600" />}
-    </button>
   );
 }
 

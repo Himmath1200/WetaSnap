@@ -150,7 +150,7 @@ export function CornerEditor({ photo, initial, onDone, onRetake }: Props) {
       </div>
 
       <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:flex-row">
-        <div ref={wrap} class="flex min-h-72 flex-1 items-center justify-center overflow-hidden rounded-2xl bg-slate-900 p-2 lg:min-h-96">
+        <div ref={wrap} class="flex min-h-72 flex-1 items-center justify-center overflow-hidden rounded-2xl bg-black p-2 lg:min-h-96">
           <div
             ref={frame}
             class="relative touch-none overflow-hidden rounded-lg select-none"

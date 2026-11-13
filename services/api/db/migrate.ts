@@ -24,9 +24,13 @@ const files = () =>
 
 const checksum = (sql: string) => createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex').slice(0, 16);
 
+function cleanDbUrl(url: string): string {
+  return url.replace(/([?&])sslmode=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
+}
+
 async function connect(): Promise<Client> {
   const env = loadEnv();
-  const client = new Client({ connectionString: env.SERVICE_DATABASE_URL, ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined });
+  const client = new Client({ connectionString: cleanDbUrl(env.SERVICE_DATABASE_URL), ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined });
   await client.connect();
   return client;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CameraOff, SwitchCamera, Zap, ZapOff } from 'lucide-preact';
-import { analyseFrame, burstCrop, frameRect, isGlare, motion, placement, sharpness } from '../lib/image';
+import { analyseFrame, frameRect, isGlare, motion, placement, sharpness, snapVideo } from '../lib/image';
 import { t } from '../lib/i18n';
 
 export interface CameraHandle { capture: () => void }
@@ -14,9 +14,9 @@ interface Props {
 
 const SAMPLE_W = 160;
 const SAMPLE_H = 100;
-const STEADY_FRAMES = 4; // ~1 s at 250 ms
-const MOTION_MAX = 6;
-const SHARP_MIN = 90;
+const STEADY_FRAMES = 3; // ~750 ms lock-on to ensure full card in frame
+const MOTION_MAX = 8;
+const SHARP_MIN = 80;
 
 /** QR codes and badge barcodes, where the browser can read them (Chrome, Android). */
 type Detector = { detect: (s: CanvasImageSource) => Promise<unknown[]> };
@@ -50,10 +50,11 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
     const v = video.current;
     if (!v || !v.videoWidth) return;
     setFlash(true);
-    setTimeout(() => setFlash(false), 180);
+    setTimeout(() => setFlash(false), 120);
     navigator.vibrate?.(30);
-    // Burst: 3 frames ~220ms apart, keep the sharpest — handshake blur is the top misread cause.
-    void burstCrop(v, frameRect(v.videoWidth, v.videoHeight)).then((shot) => onCap.current(shot));
+    // Instant frame grab from live video
+    const shot = snapVideo(v, frameRect(v.videoWidth, v.videoHeight));
+    onCap.current(shot);
   };
   useEffect(() => handle?.({ capture }));
 
@@ -137,7 +138,7 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
 
   if (error)
     return (
-      <div class="flex h-full min-h-64 flex-col items-center justify-center gap-3 bg-slate-900 p-6 text-center text-white">
+      <div class="flex h-full min-h-64 flex-col items-center justify-center gap-3 bg-black p-6 text-center text-white">
         <CameraOff class="size-10 text-white/60" />
         <p class="max-w-xs text-sm text-white/90">{error}</p>
       </div>
@@ -162,7 +163,7 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
   }[hint];
 
   return (
-    <div class="relative h-full min-h-64 overflow-hidden bg-slate-900">
+    <div class="relative h-full min-h-64 overflow-hidden bg-black">
       <video ref={video} class="absolute inset-0 size-full object-cover" playsInline muted autoPlay />
       {/* Card frame overlay (ID-1 ratio) */}
       <div class="pointer-events-none absolute inset-0 flex items-center justify-center">

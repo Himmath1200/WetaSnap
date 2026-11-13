@@ -1,11 +1,11 @@
 // Domain contract shared by the PWA and the API (URS v2.0 §9.4).
 // Keep in sync with services/api/db/migrations.
 
-export type Role = 'super_admin' | 'client_admin' | 'staff';
+export type Role = 'super_admin' | 'client_admin' | 'staff' | 'individual' | 'organizer';
 
 export type FieldType = 'text' | 'email' | 'phone' | 'link' | 'choice' | 'longtext';
 export type FilledBy = 'ai' | 'offline' | 'person' | 'qr';
-export type Interest = 'hot' | 'warm' | 'cold';
+export type Interest = 'wetaloop' | 'wetanalytics' | 'other' | 'hot' | 'warm' | 'cold';
 export type LeadSource = 'camera' | 'upload' | 'manual';
 
 /** On device → Synced → In CRM, or Check/Failed (SYNC-02). */
@@ -37,6 +37,9 @@ export interface Company {
   suspended_reason: string;
   /** What happens when the monthly scan allowance runs out. */
   scan_limit_action: ScanLimitAction;
+  /** Organization follow-up message template dispatched by all staff scanners */
+  follow_up_message?: string | null;
+  follow_up_auto?: boolean;
 }
 
 /** Set by WeTano per company (LIC-05). */
@@ -55,11 +58,21 @@ export interface Licence {
 
 export interface Person {
   id: string;
-  company_id: string | null; // null for super admins
+  company_id: string | null; // null for super admins and individuals
   email: string;
   name: string;
   phone: string;
   role: Role;
+  /** For individual users: subscription plan and scan count tracking */
+  plan?: 'free' | 'pro';
+  monthly_scans?: number;
+  scans_reset_at?: string;
+  created_at?: string;
+  /** For organizers & referral event members */
+  referral_code?: string;
+  organizer_id?: string | null;
+  max_logins?: number;
+  event_ends_on?: string | null;
   /** Events this person may capture for; the first one is their default. */
   event_ids: string[];
   default_event_id: string | null;
@@ -82,11 +95,23 @@ export interface EventItem {
   booth: string;
   status: 'open' | 'closed';
   description: string;
-  /** IANA zone of the venue — decides what “today” means for this event's leads. */
   time_zone: string;
-  /** Card-field template used at this event (null = the company default). */
   template_id: string | null;
   attachments: Attachment[];
+  organizer_id?: string | null;
+  organizer_name?: string | null;
+  max_logins?: number;
+}
+
+export interface OrganizerDetail extends Person {
+  event_id?: string;
+  event_name?: string;
+  starts_on?: string;
+  ends_on?: string;
+  venue?: string;
+  members_count: number;
+  total_scans?: number;
+  is_expired?: boolean;
 }
 
 export interface Attachment {
@@ -249,6 +274,17 @@ export interface Plan {
   connectors_allowed: ConnectorKind[];
   features: string[];
   active: boolean;
+}
+
+/** Individual/Solo account plans and limits (configured by Super Admin in Subscriptions). */
+export interface IndividualPricingConfig {
+  free_scans_limit: number;
+  pro_price_month: number;
+  pro_price_year: number;
+  currency: string;
+  free_features: string[];
+  pro_features: string[];
+  updated_at?: string;
 }
 
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { Plus, Activity, BellRing, Pencil, Trash2 } from 'lucide-preact';
+import { Plus, Activity, BellRing, Pencil, Trash2, Users, CalendarCheck } from 'lucide-preact';
 import { Counter, Dialog, Empty, Field, FilterChip, FilterPopover, SearchInput, Select, Sheet, SortHeader, SortMenu, Spinner, Switch, Tabs } from '../components/ui';
 import { backend } from '../lib/backend';
 import { toast } from '../lib/store';
 import { t, tn } from '../lib/i18n';
-import type { CompanySummary, ScanLimitAction, Sort, UsageAlert, UsageRow } from '../lib/types';
+import type { CompanySummary, OrganizerDetail, Person, ScanLimitAction, Sort, UsageAlert, UsageRow } from '../lib/types';
 
 /** S12 · Usage — WeTano Super Admin: what every company used this month, and the alerts we watch. */
 
-type Tab = 'usage' | 'alerts';
+type Tab = 'organizations' | 'organizers' | 'individuals' | 'alerts';
 type Metric = UsageAlert['metric'];
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -53,7 +53,7 @@ const SORT_KEYS: Record<string, (r: UsageRow) => string | number> = {
 };
 
 export default function Usage() {
-  const [tab, setTab] = useState<Tab>('usage');
+  const [tab, setTab] = useState<Tab>('organizations');
   const [month, setMonth] = useState(thisMonth);
   const [newAlert, setNewAlert] = useState(false);
 
@@ -61,16 +61,27 @@ export default function Usage() {
     <div class="mx-auto max-w-7xl">
       <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 class="text-xl font-bold">{t('Usage')}</h1>
-          <p class="text-sm text-muted">{t('What every company used, and when to be told about it.')}</p>
+          <h1 class="text-xl font-bold">{t('Usage & Analytics')}</h1>
+          <p class="text-sm text-muted">{t('Track activity across companies, event organizers, and solo individuals.')}</p>
         </div>
         {tab === 'alerts' && <button class="btn-primary" onClick={() => setNewAlert(true)}><Plus class="size-4" />{t('New alert')}</button>}
       </div>
 
-      <Tabs<Tab> value={tab} onChange={setTab} items={[{ id: 'usage', label: t('Usage') }, { id: 'alerts', label: t('Usage alerts') }]} />
+      <Tabs<Tab>
+        value={tab}
+        onChange={setTab}
+        items={[
+          { id: 'organizations', label: t('Organizations') },
+          { id: 'organizers', label: t('Event Organizers') },
+          { id: 'individuals', label: t('Solo Individuals') },
+          { id: 'alerts', label: t('Usage alerts') },
+        ]}
+      />
 
       <div class="mt-5">
-        {tab === 'usage' && <UsageTab month={month} setMonth={setMonth} />}
+        {tab === 'organizations' && <UsageTab month={month} setMonth={setMonth} />}
+        {tab === 'organizers' && <OrganizersUsageTab />}
+        {tab === 'individuals' && <IndividualsUsageTab />}
         {tab === 'alerts' && <AlertsTab newOpen={newAlert} closeNew={() => setNewAlert(false)} />}
       </div>
     </div>
@@ -239,6 +250,169 @@ function ScanBar({ used, limit }: { used: number; limit: number }) {
   );
 }
 
+// ---------------------------------------------------------------- usage per organizer
+function OrganizersUsageTab() {
+  const [rows, setRows] = useState<OrganizerDetail[] | null>(null);
+  const [q, setQ] = useState('');
+
+  useEffect(() => {
+    backend().then((b) => b.listOrganizers()).then(setRows).catch((e) => {
+      setRows([]);
+      toast((e as Error).message, 'error');
+    });
+  }, []);
+
+  const all = rows ?? [];
+  const list = useMemo(() => {
+    return all.filter((o) => !q || `${o.name} ${o.email} ${o.event_name}`.toLowerCase().includes(q.toLowerCase()));
+  }, [all, q]);
+
+  const totalLogins = all.reduce((sum, o) => sum + (o.members_count ?? 0), 0);
+  const totalLeads = all.reduce((sum, o) => sum + (o.total_scans ?? 0), 0);
+
+  return (
+    <>
+      <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Counter label={t('Total Organizers')} value={all.length} tone="ocean" />
+        <Counter label={t('Active Campaigns')} value={all.filter((o) => !o.is_expired).length} tone="brand" />
+        <Counter label={t('Attendee Logins')} value={totalLogins} tone="amber" />
+        <Counter label={t('Cards Scanned')} value={totalLeads} />
+      </div>
+
+      <div class="mb-3 flex max-w-sm">
+        <SearchInput value={q} onChange={setQ} placeholder={t('Search organizers or events...')} label={t('Search')} />
+      </div>
+
+      <div class="card overflow-hidden">
+        {!rows ? (
+          <div class="flex justify-center py-16"><Spinner class="size-6 text-brand-700" /></div>
+        ) : list.length === 0 ? (
+          <Empty icon={<CalendarCheck class="size-6" />} title={t('No organizers found')} text={t('No event campaigns match your search.')} />
+        ) : (
+          <table class="w-full text-sm">
+            <thead class="bg-subtle text-left text-xs font-semibold text-muted">
+              <tr>
+                <th class="px-4 py-3">{t('Organizer / Event')}</th>
+                <th class="px-4 py-3">{t('Referral Link / Code')}</th>
+                <th class="px-4 py-3 text-center">{t('Logins Used')}</th>
+                <th class="px-4 py-3 text-right">{t('Scans Done')}</th>
+                <th class="px-4 py-3 text-right">{t('Status')}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-line">
+              {list.map((o) => (
+                <tr key={o.id} class="hover:bg-brand-50/40">
+                  <td class="px-4 py-3">
+                    <p class="font-semibold text-ink">{o.name}</p>
+                    <p class="text-xs text-muted">{o.event_name} · {o.email}</p>
+                  </td>
+                  <td class="px-4 py-3 font-mono text-xs font-bold text-brand-700">
+                    {o.referral_code}
+                  </td>
+                  <td class="px-4 py-3 text-center font-semibold tabular-nums">
+                    {o.members_count ?? 0} / {o.max_logins}
+                  </td>
+                  <td class="px-4 py-3 text-right font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {(o.total_scans ?? 0).toLocaleString()}
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <span class={`pill ${o.is_expired ? 'bg-subtle text-muted' : 'bg-brand-100 text-brand-800'}`}>
+                      {o.is_expired ? t('Concluded') : t('Active')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- usage per individual
+function IndividualsUsageTab() {
+  const [rows, setRows] = useState<Person[] | null>(null);
+  const [q, setQ] = useState('');
+
+  useEffect(() => {
+    backend().then((b) => b.listIndividuals()).then(setRows).catch((e) => {
+      setRows([]);
+      toast((e as Error).message, 'error');
+    });
+  }, []);
+
+  const all = rows ?? [];
+  const list = useMemo(() => {
+    return all.filter((p) => !q || `${p.name} ${p.email} ${p.phone || ''}`.toLowerCase().includes(q.toLowerCase()));
+  }, [all, q]);
+
+  const proCount = all.filter((p) => p.plan === 'pro').length;
+  const freeCount = all.filter((p) => p.plan !== 'pro').length;
+  const totalScans = all.reduce((sum, p) => sum + (p.monthly_scans ?? 0), 0);
+
+  return (
+    <>
+      <div class="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Counter label={t('Solo Users')} value={all.length} tone="ocean" />
+        <Counter label={t('Pro Subscribers')} value={proCount} tone="brand" />
+        <Counter label={t('Free Users')} value={freeCount} tone="amber" />
+        <Counter label={t('Total Month Scans')} value={totalScans.toLocaleString()} />
+      </div>
+
+      <div class="mb-3 flex max-w-sm">
+        <SearchInput value={q} onChange={setQ} placeholder={t('Search solo individuals...')} label={t('Search')} />
+      </div>
+
+      <div class="card overflow-hidden">
+        {!rows ? (
+          <div class="flex justify-center py-16"><Spinner class="size-6 text-brand-700" /></div>
+        ) : list.length === 0 ? (
+          <Empty icon={<Users class="size-6" />} title={t('No solo users found')} text={t('No registered individual accounts match your search.')} />
+        ) : (
+          <table class="w-full text-sm">
+            <thead class="bg-subtle text-left text-xs font-semibold text-muted">
+              <tr>
+                <th class="px-4 py-3">{t('User')}</th>
+                <th class="px-4 py-3">{t('Mobile Number')}</th>
+                <th class="px-4 py-3">{t('Plan')}</th>
+                <th class="px-4 py-3 text-center">{t('Current Scans')}</th>
+                <th class="px-4 py-3 text-right">{t('Account Status')}</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-line">
+              {list.map((p) => (
+                <tr key={p.id} class="hover:bg-brand-50/40">
+                  <td class="px-4 py-3">
+                    <p class="font-semibold text-ink">{p.name}</p>
+                    <p class="text-xs text-muted">{p.email}</p>
+                  </td>
+                  <td class="px-4 py-3 text-xs font-mono text-muted">
+                    {p.phone || '—'}
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class={`pill ${p.plan === 'pro' ? 'bg-brand-100 text-brand-800 font-bold' : 'bg-subtle text-muted'}`}>
+                      {p.plan === 'pro' ? 'PRO' : 'FREE (5/mo)'}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-center font-bold tabular-nums">
+                    {p.monthly_scans ?? 0} {p.plan !== 'pro' ? '/ 5' : ''}
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <span class={`pill ${p.active ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                      {p.active ? t('Active') : t('Suspended')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ---------------------------------------------------------------- usage alerts
 type AlertInput = Omit<UsageAlert, 'id' | 'last_fired_at'> & { id?: string };
 const emptyAlert = (): AlertInput => ({ company_id: null, metric: 'scans', threshold_pct: 80, active: true });
@@ -329,7 +503,7 @@ function AlertSheet({ alert, companies, onClose, onDone }: { alert: UsageAlert |
   }
 
   return (
-    <Sheet open onClose={onClose} title={alert ? t('Edit alert') : t('New alert')}
+    <Sheet open onClose={onClose} centered title={alert ? t('Edit alert') : t('New alert')}
       footer={<button class="btn-primary ml-auto min-w-32" disabled={busy} onClick={() => void save()}>{busy ? <Spinner /> : t('Save alert')}</button>}>
       <div class="space-y-4">
         <Field label={t('Company')} hint={t('Leave on “Every company” to watch them all.')}>

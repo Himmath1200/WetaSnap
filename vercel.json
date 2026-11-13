@@ -1,0 +1,7 @@
+{
+  "buildCommand": "npm run build -w @wetasnap/web",
+  "outputDirectory": "apps/web/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

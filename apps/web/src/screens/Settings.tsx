@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'preact/hooks';
-import { Download, Plus, GripVertical, ChevronUp, ChevronDown, Trash2, Link2, Send, CheckCircle2, CalendarDays, LifeBuoy, MapPin, Plug, Unplug, Paperclip, FileText, Copy, Star, Tag as TagIcon, ScanLine, X } from 'lucide-preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { Download, Plus, GripVertical, ChevronUp, ChevronDown, Trash2, Link2, Send, CheckCircle2, CalendarDays, LifeBuoy, MapPin, Plug, Unplug, Paperclip, FileText, Copy, Star, Tag as TagIcon, ScanLine, Sparkles, X } from 'lucide-preact';
 import { Dialog, Field, Spinner, Tabs } from '../components/ui';
 import { backend } from '../lib/backend';
 import { useStore, toast } from '../lib/store';
@@ -7,8 +7,13 @@ import { config, pullConfig, refreshSession, session } from '../lib/session';
 import { CONNECTOR_LABEL, CONNECTOR_ORDER } from '../lib/connectors';
 import { TAG_META } from '../lib/leads';
 import { ocrHealth, ocrUrl, setOcrUrl, type OcrHealth } from '../lib/ocr';
+import {
+  GEMINI_MODELS, geminiApiKey, geminiModel,
+  setGeminiApiKey, setGeminiModel, testGeminiApiKey, type GeminiModelId,
+} from '../lib/gemini';
 import { LANGUAGES, TIME_ZONES } from '../lib/locale';
 import { LICENCE_META, daysLeft, licenceStatus } from '../lib/licence';
+import { DEFAULT_FOLLOWUP_MESSAGE, saveFollowUpConfig } from '../lib/followup';
 import { t, tn } from '../lib/i18n';
 import type { Company, Connection, ConnectorKind, EventItem, FieldDefinition, FieldTemplate, FieldType, Invoice, Tag, TagColour } from '../lib/types';
 import type { SeatInfo } from '../lib/backend';
@@ -29,7 +34,10 @@ export default function Settings() {
   const change = (v: Tab) => { setTab(v); history.replaceState(null, '', `/client-admin/settings?tab=${v}`); };
   return (
     <div class="mx-auto max-w-6xl">
-      <h1 class="mb-3 text-xl font-bold">{t('Settings')}</h1>
+      <div class="mb-5">
+        <h1 class="text-2xl font-bold tracking-tight text-ink">{t('Settings')}</h1>
+        <p class="text-sm text-muted mt-0.5">{t('Configure events, card fields, CRM connections and company details')}</p>
+      </div>
       <Tabs value={tab} onChange={change} items={[
         { id: 'events', label: t('Events') }, { id: 'fields', label: t('Card fields') }, { id: 'tags', label: t('Tags') },
         { id: 'crm', label: t('CRM connection') }, { id: 'company', label: t('Company') },
@@ -122,7 +130,7 @@ function BillingTab() {
                 <span class="font-semibold">{t('Scan allowance')}</span>
                 <span class="text-muted tabular-nums">{pct}%</span>
               </div>
-              <div class="h-2.5 overflow-hidden rounded-full bg-slate-100">
+              <div class="h-2.5 overflow-hidden rounded-full bg-line">
                 <div class={`h-full rounded-full ${pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-gradient-to-r from-brand-500 to-ocean-600'}`} style={{ width: `${pct}%` }} />
               </div>
               {pct >= 80 && <p class="mt-1 text-xs font-medium text-amber-800">{t('You are close to this month\u2019s allowance — contact WeTano if you need more.')}</p>}
@@ -199,10 +207,10 @@ function BillingTab() {
 
 const INVOICE_TONE: Record<Invoice['status'], string> = {
   draft: 'bg-subtle text-muted',
-  sent: 'bg-slate-200 text-slate-700',
+  sent: 'bg-subtle text-muted',
   paid: 'bg-brand-100 text-brand-800',
   overdue: 'bg-red-100 text-red-700',
-  cancelled: 'bg-slate-200 text-slate-600',
+  cancelled: 'bg-subtle text-muted',
 };
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -283,7 +291,7 @@ function EventsTab() {
                   <span class="flex items-center gap-1 truncate text-xs text-muted"><MapPin class="size-3" />{e.venue} · {e.booth} · {e.starts_on} → {e.ends_on}</span>
                 </span>
                 {e.attachments.length > 0 && <span class="pill bg-subtle text-muted"><Paperclip class="size-3" />{e.attachments.length}</span>}
-                <span class={`pill ${e.status === 'open' ? 'bg-brand-100 text-brand-800' : 'bg-slate-200 text-slate-600'}`}>{e.status === 'open' ? t('Open') : t('Closed')}</span>
+                <span class={`pill ${e.status === 'open' ? 'bg-brand-100 text-brand-800' : 'bg-subtle text-muted'}`}>{e.status === 'open' ? t('Open') : t('Closed')}</span>
               </button>
             </li>
           ))}
@@ -449,7 +457,7 @@ function FieldsTab() {
         <div class="flex flex-wrap gap-2">
           {templates.map((x) => (
             <button key={x.id} onClick={() => setTemplateId(x.id)} aria-pressed={x.id === templateId}
-              class={`chip ${x.id === templateId ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-line bg-surface text-slate-600 hover:border-ocean-500'}`}>
+              class={`chip ${x.id === templateId ? 'border-brand-600 bg-brand-100 text-brand-700' : 'border-line bg-surface text-muted hover:border-ocean-500'}`}>
               {x.is_default && <Star class="size-3.5 fill-current" />}
               {x.name}
               <span class="text-[11px] opacity-70">{x.field_count}</span>
@@ -484,8 +492,8 @@ function FieldsTab() {
                 </span>
               </button>
               <span class="flex">
-                <button class="flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label={t('Move up')}><ChevronUp class="size-4" /></button>
-                <button class="flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-30" disabled={i === list.length - 1} onClick={() => move(i, i + 1)} aria-label={t('Move down')}><ChevronDown class="size-4" /></button>
+                <button class="flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-subtle disabled:opacity-30" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label={t('Move up')}><ChevronUp class="size-4" /></button>
+                <button class="flex size-11 items-center justify-center rounded-lg text-slate-400 hover:bg-subtle disabled:opacity-30" disabled={i === list.length - 1} onClick={() => move(i, i + 1)} aria-label={t('Move down')}><ChevronDown class="size-4" /></button>
               </span>
             </li>
           ))}
@@ -513,7 +521,7 @@ function FieldsTab() {
               <div class="grid grid-cols-2 gap-2">
                 {(['ai', 'staff'] as const).map((w) => (
                   <button key={w} type="button" aria-pressed={sel.filled_by === w} onClick={() => setSel({ ...sel, filled_by: w })}
-                    class={`chip justify-center ${sel.filled_by === w ? 'border-brand-600 bg-brand-50 text-brand-800' : 'border-line bg-surface'}`}>{w === 'ai' ? t('AI reads it') : t('Staff fills it')}</button>
+                    class={`chip justify-center ${sel.filled_by === w ? 'border-brand-600 bg-brand-100 text-brand-700' : 'border-line bg-surface'}`}>{w === 'ai' ? t('AI reads it') : t('Staff fills it')}</button>
                 ))}
               </div>
             </div>
@@ -550,7 +558,7 @@ function FieldsTab() {
 
       <Dialog open={confirmDel} onClose={() => setConfirmDel(false)} title={t('Remove this field?')}
         footer={<><button class="btn-ghost" onClick={() => setConfirmDel(false)}>{t('Cancel')}</button><button class="btn bg-red-600 text-white" onClick={() => void remove()}>{t('Remove')}</button></>}>
-        <p class="text-sm text-slate-700">{t('New scans will no longer ask for “{label}”. Values already captured stay on existing leads.', { label: sel?.label ?? '' })}</p>
+        <p class="text-sm text-muted">{t('New scans will no longer ask for “{label}”. Values already captured stay on existing leads.', { label: sel?.label ?? '' })}</p>
       </Dialog>
     </div>
   );
@@ -609,7 +617,7 @@ function TagsTab() {
               <div class="flex flex-wrap gap-2">
                 {TAG_COLOURS.map((c) => (
                   <button key={c} type="button" aria-pressed={sel.colour === c} onClick={() => setSel({ ...sel, colour: c })}
-                    class={`chip capitalize ${sel.colour === c ? TAG_META[c].chip : 'border-line bg-surface text-slate-600'}`}>
+                    class={`chip capitalize ${sel.colour === c ? TAG_META[c].chip : 'border-line bg-surface text-muted'}`}>
                     <span class={`size-2 rounded-full ${TAG_META[c].dot}`} />{c}
                   </button>
                 ))}
@@ -631,9 +639,15 @@ function CrmTab() {
   const [busy, setBusy] = useState<string | null>(null);
   const [hook, setHook] = useState<string | null>(null);
   const load = async () => {
-    const b = await backend();
-    const [c, a] = await Promise.all([b.connections(), b.allowedConnectors()]);
-    setConns(c); setAllowed(a);
+    try {
+      const b = await backend();
+      const [c, a] = await Promise.all([b.connections(), b.allowedConnectors()]);
+      setConns(c); setAllowed(a);
+    } catch (e) {
+      setConns([]);
+      setAllowed(['webhook', 'csv']);
+      toast((e as Error).message, 'error');
+    }
   };
   useEffect(() => { void load(); }, []);
   const conn = conns?.[0] ?? null;
@@ -673,9 +687,29 @@ function CrmTab() {
       {conn && <ConnectionEditor key={conn.id} conn={conn} fieldDefs={cfg.fields} onChange={(c) => setConns([c])} onDisconnect={() => setConns([])} />}
 
       <Dialog open={hook !== null} onClose={() => setHook(null)} title={t('Connect a webhook')}
-        footer={<><button class="btn-ghost" onClick={() => setHook(null)}>{t('Cancel')}</button><button class="btn-primary" disabled={!/^https:\/\/.+/.test(hook ?? '') || !!busy} onClick={() => void connect('webhook', hook!)}>{t('Connect')}</button></>}>
-        <Field label={t('Webhook URL (https)')} for="hook" hint={t('We send signed JSON (HMAC-SHA256) — works with Zapier, Make, the WeTano CRM or any system.')}>
-          <input id="hook" class="input" placeholder="https://hooks.zapier.com/…" value={hook ?? ''} onInput={(e) => setHook(e.currentTarget.value)} />
+        footer={<>
+          <button class="btn-ghost" onClick={() => setHook(null)}>{t('Cancel')}</button>
+          <button
+            class="btn-primary"
+            disabled={!(hook ?? '').trim().length || !!busy}
+            onClick={() => {
+              const raw = (hook ?? '').trim();
+              const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+              void connect('webhook', url);
+            }}
+          >
+            {busy === 'webhook' ? <Spinner class="size-4" /> : t('Connect')}
+          </button>
+        </>}>
+        <Field label={t('Webhook URL')} for="hook" hint={t('Paste your webhook URL (e.g. from webhook.site, Zapier, Make, n8n, etc.)')}>
+          <input
+            id="hook"
+            class="input"
+            placeholder="https://webhook.site/…"
+            value={hook ?? ''}
+            onInput={(e) => setHook(e.currentTarget.value)}
+            autoFocus
+          />
         </Field>
       </Dialog>
     </div>
@@ -754,7 +788,7 @@ function ConnectionEditor({ conn, fieldDefs, onChange, onDisconnect }: { conn: C
       </div>
       <Dialog open={confirm} onClose={() => setConfirm(false)} title={t('Disconnect {crm}?', { crm: CONNECTOR_LABEL[c.kind] })}
         footer={<><button class="btn-ghost" onClick={() => setConfirm(false)}>{t('Cancel')}</button><button class="btn bg-red-600 text-white" onClick={() => void disconnect()}>{t('Disconnect')}</button></>}>
-        <p class="text-sm text-slate-700">{t('New leads will stay in WeTa Snap and will not be sent until a CRM is connected again.')}</p>
+        <p class="text-sm text-muted">{t('New leads will stay in WeTa Snap and will not be sent until a CRM is connected again.')}</p>
       </Dialog>
     </div>
   );
@@ -765,6 +799,47 @@ function CompanyTab() {
   const s = useStore(session)!;
   const [c, setC] = useState<Company | null>(null);
   const [busy, setBusy] = useState(false);
+  const coFuTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const coFuSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+
+  const recordCoSelection = (el: HTMLTextAreaElement) => {
+    coFuSelectionRef.current = {
+      start: el.selectionStart ?? el.value.length,
+      end: el.selectionEnd ?? el.value.length,
+    };
+  };
+
+  const insertCoTagAtCursor = (tag: string) => {
+    const el = coFuTextareaRef.current;
+    const currentMsg = c?.follow_up_message ?? DEFAULT_FOLLOWUP_MESSAGE;
+    let start = coFuSelectionRef.current.start;
+    let end = coFuSelectionRef.current.end;
+
+    if (el && typeof el.selectionStart === 'number') {
+      start = el.selectionStart;
+      end = el.selectionEnd;
+    }
+
+    start = Math.max(0, Math.min(start, currentMsg.length));
+    end = Math.max(start, Math.min(end, currentMsg.length));
+
+    const before = currentMsg.slice(0, start);
+    const after = currentMsg.slice(end);
+    const updated = `${before}${tag}${after}`;
+
+    if (c) setC({ ...c, follow_up_message: updated });
+
+    const nextPos = start + tag.length;
+    coFuSelectionRef.current = { start: nextPos, end: nextPos };
+
+    setTimeout(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(nextPos, nextPos);
+      }
+    }, 0);
+  };
+
   useEffect(() => { backend().then((b) => b.company()).then(setC).catch(() => {}); }, []);
   if (!c) return <div class="flex justify-center py-12"><Spinner class="size-6 text-brand-700" /></div>;
 
@@ -774,10 +849,20 @@ function CompanyTab() {
     try {
       // Only the company's own settings — suspension and the scan-limit rule belong to WeTano (D-6).
       const { name, logo_url, country, headquarters, default_language, time_zone, consent_text,
-        retention_leads_months, retention_photos_months, cloud_ai_enabled, offline_pack_enabled } = c;
+        retention_leads_months, retention_photos_months, cloud_ai_enabled, offline_pack_enabled,
+        follow_up_message, follow_up_auto } = c;
       const saved = await (await backend()).saveCompany({ name, logo_url, country, headquarters, default_language, time_zone, consent_text,
-        retention_leads_months, retention_photos_months, cloud_ai_enabled, offline_pack_enabled });
+        retention_leads_months, retention_photos_months, cloud_ai_enabled, offline_pack_enabled,
+        follow_up_message, follow_up_auto });
       setC(saved);
+      if (saved.id) {
+        saveFollowUpConfig(s.person.id, {
+          autoSend: Boolean(saved.follow_up_auto),
+          sendWhatsApp: true,
+          sendEmail: true,
+          message: saved.follow_up_message || DEFAULT_FOLLOWUP_MESSAGE,
+        }, saved.id);
+      }
       await refreshSession();
       toast(saved.consent_version !== s.company?.consent_version ? t('Saved — consent text is now version {v}', { v: saved.consent_version }) : t('Company settings saved'), 'success');
     } catch (e) { toast((e as Error).message, 'error'); } finally { setBusy(false); }
@@ -795,7 +880,7 @@ function CompanyTab() {
     <label class="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-line p-3">
       <span><span class="block text-sm font-semibold">{label}</span><span class="text-xs text-muted">{hint}</span></span>
       <input type="checkbox" role="switch" class="peer sr-only" checked={on} onChange={(e) => set(e.currentTarget.checked)} />
-      <span class={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${on ? 'bg-brand-600' : 'bg-slate-300'}`}><span class={`absolute top-0.5 size-5 rounded-full bg-surface shadow transition ${on ? 'left-5.5' : 'left-0.5'}`} /></span>
+      <span class={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition ${on ? 'bg-brand-600' : 'bg-slate-200'}`}><span class={`absolute top-0.5 size-5 rounded-full bg-white shadow transition ${on ? 'left-5.5' : 'left-0.5'}`} /></span>
     </label>
   );
 
@@ -827,8 +912,64 @@ function CompanyTab() {
           </select>
         </Field>
         <Field label={t('Consent text')} for="co-consent" hint={t('Shown next to the consent checkbox. Each change creates a new version (currently v{v}); every lead stores the version it was given.', { v: c.consent_version })}>
-          <textarea id="co-consent" rows={4} class="input" value={c.consent_text} onInput={(e) => setC({ ...c, consent_text: e.currentTarget.value })} />
+          <textarea id="co-consent" rows={3} class="input" value={c.consent_text} onInput={(e) => setC({ ...c, consent_text: e.currentTarget.value })} />
         </Field>
+
+        <div class="rounded-xl border border-line bg-subtle/50 p-3.5 space-y-3">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <span class="block text-sm font-bold text-ink">{t('Organization Follow-Up Message')}</span>
+              <span class="text-xs text-muted leading-relaxed">
+                {t('Template used by all team scanners to follow up with leads via WhatsApp and Email.')}
+              </span>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                role="switch"
+                class="sr-only peer"
+                checked={Boolean(c.follow_up_auto)}
+                onChange={(e) => setC({ ...c, follow_up_auto: e.currentTarget.checked })}
+              />
+              <span class={`relative h-6 w-11 rounded-full transition-colors ${c.follow_up_auto ? 'bg-emerald-500' : 'bg-slate-200'}`}>
+                <span class={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${c.follow_up_auto ? 'left-5.5' : 'left-0.5'}`} />
+              </span>
+            </label>
+          </div>
+
+          <Field label={t('Message Template')} for="co-fu-msg" hint={t('Placeholders: {name}, {company}, {lead_company}, {event}, {sender}')}>
+            <textarea
+              ref={coFuTextareaRef}
+              id="co-fu-msg"
+              rows={3}
+              class="input text-xs leading-relaxed"
+              placeholder={DEFAULT_FOLLOWUP_MESSAGE}
+              value={c.follow_up_message ?? ''}
+              onInput={(e) => {
+                setC({ ...c, follow_up_message: e.currentTarget.value });
+                recordCoSelection(e.currentTarget);
+              }}
+              onSelect={(e) => recordCoSelection(e.currentTarget)}
+              onKeyUp={(e) => recordCoSelection(e.currentTarget)}
+              onMouseUp={(e) => recordCoSelection(e.currentTarget)}
+            />
+            <div class="flex items-center gap-1.5 flex-wrap mt-2">
+              <span class="text-[10px] text-muted">{t('Insert placeholder:')}</span>
+              {['{name}', '{company}', '{lead_company}', '{event}', '{sender}'].map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => insertCoTagAtCursor(tag)}
+                  class="px-2 py-0.5 rounded bg-subtle border border-line text-[10px] font-mono text-brand-700 hover:bg-brand-50 hover:border-brand-300 transition active:scale-95 cursor-pointer"
+                  title={t('Insert {tag} at cursor position', { tag })}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </Field>
+        </div>
       </div>
       <div class="card space-y-4 p-4">
         <div class="grid grid-cols-2 gap-3">
@@ -840,6 +981,7 @@ function CompanyTab() {
         <Switch on={c.offline_pack_enabled} set={(v) => setC({ ...c, offline_pack_enabled: v })} label={t('Offline reading pack')}
           hint={t('Lets phones read name, company, email, phone and website without internet. Staff download it once (≈ 8 MB) on Wi-Fi.')} />
         <LocalOcrSetting />
+        <GeminiOcrSetting />
         <button class="btn-primary w-full" disabled={busy} onClick={() => void save()}>{busy ? <Spinner /> : t('Save')}</button>
       </div>
     </div>
@@ -869,6 +1011,82 @@ function LocalOcrSetting() {
       {state === 'ok' && <p class="mt-1 text-xs font-medium text-brand-800">{t('Connected ({engines}) — cards will be read on your own machine.', { engines: health?.engines.join(' + ') ?? '' })}</p>}
       {state === 'no-engine' && <p class="mt-1 text-xs font-medium text-amber-800">{t('The service answers but has no reader installed, so cards would still be read elsewhere. Install surya-ocr or Tesseract on that machine.')}</p>}
       {state === 'bad' && <p class="mt-1 text-xs font-medium text-red-700">{t('No answer. Check the address and that the service is running.')}</p>}
+    </div>
+  );
+}
+
+/** Google Gemini API key and model selection for online low-confidence OCR verification. */
+function GeminiOcrSetting() {
+  const [key, setKey] = useState(geminiApiKey());
+  const [model, setModel] = useState<GeminiModelId>(geminiModel());
+  const [state, setState] = useState<'idle' | 'checking' | 'ok' | 'bad'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [verifiedModel, setVerifiedModel] = useState('');
+
+  async function check() {
+    setGeminiApiKey(key);
+    setGeminiModel(model);
+    if (!key.trim()) {
+      setState('idle');
+      toast(t('Gemini verification disabled'), 'info');
+      return;
+    }
+    setState('checking');
+    const res = await testGeminiApiKey(key, model);
+    if (res.ok) {
+      setState('ok');
+      setVerifiedModel(res.modelUsed || model);
+      toast(t('Gemini AI connected successfully'), 'success');
+    } else {
+      setState('bad');
+      setErrorMsg(res.error || t('Invalid API key'));
+    }
+  }
+
+  function handleModelChange(newModel: GeminiModelId) {
+    setModel(newModel);
+    setGeminiModel(newModel);
+    setState('idle');
+  }
+
+  return (
+    <div class="rounded-xl border border-line p-3">
+      <span class="label"><Sparkles class="mr-1 inline size-3.5 text-brand-600" />{t('Gemini AI verification (optional)')}</span>
+      <p class="mb-2 text-xs text-muted">{t('When scanning online, automatically verifies and corrects business card fields whenever OCR confidence is low.')}</p>
+
+      <div class="mb-2">
+        <label class="text-[11px] font-semibold text-muted block mb-1">{t('Gemini Model')}</label>
+        <select
+          class="input text-xs h-9 py-1"
+          value={model}
+          onChange={(e) => handleModelChange(e.currentTarget.value as GeminiModelId)}
+        >
+          {GEMINI_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div class="flex gap-2">
+        <input
+          type="password"
+          class="input text-sm"
+          value={key}
+          placeholder="AIzaSy..."
+          onInput={(e) => { setKey(e.currentTarget.value); setState('idle'); }}
+        />
+        <button class="btn-secondary shrink-0 px-3 text-xs" onClick={() => void check()}>
+          {state === 'checking' ? <Spinner class="size-4" /> : t('Test & Save')}
+        </button>
+      </div>
+      {state === 'ok' && (
+        <p class="mt-1 text-xs font-medium text-brand-700">
+          {t('Connected ({model}) — Gemini AI will verify low-confidence scans when online.', { model: verifiedModel || model })}
+        </p>
+      )}
+      {state === 'bad' && <p class="mt-1 text-xs font-medium text-red-600">{errorMsg || t('Connection failed. Please check the API key.')}</p>}
     </div>
   );
 }

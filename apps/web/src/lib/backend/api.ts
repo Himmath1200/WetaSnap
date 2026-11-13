@@ -18,13 +18,24 @@ import type {
 } from './index';
 import type {
   AppNotification, AuditEntry, Company, CompanySummary, Connection, ConnectorKind, DeviceSession,
-  EventItem, FieldDefinition, FieldTemplate, ImportBatch, Invoice, Lead, LoginEvent,
+  EventItem, FieldDefinition, FieldTemplate, ImportBatch, IndividualPricingConfig, Invoice, Lead, LoginEvent,
   Person, Plan, RecoveryCodes, ScanLimitAction, SecurityPolicy, Subscription, SupportTicket, Tag,
-  TicketStatus, UsageAlert, UsageRow,
+  TicketStatus, UsageAlert, UsageRow, OrganizerDetail,
 } from '../types';
-import { OfflineError, isOnline } from '../net';
+import { OfflineError, isOnline, net } from '../net';
 
-const BASE = String(import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+function getBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const envUrl = String(import.meta.env.VITE_API_URL ?? '').trim().replace(/\/$/, '');
+    // In browser, if VITE_API_URL is local or empty, use relative URL so Vite proxy handles it cleanly
+    if (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1')) {
+      return '';
+    }
+    return envUrl;
+  }
+  return String(import.meta.env.VITE_API_URL ?? '').trim().replace(/\/$/, '');
+}
+
 const TOKEN_KEY = 'wetasnap-token';
 
 export function createApiBackend(): Backend {
@@ -40,27 +51,49 @@ export function createApiBackend(): Backend {
 
   /** One place where a request is made, and the only place an error is turned into words. */
   async function send<T>(path: string, init: { method?: string; body?: unknown; raw?: boolean } = {}): Promise<T> {
-    if (!isOnline()) throw new OfflineError();
-    let res: Response;
-    try {
-      res = await fetch(`${BASE}${path}`, {
-        method: init.method ?? (init.body ? 'POST' : 'GET'),
-        headers: {
-          ...(init.body ? { 'content-type': 'application/json' } : {}),
-          ...(token ? { authorization: `Bearer ${token}` } : {}),
-        },
-        body: init.body ? JSON.stringify(init.body) : undefined,
-      });
-    } catch {
-      throw new OfflineError();                           // DNS, TLS, the server is simply not there
+    let res: Response | null = null;
+    const url = `${getBaseUrl()}${path}`;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 250 * attempt));
+        }
+        res = await fetch(url, {
+          method: init.method ?? (init.body ? 'POST' : 'GET'),
+          headers: {
+            ...(init.body ? { 'content-type': 'application/json' } : {}),
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+          },
+          body: init.body ? JSON.stringify(init.body) : undefined,
+        });
+        if ((res.status === 502 || res.status === 503) && attempt < 2) {
+          continue;
+        }
+        break;
+      } catch {
+        if (attempt < 2) continue;
+      }
     }
 
+    if (!res) {
+      throw new OfflineError();
+    }
+
+    if (res.ok) {
+      if (!net.get().online) net.set((s) => ({ ...s, online: true }));
+    }
     if (res.status === 204) return undefined as T;
     if (init.raw && res.ok) return (await res.blob()) as T;
 
     const body = await res.json().catch(() => null) as { error?: string; code?: string } | null;
     if (!res.ok) {
-      if (res.status === 401) setToken(null);             // this device has to sign in again
+      if (res.status === 401 && path !== '/v1/auth/password' && path !== '/v1/auth/code/verify' && path !== '/v1/auth/signout') {
+        setToken(null);             // only wipe token if a protected call was unauthorized
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('wetasnap:unauthorized', { detail: { message: body?.error } }));
+        }
+      }
       const message = body?.error
         ?? (res.status >= 500 ? 'The server is not answering just now. Please try again in a moment.'
           : res.status === 404 ? 'That is not available on this deployment.'
@@ -79,7 +112,7 @@ export function createApiBackend(): Backend {
   /** An image the UI can put straight into an <img>, fetched with the session token. */
   async function objectUrl(path: string): Promise<string | null> {
     if (!isOnline()) return null;
-    const res = await fetch(`${BASE}${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    const res = await fetch(`${getBaseUrl()}${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
     if (!res.ok) return null;
     return URL.createObjectURL(await res.blob());
   }
@@ -201,12 +234,14 @@ export function createApiBackend(): Backend {
       const answer = await send<{ fields: ReadResult; raw_text?: string; engines?: string[] }>('/v1/scan/read', {
         body: { image: await toBase64(photo), mime: photo.type || 'image/jpeg', event_id: eventId },
       });
-      // OCR-LOG: popup shows the raw OCR text right after the scan.
-      const { pushOcrText } = await import('../ocrLog');
+      // OCR-LOG: popup shows the raw OCR text right after the scan when text was found.
       const raw = typeof answer.raw_text === 'string' && answer.raw_text.trim()
         ? answer.raw_text
         : Object.values(answer.fields ?? {}).map((v) => v?.value).filter(Boolean).join('\n');
-      pushOcrText(raw, `server read (${(answer.engines ?? []).join(', ') || 'ocr'})`);
+      if (raw.trim()) {
+        const { pushOcrText } = await import('../ocrLog');
+        pushOcrText(raw, `server read (${(answer.engines ?? []).join(', ') || 'ocr'})`);
+      }
       return answer.fields;
     },
     async syncLead(lead) {
@@ -234,6 +269,8 @@ export function createApiBackend(): Backend {
       return send<Lead>(`/v1/leads/${lead.id}`, { method: 'PUT', body: { ...lead, resend } });
     },
     async deleteLead(id) { await send(`/v1/leads/${id}`, { method: 'DELETE' }); },
+    async restoreLead(id) { await send(`/v1/leads/${id}/restore`, { method: 'POST' }); },
+    async recycleBinLeads() { return send<Lead[]>('/v1/leads/recycle-bin'); },
     async photoUrl(leadId) { return objectUrl(`/v1/files/card/${leadId}/front`); },
     async counters(event) {
       return send<Counters>(`/v1/leads/counters${event ? `?event_id=${event}` : ''}`);
@@ -327,6 +364,12 @@ export function createApiBackend(): Backend {
     // ---------------------------------------------------------------- S8 · WeTano
     async companies() { return send<CompanySummary[]>('/v1/admin/companies'); },
     async companyDetail(id) { return send<CompanyDetail>(`/v1/admin/companies/${id}`); },
+    async updatePersonEmail(personId, email, reinvite = true) {
+      return send<{ ok: boolean; email: string; invitation?: Invitation | null }>(`/v1/admin/people/${personId}/email`, {
+        method: 'PUT',
+        body: { email, reinvite },
+      });
+    },
     async setCompanySuspended(id, suspended, reason) {
       await send(`/v1/admin/companies/${id}/suspend`, { body: { suspended, reason } });
     },
@@ -390,5 +433,29 @@ export function createApiBackend(): Backend {
         method: 'PUT', body: { status, assigned_to: assignedTo ?? null },
       });
     },
+
+    async sendPhoneOtp(phone) { return send<{ ok: boolean; demoCode?: string }>('/v1/auth/phone-otp/send', { body: { phone } }); },
+
+    // ---------------------------------------------------------------- individuals
+    async registerIndividual(input) { return send<SignedIn>('/v1/auth/register-individual', { body: input }); },
+    async listIndividuals() { return send<Person[]>('/v1/admin/individuals'); },
+    async updateIndividualPlan(id, plan) { await send(`/v1/admin/individuals/${id}/plan`, { method: 'PUT', body: { plan } }); },
+    async resetIndividualScans(id) { await send(`/v1/admin/individuals/${id}/reset-scans`, { method: 'POST' }); },
+    async toggleIndividualStatus(id, active) { await send(`/v1/admin/individuals/${id}/status`, { method: 'PUT', body: { active } }); },
+    async deleteIndividual(id) { await send(`/v1/admin/individuals/${id}`, { method: 'DELETE' }); },
+    async upgradeMyPlan(plan, cycle, paymentMethod) { await send('/v1/billing/upgrade', { body: { plan, cycle, paymentMethod } }); },
+    async recordScanUsage() { return send<{ allowed: boolean; count: number; limit: number; plan: 'free' | 'pro' }>('/v1/billing/scan-usage', { method: 'POST' }); },
+    async getIndividualPricing() { return send<IndividualPricingConfig>('/v1/billing/individual-pricing'); },
+    async updateIndividualPricing(input) { return send<IndividualPricingConfig>('/v1/admin/individual-pricing', { method: 'PUT', body: input }); },
+
+    // ---------------------------------------------------------------- organizers
+    async listOrganizers() { return send<OrganizerDetail[]>('/v1/admin/organizers'); },
+    async createOrganizer(input) { return send<{ organizer: Person; event: EventItem; referral_code: string }>('/v1/admin/organizers', { body: input }); },
+    async updateOrganizerLogins(organizerId, max_logins) { await send(`/v1/admin/organizers/${organizerId}/logins`, { method: 'PUT', body: { max_logins } }); },
+    async getOrganizerDetails(id) { return send<{ organizer: OrganizerDetail; members: (Person & { lead_count?: number })[]; total_scans: number }>(`/v1/admin/organizers/${id}`); },
+    async updateOrganizerMember(organizerId, memberId, input) { await send(`/v1/admin/organizers/${organizerId}/members/${memberId}`, { method: 'PUT', body: input }); },
+    async deleteOrganizerMember(organizerId, memberId) { await send(`/v1/admin/organizers/${organizerId}/members/${memberId}`, { method: 'DELETE' }); },
+    async updateOrganizerEvent(organizerId, input) { await send(`/v1/admin/organizers/${organizerId}/event`, { method: 'PUT', body: input }); },
+    async registerReferral(input) { return send<SignedIn>('/v1/auth/register-referral', { body: input }); },
   };
 }

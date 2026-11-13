@@ -19,17 +19,47 @@ export class NotificationsService {
   constructor(private readonly db: DbService) {}
 
   async feed(me: Caller): Promise<NotificationDto[]> {
+    if (me.role === 'super_admin') {
+      return this.db.asQuery<NotificationDto>(me,
+        `select n.id, n.company_id, n.person_id, n.kind::text as kind, n.title, n.body, n.link,
+                n.remind_at, n.created_at,
+                coalesce(n.read_at, r.read_at) as read_at
+           from notifications n
+      left join notification_reads r on r.notification_id = n.id and r.person_id = $1
+          where (n.person_id = $1 or (n.company_id is null and n.person_id is null))
+            and (n.remind_at is null or n.remind_at <= now() + interval '7 days')
+          order by n.created_at desc
+          limit 100`,
+        [me.personId]);
+    }
+
+    if (me.role === 'individual') {
+      return this.db.asQuery<NotificationDto>(me,
+        `select n.id, n.company_id, n.person_id, n.kind::text as kind, n.title, n.body, n.link,
+                n.remind_at, n.created_at,
+                coalesce(n.read_at, r.read_at) as read_at
+           from notifications n
+      left join notification_reads r on r.notification_id = n.id and r.person_id = $1
+          where n.person_id = $1
+            and (n.remind_at is null or n.remind_at <= now() + interval '7 days')
+          order by n.created_at desc
+          limit 100`,
+        [me.personId]);
+    }
+
+    // Company users: company-wide notifications or direct notifications for this person
     return this.db.asQuery<NotificationDto>(me,
       `select n.id, n.company_id, n.person_id, n.kind::text as kind, n.title, n.body, n.link,
               n.remind_at, n.created_at,
               coalesce(n.read_at, r.read_at) as read_at
          from notifications n
     left join notification_reads r on r.notification_id = n.id and r.person_id = $1
-        where (n.person_id = $1 or n.person_id is null)
+        where n.company_id = $2
+          and (n.person_id = $1 or n.person_id is null)
           and (n.remind_at is null or n.remind_at <= now() + interval '7 days')
         order by n.created_at desc
         limit 100`,
-      [me.personId]);
+      [me.personId, me.companyId]);
   }
 
   async markRead(me: Caller, ids: string[]): Promise<void> {

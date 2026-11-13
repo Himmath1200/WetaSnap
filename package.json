@@ -6,15 +6,24 @@
     "services/api"
   ],
   "scripts": {
-    "dev": "npm run dev -w @wetasnap/web",
+    "dev": "node tools/dev.mjs",
+    "dev:web": "npm run dev -w @wetasnap/web",
     "dev:api": "npm run dev -w @wetasnap/api",
+    "dev:db": "npm run test:db -w @wetasnap/api",
     "build": "npm run build -w @wetasnap/web && npm run build -w @wetasnap/api",
     "test": "npm run test -w @wetasnap/web && npm run test -w @wetasnap/api",
     "typecheck": "npm run typecheck -w @wetasnap/web && npm run typecheck -w @wetasnap/api",
     "size": "npm run size -w @wetasnap/web",
     "migrate": "npm run migrate -w @wetasnap/api",
+    "test:db": "npm run test:db -w @wetasnap/api",
     "seed": "npm run seed -w @wetasnap/api",
     "worker": "npm run worker -w @wetasnap/api",
     "mail": "npm run mail -w @wetasnap/api --"
+  },
+  "dependencies": {
+    "dexie": "^4.4.7"
+  },
+  "devDependencies": {
+    "@types/web": "^0.0.364"
   }
 }

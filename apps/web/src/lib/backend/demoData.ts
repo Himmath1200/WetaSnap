@@ -180,11 +180,10 @@ export function buildDemoWorld(ctx: {
       });
     });
 
-    w.templates.push({ id: `tpl-${ci + 3}`, company_id: c.id, name: 'Standard card', description: 'Default fields', is_default: true, field_count: DEFAULT_FIELDS.length + 1, updated_at: at(30) });
+    w.templates.push({ id: `tpl-${ci + 3}`, company_id: c.id, name: 'Standard card', description: 'Default fields', is_default: true, field_count: DEFAULT_FIELDS.length, updated_at: at(30) });
     DEFAULT_FIELDS.forEach(([key, label, type, required], i) => {
       w.fields.push({ id: `fd-${ci + 3}-${i}`, company_id: c.id, template_id: `tpl-${ci + 3}`, key, label, type, required, ai_hint: '', filled_by: 'ai', sort_order: i, options: [] });
     });
-    w.fields.push({ id: `fd-${ci + 3}-p`, company_id: c.id, template_id: `tpl-${ci + 3}`, key: 'product_interest', label: 'Product interest', type: 'choice', required: false, ai_hint: '', filled_by: 'staff', sort_order: 99, options: PRODUCTS });
 
     const tagIds: string[] = [];
     TAG_SETS[ci % 2]!.forEach(([name, colour], ti) => {

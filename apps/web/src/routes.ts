@@ -7,8 +7,10 @@ export const homeFor = (role: Role) => linkFor(role, ROLE_META[role].home);
 /** The screens each role may open (URS §4.3 plus the client additions). */
 export const SCREENS: Record<Role, string[]> = {
   super_admin: ['/companies', '/subscriptions', '/usage', '/audit', '/security', '/support', '/profile'],
-  client_admin: ['/home', '/leads', '/scan', '/scan-v2', '/my-leads', '/team', '/settings', '/settings/crm', '/support', '/security', '/profile'],
-  staff: ['/home', '/scan', '/scan-v2', '/my-leads', '/security', '/profile'],
+  client_admin: ['/home', '/leads', '/scan', '/scan-v2', '/my-leads', '/team', '/settings', '/settings/crm', '/upgrade', '/support', '/security', '/profile'],
+  staff: ['/home', '/leads', '/scan', '/scan-v2', '/my-leads', '/security', '/profile'],
+  individual: ['/home', '/leads', '/scan-v2', '/scan', '/upgrade', '/support', '/security', '/profile'],
+  organizer: ['/home', '/leads', '/scan', '/scan-v2', '/my-leads', '/team', '/support', '/security', '/profile'],
 };
 
 /** May this role open this screen? Anything else sends them back to their own home. */
