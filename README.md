@@ -33,7 +33,6 @@
 - [Production Deployment](#-production-deployment)
   - [Frontend Deployment (Vercel)](#frontend-deployment-vercel)
   - [Backend Deployment (Render / Railway / Cloud)](#backend-deployment-render--railway--cloud)
-- [Default Seed & Test Accounts](#-default-seed--test-accounts)
 - [Testing & Quality Assurance](#-testing--quality-assurance)
 - [License](#-license)
 
@@ -345,20 +344,6 @@ Deploy `services/api` as a long-running Node.js service:
    - **Start Command**: `node dist/main.js`
 3. Add environment variables from `services/api/.env`.
 4. Point the frontend `VITE_API_URL` to your production API URL.
-
----
-
-## 🔑 Default Seed & Test Accounts
-
-Shared password for all pre-seeded accounts: **`WetaSnap#2026`**
-
-| Role | Username / Email | Password | Access Scope |
-| :--- | :--- | :--- | :--- |
-| **WeTano Support (Super Admin)** | `super@wetano.com` | `WetaSnap#2026` | `/super-admin/signin` — Full platform management, usage tracking, license controls, audit logs. |
-| **Company Admin** | `admin@agroexpo.de` | `WetaSnap#2026` | `/signin` — AgroExpo organization dashboard, team management, CRM integrations, follow-up templates. |
-| **Scanner (Booth Staff)** | `anna@agroexpo.de` | `WetaSnap#2026` | `/signin` — Direct card scanning, offline outbox, personal lead history. |
-| **Event Organizer** | `organizer@techfest.org` | `WetaSnap#2026` | `/signin` — TechFest 2026 campaign management, attendee quotas, referral codes. |
-| **Event Attendee** | `attendee@techfest.org` | `WetaSnap#2026` | `/signin` — Registered attendee scanner under TechFest 2026. |
 
 ---
 
