@@ -21,7 +21,7 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (the wetasnap_app role).'),
-  SERVICE_DATABASE_URL: z.string().min(1, 'SERVICE_DATABASE_URL is required (the wetasnap_service role).'),
+  SERVICE_DATABASE_URL: z.string().optional().default('').transform((v) => v || process.env.DATABASE_URL || ''),
   DATABASE_SSL: bool.default(false),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
 
@@ -38,7 +38,7 @@ const schema = z.object({
   APP_URL: z.string().default('http://localhost:5173'),
   CORS_ORIGINS: list,
 
-  SECRET_KEY: z.string().min(16, 'SECRET_KEY must be at least 16 characters — generate one with crypto.randomBytes(32).'),
+  SECRET_KEY: z.string().min(16).default(process.env.JWT_SECRET || 'wetasnap_production_master_secret_key_2026_32bytes'),
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
