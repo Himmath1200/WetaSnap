@@ -54,9 +54,23 @@ export class MailService {
     const fromName = mail.fromName || 'WeTano Support';
     const from = `"${fromName.replace(/"/g, '')}" <${fromAddr}>`;
 
+    // Detect fictional / test domains used by demo accounts (wetano.com, agroexpo.de, techfest.org)
+    // and deliver them directly to the administrator's real inbox so test logins work seamlessly!
+    const adminInbox = fromAddr;
+    const domain = (mail.to || '').split('@')[1]?.toLowerCase() || '';
+    const isMockDomain = ['wetano.com', 'wetano.test', 'agroexpo.de', 'agroexpo.test', 'techfest.org', 'techfest.test', 'example.com', 'test.com'].includes(domain);
+
+    const targetRecipient = isMockDomain ? adminInbox : mail.to;
+    const finalSubject = isMockDomain ? `[For ${mail.to}] ${mail.subject}` : mail.subject;
+    const finalHtml = isMockDomain
+      ? `<div style="background:#fef3c7;border:1px solid #f59e0b;padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:13px;color:#92400e;line-height:1.4">
+           <strong>WeTa Snap Notification:</strong> This code was requested for demo account <code>${escapeHtml(mail.to)}</code> and delivered to your admin inbox (${escapeHtml(adminInbox)}).
+         </div>${mail.html}`
+      : mail.html;
+
     if (env.MAIL_DRIVER === 'log' && !env.SMTP_URL && !process.env.SMTP_PASS) {
-      this.log.log(`\n  ── email (log driver) ────────────────────────────────\n  to:      ${mail.to}\n  subject: ${mail.subject}\n${text(mail.html).split('\n').map((l) => `  ${l}`).join('\n')}\n  ───────────────────────────────────────────────────────`);
-      this.keep(mail);
+      this.log.log(`\n  ── email (log driver) ────────────────────────────────\n  to:      ${targetRecipient} (original: ${mail.to})\n  subject: ${finalSubject}\n${text(finalHtml).split('\n').map((l) => `  ${l}`).join('\n')}\n  ───────────────────────────────────────────────────────`);
+      this.keep({ ...mail, to: targetRecipient, subject: finalSubject, html: finalHtml });
       return { sent: true };
     }
 
@@ -76,8 +90,8 @@ export class MailService {
         socketTimeout: 12000,
       } as any);
 
-      const res = await t1.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: text(mail.html) });
-      this.log.log(`Email delivered to ${mail.to} via ${cfg.host}:587 (${res.response})`);
+      const res = await t1.sendMail({ from, to: targetRecipient, subject: finalSubject, html: finalHtml, text: text(finalHtml) });
+      this.log.log(`Email delivered to ${targetRecipient}${isMockDomain ? ` (routed from ${mail.to})` : ''} via ${cfg.host}:587 (${res.response})`);
       return { sent: true };
     } catch (e1) {
       this.log.warn(`Port 587 failed (${(e1 as Error).message}), attempting port 465 fallback...`);
@@ -96,12 +110,12 @@ export class MailService {
           socketTimeout: 12000,
         } as any);
 
-        const res2 = await t2.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: text(mail.html) });
-        this.log.log(`Email delivered to ${mail.to} via ${cfg.host}:465 (${res2.response})`);
+        const res2 = await t2.sendMail({ from, to: targetRecipient, subject: finalSubject, html: finalHtml, text: text(finalHtml) });
+        this.log.log(`Email delivered to ${targetRecipient}${isMockDomain ? ` (routed from ${mail.to})` : ''} via ${cfg.host}:465 (${res2.response})`);
         return { sent: true };
       } catch (e2) {
         const error = (e2 as Error).message;
-        this.log.error(`Email delivery failed to ${mail.to}: ${error}`);
+        this.log.error(`Email delivery failed to ${targetRecipient}: ${error}`);
         return { sent: false, error };
       }
     }
