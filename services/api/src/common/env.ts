@@ -50,6 +50,10 @@ const schema = z.object({
     .optional()
     .default('smtps://himmathsai1200%40gmail.com:vjzf%20ovco%20whop%20epqk@smtp.gmail.com:465')
     .transform((v) => v.replace(/^["']|["']$/g, '').trim()),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
 
   // SMS & Mobile OTP configuration (Twilio or any HTTP SMS Gateway)
   SMS_DRIVER: z.enum(['log', 'twilio', 'http']).default('log'),

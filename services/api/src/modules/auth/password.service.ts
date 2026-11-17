@@ -207,7 +207,7 @@ export class PasswordService {
       new Logger('PasswordService').error(`Password reset email failed to ${person.email}: ${e.message}`);
     });
 
-    await Promise.race([sendPromise, new Promise((r) => setTimeout(r, 3500))]);
+    await Promise.race([sendPromise, new Promise((r) => setTimeout(r, 10000))]);
     return { sent: true, code, personId: person.id };
   }
 

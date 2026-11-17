@@ -16,34 +16,94 @@ export interface Mail { to: string; subject: string; html: string; fromName?: st
 @Injectable()
 export class MailService {
   private readonly log = new Logger('Mail');
-  private readonly env = loadEnv();
-  private transport: Transporter | null = null;
 
-  private get smtp(): Transporter {
-    if (!this.transport) {
-      const url = (this.env.SMTP_URL || '').trim();
-      this.transport = createTransport(url);
+  private getSmtpConfig() {
+    const env = loadEnv();
+    let user = (process.env.SMTP_USER || env.SMTP_USER || '').trim();
+    let pass = (process.env.SMTP_PASS || env.SMTP_PASS || '').trim();
+    let host = (process.env.SMTP_HOST || env.SMTP_HOST || '').trim();
+    let port = Number(process.env.SMTP_PORT || env.SMTP_PORT || 0);
+
+    const urlStr = (env.SMTP_URL || '').replace(/^["']|["']$/g, '').trim();
+    if (urlStr) {
+      try {
+        const u = new URL(urlStr);
+        host = host || u.hostname;
+        port = port || (u.port ? Number(u.port) : (u.protocol === 'smtps:' ? 465 : 587));
+        if (u.username && !user) user = decodeURIComponent(u.username);
+        if (u.password && !pass) pass = decodeURIComponent(u.password);
+      } catch {
+        const m = urlStr.match(/^smtps?:\/\/([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/);
+        if (m) {
+          if (!user) user = decodeURIComponent(m[1]!);
+          if (!pass) pass = decodeURIComponent(m[2]!);
+          host = host || m[3]!;
+          if (m[4] && !port) port = Number(m[4]);
+        }
+      }
     }
-    return this.transport;
+
+    host = host || 'smtp.gmail.com';
+    port = port || 587;
+    return { host, port, user, pass };
   }
 
   async send(mail: Mail): Promise<{ sent: boolean; error?: string }> {
-    const fromAddr = address(this.env.MAIL_FROM);
+    const env = loadEnv();
+    const fromAddr = address(env.MAIL_FROM);
     const fromName = mail.fromName || 'WeTano Support';
     const from = `"${fromName.replace(/"/g, '')}" <${fromAddr}>`;
-    if (this.env.MAIL_DRIVER === 'log' || !this.env.SMTP_URL) {
-      this.log.log(`\n  ── email ──────────────────────────────────────────────\n  to:      ${mail.to}\n  subject: ${mail.subject}\n${text(mail.html).split('\n').map((l) => `  ${l}`).join('\n')}\n  ───────────────────────────────────────────────────────`);
+
+    if (env.MAIL_DRIVER === 'log' && !env.SMTP_URL && !process.env.SMTP_PASS) {
+      this.log.log(`\n  ── email (log driver) ────────────────────────────────\n  to:      ${mail.to}\n  subject: ${mail.subject}\n${text(mail.html).split('\n').map((l) => `  ${l}`).join('\n')}\n  ───────────────────────────────────────────────────────`);
       this.keep(mail);
       return { sent: true };
     }
+
+    const cfg = this.getSmtpConfig();
+
+    // Strategy 1: Port 587 with STARTTLS and family: 4 (IPv4) — unblocked on Render / AWS / Cloud
     try {
-      const res = await this.smtp.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: text(mail.html) });
-      this.log.log(`Email sent successfully to ${mail.to} (${res.response})`);
+      const t1 = createTransport({
+        host: cfg.host,
+        port: 587,
+        secure: false,
+        family: 4,
+        auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 8000,
+        greetingTimeout: 5000,
+        socketTimeout: 12000,
+      } as any);
+
+      const res = await t1.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: text(mail.html) });
+      this.log.log(`Email delivered to ${mail.to} via ${cfg.host}:587 (${res.response})`);
       return { sent: true };
-    } catch (e) {
-      const error = (e as Error).message;
-      this.log.error(`could not send "${mail.subject}" to ${mail.to}: ${error}`);
-      return { sent: false, error };
+    } catch (e1) {
+      this.log.warn(`Port 587 failed (${(e1 as Error).message}), attempting port 465 fallback...`);
+
+      // Strategy 2: Port 465 fallback with direct SSL
+      try {
+        const t2 = createTransport({
+          host: cfg.host,
+          port: 465,
+          secure: true,
+          family: 4,
+          auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+          tls: { rejectUnauthorized: false },
+          connectionTimeout: 8000,
+          greetingTimeout: 5000,
+          socketTimeout: 12000,
+        } as any);
+
+        const res2 = await t2.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: text(mail.html) });
+        this.log.log(`Email delivered to ${mail.to} via ${cfg.host}:465 (${res2.response})`);
+        return { sent: true };
+      } catch (e2) {
+        const error = (e2 as Error).message;
+        this.log.error(`Email delivery failed to ${mail.to}: ${error}`);
+        return { sent: false, error };
+      }
     }
   }
 
@@ -52,9 +112,10 @@ export class MailService {
    * picked up without scrolling the console — and so the integration tests can read one.
    */
   private keep(mail: Mail): void {
-    if (this.env.NODE_ENV === 'production') return;
+    const env = loadEnv();
+    if (env.NODE_ENV === 'production') return;
     try {
-      const dir = join(resolve(this.env.STORAGE_DIR), 'mail');
+      const dir = join(resolve(env.STORAGE_DIR), 'mail');
       mkdirSync(dir, { recursive: true });
       const name = `${Date.now()}-${mail.to.replace(/[^\w.@-]/g, '_')}.json`;
       writeFileSync(join(dir, name), JSON.stringify({

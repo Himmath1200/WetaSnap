@@ -164,8 +164,8 @@ export class AuthService {
       this.log.error(`Sign-in code email failed to ${person.email}: ${e.message}`);
     });
 
-    // Wait up to 3.5s for SMTP delivery; if slow, proceed so user is not blocked
-    await Promise.race([sendPromise, new Promise((r) => setTimeout(r, 3500))]);
+    // Wait up to 10s for SMTP delivery so email is guaranteed to dispatch before response completes
+    await Promise.race([sendPromise, new Promise((r) => setTimeout(r, 10000))]);
   }
 
   async resendCode(session: Session): Promise<void> {
