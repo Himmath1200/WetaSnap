@@ -44,6 +44,9 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
   },
+  build: {
+    chunkSizeWarningLimit: 1200,
+  },
   plugins: [
     preact(),
     tailwindcss(),

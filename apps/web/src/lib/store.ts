@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
+import { reportShownError } from './errors';
 
 /** Minimal observable store — avoids pulling in a state library (size budget §8.1). */
 export interface Store<T> {
@@ -38,7 +39,7 @@ export const toasts = createStore<Toast[]>([]);
 let toastId = 0;
 export function toast(text: string, tone: Toast['tone'] = 'info', ms = 3500) {
   // An error toast means an action failed — record it in the audit log with where it happened.
-  if (tone === 'error') void import('./errors').then((m) => m.reportShownError(text));
+  if (tone === 'error') void reportShownError(text);
   const id = ++toastId;
   toasts.set((t) => [...t, { id, text, tone }]);
   setTimeout(() => toasts.set((t) => t.filter((x) => x.id !== id)), ms);

@@ -14,6 +14,7 @@ import {
 import { LANGUAGES, TIME_ZONES } from '../lib/locale';
 import { LICENCE_META, daysLeft, licenceStatus } from '../lib/licence';
 import { DEFAULT_FOLLOWUP_MESSAGE, saveFollowUpConfig } from '../lib/followup';
+import { invoicesToPdf } from '../lib/billingExport';
 import { t, tn } from '../lib/i18n';
 import type { Company, Connection, ConnectorKind, EventItem, FieldDefinition, FieldTemplate, FieldType, Invoice, Tag, TagColour } from '../lib/types';
 import type { SeatInfo } from '../lib/backend';
@@ -74,7 +75,6 @@ function BillingTab() {
   async function downloadInvoice(inv: Invoice) {
     setPdfBusy(inv.id);
     try {
-      const { invoicesToPdf } = await import('../lib/billingExport');
       const blob = await invoicesToPdf([inv], {
         billTo: () => ({ name: co?.name ?? inv.company_name ?? '', headquarters: co?.headquarters ?? '', country: co?.country ?? '' }),
       });
