@@ -3,7 +3,6 @@
     "module": "commonjs",
     "target": "ES2023",
     "lib": ["ES2023"],
-    "moduleResolution": "node",
     "outDir": "./dist",
     "rootDir": ".",
     "sourceMap": true,
