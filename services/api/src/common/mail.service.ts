@@ -20,7 +20,16 @@ export class MailService {
   private transport: Transporter | null = null;
 
   private get smtp(): Transporter {
-    if (!this.transport) this.transport = createTransport(this.env.SMTP_URL!);
+    if (!this.transport) {
+      this.transport = createTransport({
+        url: this.env.SMTP_URL!,
+        pool: true,
+        maxConnections: 3,
+        connectionTimeout: 8000,
+        greetingTimeout: 5000,
+        socketTimeout: 10000,
+      } as any);
+    }
     return this.transport;
   }
 

@@ -11,7 +11,7 @@
  * Every step runs on the service connection — the person is not identified yet, so there is no
  * row-level security context to lean on. That is exactly why each check here is explicit.
  */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../../common/audit.service';
 import { equalInTime, hashCode, hashPassword, sixDigits } from '../../common/crypto';
@@ -46,6 +46,8 @@ export interface Where {
 
 @Injectable()
 export class AuthService {
+  private readonly log = new Logger('AuthService');
+
   constructor(
     private readonly db: DbService,
     private readonly people: PeopleService,
@@ -151,11 +153,14 @@ export class AuthService {
         [person.id, sessionId, hashCode(code)],
       );
     });
-    await this.mail.send({
+    // Dispatch email concurrently so the client transitions to the code step instantly
+    void this.mail.send({
       to: person.email,
       fromName: 'WeTano Support',
       subject: 'Your WeTa Snap sign-in code',
       html: this.mail.signInCode(person.name, code),
+    }).catch((e: Error) => {
+      this.log.error(`Sign-in code email failed to ${person.email}: ${e.message}`);
     });
   }
 

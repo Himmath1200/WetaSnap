@@ -48,6 +48,14 @@ function Guarded() {
   const { door, here } = readPath(path);
 
   useEffect(() => {
+    // Warm up backend API immediately on page load (wakes Render server from free-tier sleep)
+    const envUrl = String(import.meta.env.VITE_API_URL ?? '').trim().replace(/\/$/, '');
+    if (envUrl && !envUrl.includes('localhost')) {
+      void fetch(`${envUrl}/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
     if (s === undefined) return;
     // Company links from the days of three portals keep working.
     if (isOldAppPath(path)) { route(here + location.search + location.hash, true); return; }

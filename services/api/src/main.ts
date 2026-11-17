@@ -48,12 +48,12 @@ async function bootstrap() {
   app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 
   app.enableCors({
-    origin: env.NODE_ENV !== 'production' ? true : (env.CORS_ORIGINS.length ? env.CORS_ORIGINS : [env.APP_URL]),
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'X-Device'],
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Device', 'Accept'],
     exposedHeaders: ['Retry-After'],
     credentials: false,
-    maxAge: 600,
+    maxAge: 86400,
   });
 
   const reflector = app.get(Reflector);

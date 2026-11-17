@@ -196,16 +196,14 @@ export class PasswordService {
     });
 
     const setup = purpose === 'reset' && !person.has_password;
-    const sent = await this.mail.send({
+    void this.mail.send({
       to: person.email,
       fromName: 'WeTano Support',
       subject: setup ? 'Choose your WeTa Snap password' : `Your WeTa Snap ${purpose === 'change' ? 'password change' : 'password reset'} code`,
       html: this.mail.passwordCode(person.name, code, setup),
+    }).catch((e: Error) => {
+      new Logger('PasswordService').error(`Password reset email failed to ${person.email}: ${e.message}`);
     });
-    if (!sent.sent && loadEnv().MAIL_DRIVER === 'smtp') {
-      new Logger('PasswordService').error(`Password reset email failed to ${person.email}: ${sent.error}`);
-      throw new DomainError(`Could not send password email to ${person.email}: ${sent.error ?? 'SMTP delivery failed'}`, 500);
-    }
     return { sent: true, code, personId: person.id };
   }
 
