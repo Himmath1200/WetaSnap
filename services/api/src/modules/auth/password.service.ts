@@ -196,14 +196,18 @@ export class PasswordService {
     });
 
     const setup = purpose === 'reset' && !person.has_password;
-    void this.mail.send({
+    const sendPromise = this.mail.send({
       to: person.email,
       fromName: 'WeTano Support',
       subject: setup ? 'Choose your WeTa Snap password' : `Your WeTa Snap ${purpose === 'change' ? 'password change' : 'password reset'} code`,
       html: this.mail.passwordCode(person.name, code, setup),
+    }).then((res) => {
+      if (!res.sent) new Logger('PasswordService').error(`Password email not sent to ${person.email}: ${res.error}`);
     }).catch((e: Error) => {
       new Logger('PasswordService').error(`Password reset email failed to ${person.email}: ${e.message}`);
     });
+
+    await Promise.race([sendPromise, new Promise((r) => setTimeout(r, 3500))]);
     return { sent: true, code, personId: person.id };
   }
 

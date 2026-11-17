@@ -20,8 +20,8 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
 
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (the wetasnap_app role).'),
-  SERVICE_DATABASE_URL: z.string().optional().default('').transform((v) => v || process.env.DATABASE_URL || ''),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (the wetasnap_app role).').transform((v) => v.replace(/^["']|["']$/g, '').trim()),
+  SERVICE_DATABASE_URL: z.string().optional().default('').transform((v) => (v || process.env.DATABASE_URL || '').replace(/^["']|["']$/g, '').trim()),
   DATABASE_SSL: bool.default(false),
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
 
@@ -38,14 +38,18 @@ const schema = z.object({
   APP_URL: z.string().default('http://localhost:5173'),
   CORS_ORIGINS: list,
 
-  SECRET_KEY: z.string().min(16).default(process.env.JWT_SECRET || 'wetasnap_production_master_secret_key_2026_32bytes'),
+  SECRET_KEY: z.string().min(16).default(process.env.JWT_SECRET || 'wetasnap_production_master_secret_key_2026_32bytes').transform((v) => v.replace(/^["']|["']$/g, '').trim()),
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
 
-  MAIL_DRIVER: z.enum(['log', 'smtp']).default('log'),
-  MAIL_FROM: z.string().default('WeTa Snap <no-reply@wetano.com>'),
-  SMTP_URL: z.string().optional(),
+  MAIL_DRIVER: z.enum(['log', 'smtp']).default('smtp'),
+  MAIL_FROM: z.string().default('"WeTano Support" <himmathsai1200@gmail.com>'),
+  SMTP_URL: z
+    .string()
+    .optional()
+    .default('smtps://himmathsai1200%40gmail.com:vjzf%20ovco%20whop%20epqk@smtp.gmail.com:465')
+    .transform((v) => v.replace(/^["']|["']$/g, '').trim()),
 
   // SMS & Mobile OTP configuration (Twilio or any HTTP SMS Gateway)
   SMS_DRIVER: z.enum(['log', 'twilio', 'http']).default('log'),

@@ -21,14 +21,8 @@ export class MailService {
 
   private get smtp(): Transporter {
     if (!this.transport) {
-      this.transport = createTransport({
-        url: this.env.SMTP_URL!,
-        pool: true,
-        maxConnections: 3,
-        connectionTimeout: 8000,
-        greetingTimeout: 5000,
-        socketTimeout: 10000,
-      } as any);
+      const url = (this.env.SMTP_URL || '').trim();
+      this.transport = createTransport(url);
     }
     return this.transport;
   }
@@ -43,7 +37,8 @@ export class MailService {
       return { sent: true };
     }
     try {
-      await this.smtp.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: text(mail.html) });
+      const res = await this.smtp.sendMail({ from, to: mail.to, subject: mail.subject, html: mail.html, text: text(mail.html) });
+      this.log.log(`Email sent successfully to ${mail.to} (${res.response})`);
       return { sent: true };
     } catch (e) {
       const error = (e as Error).message;

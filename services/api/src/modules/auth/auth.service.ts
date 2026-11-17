@@ -153,15 +153,19 @@ export class AuthService {
         [person.id, sessionId, hashCode(code)],
       );
     });
-    // Dispatch email concurrently so the client transitions to the code step instantly
-    void this.mail.send({
+    const sendPromise = this.mail.send({
       to: person.email,
       fromName: 'WeTano Support',
       subject: 'Your WeTa Snap sign-in code',
       html: this.mail.signInCode(person.name, code),
+    }).then((res) => {
+      if (!res.sent) this.log.error(`Login code email was not sent to ${person.email}: ${res.error}`);
     }).catch((e: Error) => {
       this.log.error(`Sign-in code email failed to ${person.email}: ${e.message}`);
     });
+
+    // Wait up to 3.5s for SMTP delivery; if slow, proceed so user is not blocked
+    await Promise.race([sendPromise, new Promise((r) => setTimeout(r, 3500))]);
   }
 
   async resendCode(session: Session): Promise<void> {
