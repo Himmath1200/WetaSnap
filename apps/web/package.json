@@ -7,7 +7,7 @@
     "predev": "node scripts/vendor-ort.mjs",
     "dev": "node scripts/dev.mjs",
     "prebuild": "node scripts/vendor-ort.mjs",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc -p tsconfig.build.json --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
