@@ -292,10 +292,12 @@ export interface Backend {
 }
 
 /**
- *  - api:  the WeTa Snap API (services/api) — set VITE_API_URL to use it
+ *  - api:  the WeTa Snap API (services/api or Vercel Serverless Functions)
  *  - demo: an in-browser mock, so the whole app can be clicked through with nothing installed
  */
-const useApi = Boolean(import.meta.env.VITE_API_URL);
+const envApiUrl = import.meta.env.VITE_API_URL;
+const isVercelHost = typeof window !== 'undefined' && window.location.hostname.endsWith('.vercel.app');
+const useApi = (Boolean(envApiUrl) || import.meta.env.VITE_USE_API === 'true' || Boolean(import.meta.env.VERCEL) || isVercelHost) && import.meta.env.VITE_DEMO !== 'true';
 
 let impl: Promise<Backend> | null = null;
 /** Lazy so the demo code is never shipped to production users, and vice-versa. */

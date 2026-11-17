@@ -26,7 +26,7 @@ export interface DevAccounts {
 const EMPTY: DevAccounts = { password: '', accounts: [] };
 
 async function ask<T>(path: string, fallback: T): Promise<T> {
-  if (!BASE) return fallback;
+  if (!BASE && !import.meta.env.DEV) return fallback;
   try {
     const res = await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(2500) });
     return res.ok ? ((await res.json()) as T) : fallback;

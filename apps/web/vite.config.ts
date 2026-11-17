@@ -9,6 +9,7 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    'import.meta.env.VERCEL': JSON.stringify(process.env.VERCEL || ''),
   },
   server: {
     // '::' = dual stack, so both IPv4 (phone on the same Wi-Fi) and IPv6

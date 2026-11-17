@@ -28,7 +28,7 @@ const schema = z.object({
   REDIS_URL: z.string().optional(),
 
   STORAGE_DRIVER: z.enum(['fs', 's3']).default('fs'),
-  STORAGE_DIR: z.string().default('./storage'),
+  STORAGE_DIR: z.string().default(process.env.VERCEL ? '/tmp/storage' : './storage'),
   S3_ENDPOINT: z.string().optional(),
   S3_REGION: z.string().optional(),
   S3_BUCKET: z.string().optional(),
@@ -82,6 +82,8 @@ let cached: Env | null = null;
 export function loadEnv(): Env {
   if (cached) return cached;
   loadDotenv({ path: join(__dirname, '..', '..', '.env'), quiet: true });
+  loadDotenv({ path: join(process.cwd(), '.env'), quiet: true });
+  loadDotenv({ path: join(process.cwd(), 'services', 'api', '.env'), quiet: true });
   const parsed = schema.safeParse(process.env);
   if (!parsed.success) {
     const problems = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');

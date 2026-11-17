@@ -48,11 +48,10 @@ function Guarded() {
   const { door, here } = readPath(path);
 
   useEffect(() => {
-    // Warm up backend API immediately on page load (wakes Render server from free-tier sleep)
+    // Warm up backend API immediately on page load (wakes Render server or warms Vercel Serverless Function)
     const envUrl = String(import.meta.env.VITE_API_URL ?? '').trim().replace(/\/$/, '');
-    if (envUrl && !envUrl.includes('localhost')) {
-      void fetch(`${envUrl}/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
-    }
+    const healthUrl = envUrl && !envUrl.includes('localhost') ? `${envUrl}/health` : '/health';
+    void fetch(healthUrl, { method: 'GET', cache: 'no-store' }).catch(() => {});
   }, []);
 
   useEffect(() => {
