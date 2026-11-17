@@ -38,7 +38,7 @@ export class DbService implements OnModuleDestroy {
     this.app = new Pool({ connectionString: cleanDbUrl(env.DATABASE_URL), ...common });
     this.service = new Pool({ connectionString: cleanDbUrl(env.SERVICE_DATABASE_URL), ...common });
     for (const [name, pool] of [['app', this.app], ['service', this.service]] as const) {
-      pool.on('error', (e) => this.log.error(`${name} pool: ${e.message}`));
+      pool.on('error', (e: Error) => this.log.error(`${name} pool: ${e.message}`));
     }
   }
 
