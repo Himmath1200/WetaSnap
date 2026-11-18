@@ -33,7 +33,8 @@ export class DbService implements OnModuleDestroy {
 
   constructor() {
     const env = loadEnv();
-    const ssl = env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined;
+    const needsSsl = env.DATABASE_SSL || env.DATABASE_URL.includes('sslmode=require') || env.DATABASE_URL.includes('supabase.co') || env.SERVICE_DATABASE_URL.includes('sslmode=require') || env.SERVICE_DATABASE_URL.includes('supabase.co');
+    const ssl = needsSsl ? { rejectUnauthorized: false } : undefined;
     const common = { max: env.DATABASE_POOL_MAX, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl };
     this.app = new Pool({ connectionString: cleanDbUrl(env.DATABASE_URL), ...common });
     this.service = new Pool({ connectionString: cleanDbUrl(env.SERVICE_DATABASE_URL), ...common });

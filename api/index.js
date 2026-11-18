@@ -4,16 +4,22 @@ const fs = require('node:fs');
 let serverHandler = null;
 let initPromise = null;
 
-function findServerModule() {
+function loadServerModule() {
+  try {
+    return require('../services/api/dist/server.js');
+  } catch {}
+  try {
+    return require('./services/api/dist/server.js');
+  } catch {}
   const candidates = [
     path.resolve(__dirname, '../services/api/dist/server.js'),
     path.resolve(__dirname, 'services/api/dist/server.js'),
     path.resolve(process.cwd(), 'services/api/dist/server.js'),
   ];
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (fs.existsSync(candidate)) return require(candidate);
   }
-  return candidates[0];
+  return require(candidates[0]);
 }
 
 async function getHandler() {
@@ -22,8 +28,7 @@ async function getHandler() {
     initPromise = (async () => {
       const express = require('express');
       const expressApp = express();
-      const serverPath = findServerModule();
-      const serverModule = require(serverPath);
+      const serverModule = loadServerModule();
       await serverModule.configureApp(expressApp);
       serverHandler = expressApp;
       return expressApp;
@@ -34,10 +39,10 @@ async function getHandler() {
 
 function resolvePath(req) {
   const urlObj = new URL(req.url || '/', 'http://localhost');
-  const fallbackPath = urlObj.searchParams.get('__v_path');
-  const matchedPath = req.headers && req.headers['x-matched-path'];
+  const queryPath = urlObj.searchParams.get('__v_path');
+  const forwardedUri = req.headers && (req.headers['x-forwarded-uri'] || req.headers['x-invoke-path']);
 
-  let target = (typeof matchedPath === 'string' && matchedPath) ? matchedPath : (fallbackPath || urlObj.pathname);
+  let target = queryPath || forwardedUri || urlObj.pathname;
 
   if (target.startsWith('/api/')) {
     target = target.slice(4);
@@ -47,8 +52,8 @@ function resolvePath(req) {
 
   urlObj.searchParams.delete('__v_path');
   const query = urlObj.searchParams.toString();
-  if (query && !target.includes('?')) {
-    target = target + '?' + query;
+  if (query) {
+    target = target.includes('?') ? `${target}&${query}` : `${target}?${query}`;
   }
 
   return target;
