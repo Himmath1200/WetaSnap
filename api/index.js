@@ -34,10 +34,22 @@ async function getHandler() {
 }
 
 function resolvePath(req) {
-  const url = req.url || '/';
-  let target = url.replace(/^\/api(?=\/|\?|$)/, '') || '/health';
-  if (target === '' || target === '/') target = '/health';
-  return target;
+  const urlObj = new URL(req.url || '/', 'http://localhost');
+  const vPath = urlObj.searchParams.get('__v_path');
+
+  let pathname = vPath || urlObj.pathname;
+  if (pathname.startsWith('/api/')) {
+    pathname = pathname.slice(4);
+  } else if (pathname === '/api' || pathname === '') {
+    pathname = '/health';
+  }
+  if (!pathname.startsWith('/')) {
+    pathname = '/' + pathname;
+  }
+
+  urlObj.searchParams.delete('__v_path');
+  const query = urlObj.searchParams.toString();
+  return query ? (pathname.includes('?') ? `${pathname}&${query}` : `${pathname}?${query}`) : pathname;
 }
 
 async function handler(req, res) {
