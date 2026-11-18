@@ -3,11 +3,7 @@
   "installCommand": "npm install --include=dev",
   "outputDirectory": "dist",
   "functions": {
-    "api/*.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "api/**/*.js": {
+    "api/index.js": {
       "maxDuration": 60,
       "memory": 1024
     }

@@ -2,6 +2,7 @@
 node_modules
 dist
 dev-dist
+api/_dist
 *.tsbuildinfo
 
 # Secrets and local settings — never committed

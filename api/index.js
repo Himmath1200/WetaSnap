@@ -8,15 +8,15 @@ let initPromise = null;
 
 function loadServerModule() {
   const candidates = [
-    path.resolve(__dirname, 'dist/server.js'),
+    path.resolve(__dirname, '_dist/server.js'),
     path.resolve(__dirname, '../services/api/dist/server.js'),
-    path.resolve(process.cwd(), 'api/dist/server.js'),
+    path.resolve(process.cwd(), 'api/_dist/server.js'),
     path.resolve(process.cwd(), 'services/api/dist/server.js'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return require(candidate);
   }
-  return require('./dist/server.js');
+  return require('./_dist/server.js');
 }
 
 async function getHandler() {
