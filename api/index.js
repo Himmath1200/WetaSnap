@@ -6,26 +6,17 @@ const express = require('express');
 let serverHandler = null;
 let initPromise = null;
 
-let serverModule = null;
-try {
-  serverModule = require('../services/api/dist/server.js');
-} catch {
-  try {
-    serverModule = require('./services/api/dist/server.js');
-  } catch {}
-}
-
 function loadServerModule() {
-  if (serverModule) return serverModule;
   const candidates = [
+    path.resolve(__dirname, 'dist/server.js'),
     path.resolve(__dirname, '../services/api/dist/server.js'),
-    path.resolve(__dirname, 'services/api/dist/server.js'),
+    path.resolve(process.cwd(), 'api/dist/server.js'),
     path.resolve(process.cwd(), 'services/api/dist/server.js'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return require(candidate);
   }
-  return require(candidates[0]);
+  return require('./dist/server.js');
 }
 
 async function getHandler() {
@@ -43,26 +34,9 @@ async function getHandler() {
 }
 
 function resolvePath(req) {
-  const urlObj = new URL(req.url || '/', 'http://localhost');
-  const queryPath = urlObj.searchParams.get('__v_path');
-  const forwardedUri = req.headers && (req.headers['x-forwarded-uri'] || req.headers['x-invoke-path']);
-
-  let target = queryPath || forwardedUri || urlObj.pathname;
-
-  if (target === '/api' || target === '/api/index' || target === '') {
-    target = '/health';
-  } else if (target.startsWith('/api/index')) {
-    target = target.slice(10) || '/health';
-  } else if (target.startsWith('/api/')) {
-    target = target.slice(4);
-  }
-
-  urlObj.searchParams.delete('__v_path');
-  const query = urlObj.searchParams.toString();
-  if (query) {
-    target = target.includes('?') ? `${target}&${query}` : `${target}?${query}`;
-  }
-
+  const url = req.url || '/';
+  let target = url.replace(/^\/api(?=\/|\?|$)/, '') || '/health';
+  if (target === '' || target === '/') target = '/health';
   return target;
 }
 

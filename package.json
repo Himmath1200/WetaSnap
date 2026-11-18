@@ -10,7 +10,7 @@
     "dev:web": "npm run dev -w @wetasnap/web",
     "dev:api": "npm run dev -w @wetasnap/api",
     "dev:db": "npm run test:db -w @wetasnap/api",
-    "build": "npm run build -w @wetasnap/web && npm run build -w @wetasnap/api",
+    "build": "npm run build -w @wetasnap/web && npm run build -w @wetasnap/api && node tools/sync-api.mjs",
     "test": "npm run test -w @wetasnap/web && npm run test -w @wetasnap/api",
     "typecheck": "npm run typecheck -w @wetasnap/web && npm run typecheck -w @wetasnap/api",
     "size": "npm run size -w @wetasnap/web",

@@ -4,21 +4,19 @@
   "outputDirectory": "apps/web/dist",
   "functions": {
     "api/*.js": {
-      "includeFiles": "services/api/dist/**",
       "maxDuration": 60,
       "memory": 1024
     },
     "api/**/*.js": {
-      "includeFiles": "services/api/dist/**",
       "maxDuration": 60,
       "memory": 1024
     }
   },
   "rewrites": [
-    { "source": "/v1/:path*", "destination": "/api/index?__v_path=/v1/:path*" },
-    { "source": "/dev/:path*", "destination": "/api/index?__v_path=/dev/:path*" },
-    { "source": "/health", "destination": "/api/index?__v_path=/health" },
-    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/v1/:path*", "destination": "/api/v1/:path*" },
+    { "source": "/dev/:path*", "destination": "/api/dev/:path*" },
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

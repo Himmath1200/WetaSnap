@@ -1,9 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/v1/:path*", "destination": "/api?__v_path=/v1/:path*" },
-    { "source": "/dev/:path*", "destination": "/api?__v_path=/dev/:path*" },
-    { "source": "/health", "destination": "/api?__v_path=/health" },
-    { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}
