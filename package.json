@@ -37,6 +37,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "@types/web": "^0.0.364"
+    "@types/web": "^0.0.364",
+    "@vercel/node": "^31.0.2"
   }
 }
