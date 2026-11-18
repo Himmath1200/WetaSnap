@@ -20,19 +20,24 @@ async function getHandler() {
 
 function resolvePath(req) {
   const urlObj = new URL(req.url || '/', 'http://localhost');
+  const vPath = urlObj.searchParams.get('__v_path');
   const forwarded = req.headers && (
     req.headers['x-forwarded-uri'] ||
     req.headers['x-invoke-path'] ||
     (req.headers['x-matched-path'] && req.headers['x-matched-path'] !== '/api' ? req.headers['x-matched-path'] : null)
   );
 
-  let target = forwarded || urlObj.pathname;
+  let target = vPath || forwarded || urlObj.pathname;
   if (target === '/api' || target === '/api/index' || target === '/' || target === '') {
     target = '/health';
   } else if (target.startsWith('/api/')) {
     target = target.slice(4);
   }
+  if (!target.startsWith('/')) {
+    target = '/' + target;
+  }
 
+  urlObj.searchParams.delete('__v_path');
   const query = urlObj.searchParams.toString();
   return query ? (target.includes('?') ? `${target}&${query}` : `${target}?${query}`) : target;
 }
