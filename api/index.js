@@ -1,16 +1,22 @@
+require('reflect-metadata');
 const path = require('node:path');
 const fs = require('node:fs');
+const express = require('express');
 
 let serverHandler = null;
 let initPromise = null;
 
+let serverModule = null;
+try {
+  serverModule = require('../services/api/dist/server.js');
+} catch {
+  try {
+    serverModule = require('./services/api/dist/server.js');
+  } catch {}
+}
+
 function loadServerModule() {
-  try {
-    return require('../services/api/dist/server.js');
-  } catch {}
-  try {
-    return require('./services/api/dist/server.js');
-  } catch {}
+  if (serverModule) return serverModule;
   const candidates = [
     path.resolve(__dirname, '../services/api/dist/server.js'),
     path.resolve(__dirname, 'services/api/dist/server.js'),
@@ -26,10 +32,9 @@ async function getHandler() {
   if (serverHandler) return serverHandler;
   if (!initPromise) {
     initPromise = (async () => {
-      const express = require('express');
       const expressApp = express();
-      const serverModule = loadServerModule();
-      await serverModule.configureApp(expressApp);
+      const mod = loadServerModule();
+      await mod.configureApp(expressApp);
       serverHandler = expressApp;
       return expressApp;
     })();
