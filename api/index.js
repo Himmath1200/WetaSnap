@@ -1,31 +1,16 @@
 require('reflect-metadata');
-const path = require('node:path');
-const fs = require('node:fs');
 const express = require('express');
+const serverModule = require('./_dist/server.js');
 
 let serverHandler = null;
 let initPromise = null;
-
-function loadServerModule() {
-  const candidates = [
-    path.resolve(__dirname, '_dist/server.js'),
-    path.resolve(__dirname, '../services/api/dist/server.js'),
-    path.resolve(process.cwd(), 'api/_dist/server.js'),
-    path.resolve(process.cwd(), 'services/api/dist/server.js'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return require(candidate);
-  }
-  return require('./_dist/server.js');
-}
 
 async function getHandler() {
   if (serverHandler) return serverHandler;
   if (!initPromise) {
     initPromise = (async () => {
       const expressApp = express();
-      const mod = loadServerModule();
-      await mod.configureApp(expressApp);
+      await serverModule.configureApp(expressApp);
       serverHandler = expressApp;
       return expressApp;
     })();
@@ -34,21 +19,22 @@ async function getHandler() {
 }
 
 function resolvePath(req) {
-  let url = req.url || '/';
-  if (url.includes('__v_path=')) {
-    const urlObj = new URL(url, 'http://localhost');
-    const vPath = urlObj.searchParams.get('__v_path') || '';
-    urlObj.searchParams.delete('__v_path');
-    const query = urlObj.searchParams.toString();
-    url = query ? vPath + '?' + query : vPath;
+  const urlObj = new URL(req.url || '/', 'http://localhost');
+  const forwarded = req.headers && (
+    req.headers['x-forwarded-uri'] ||
+    req.headers['x-invoke-path'] ||
+    (req.headers['x-matched-path'] && req.headers['x-matched-path'] !== '/api' ? req.headers['x-matched-path'] : null)
+  );
+
+  let target = forwarded || urlObj.pathname;
+  if (target === '/api' || target === '/api/index' || target === '/' || target === '') {
+    target = '/health';
+  } else if (target.startsWith('/api/')) {
+    target = target.slice(4);
   }
-  if (url === '/api' || url === '/api/index' || url === '/api/index.js' || url === '/' || url === '') {
-    return '/health';
-  }
-  if (url.startsWith('/api/')) {
-    url = url.slice(4);
-  }
-  return url.startsWith('/') ? url : '/' + url;
+
+  const query = urlObj.searchParams.toString();
+  return query ? (target.includes('?') ? `${target}&${query}` : `${target}?${query}`) : target;
 }
 
 async function handler(req, res) {
