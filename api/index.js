@@ -49,10 +49,12 @@ function resolvePath(req) {
 
   let target = queryPath || forwardedUri || urlObj.pathname;
 
-  if (target.startsWith('/api/')) {
-    target = target.slice(4);
-  } else if (target === '/api' || target === '') {
+  if (target === '/api' || target === '/api/index' || target === '') {
     target = '/health';
+  } else if (target.startsWith('/api/index')) {
+    target = target.slice(10) || '/health';
+  } else if (target.startsWith('/api/')) {
+    target = target.slice(4);
   }
 
   urlObj.searchParams.delete('__v_path');
