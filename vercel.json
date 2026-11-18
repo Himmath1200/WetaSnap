@@ -1,19 +1,12 @@
 {
-  "framework": null,
   "buildCommand": "npm run build",
   "installCommand": "npm install --include=dev",
   "outputDirectory": "dist",
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 60,
-      "memory": 1024
-    }
-  },
   "rewrites": [
-    { "source": "/v1/:path*", "destination": "/api?__v_path=/v1/:path*" },
-    { "source": "/dev/:path*", "destination": "/api?__v_path=/dev/:path*" },
-    { "source": "/health", "destination": "/api?__v_path=/health" },
-    { "source": "/api/(.*)", "destination": "/api?__v_path=/$1" },
+    { "source": "/v1/(.*)", "destination": "/api/v1/$1" },
+    { "source": "/dev/(.*)", "destination": "/api/dev/$1" },
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

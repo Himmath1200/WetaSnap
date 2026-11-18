@@ -34,22 +34,21 @@ async function getHandler() {
 }
 
 function resolvePath(req) {
-  const urlObj = new URL(req.url || '/', 'http://localhost');
-  const vPath = urlObj.searchParams.get('__v_path');
-
-  let pathname = vPath || urlObj.pathname;
-  if (pathname.startsWith('/api/')) {
-    pathname = pathname.slice(4);
-  } else if (pathname === '/api' || pathname === '') {
-    pathname = '/health';
+  let url = req.url || '/';
+  if (url.includes('__v_path=')) {
+    const urlObj = new URL(url, 'http://localhost');
+    const vPath = urlObj.searchParams.get('__v_path') || '';
+    urlObj.searchParams.delete('__v_path');
+    const query = urlObj.searchParams.toString();
+    url = query ? vPath + '?' + query : vPath;
   }
-  if (!pathname.startsWith('/')) {
-    pathname = '/' + pathname;
+  if (url === '/api' || url === '/api/index' || url === '/api/index.js' || url === '/' || url === '') {
+    return '/health';
   }
-
-  urlObj.searchParams.delete('__v_path');
-  const query = urlObj.searchParams.toString();
-  return query ? (pathname.includes('?') ? `${pathname}&${query}` : `${pathname}?${query}`) : pathname;
+  if (url.startsWith('/api/')) {
+    url = url.slice(4);
+  }
+  return url.startsWith('/') ? url : '/' + url;
 }
 
 async function handler(req, res) {
