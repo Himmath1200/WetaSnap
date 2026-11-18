@@ -22,7 +22,13 @@ export interface Caller {
 export type Sql = TemplateStringsArray;
 
 function cleanDbUrl(url: string): string {
-  return url.replace(/([?&])sslmode=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
+  let cleaned = url.replace(/([?&])sslmode=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
+  // On Vercel / serverless, prefer Supabase transaction pooler (port 6543) over session pooler (port 5432)
+  // to avoid hitting the strict 15-connection limit (EMAXCONNSESSION).
+  if (process.env.VERCEL && cleaned.includes('pooler.supabase.com:5432')) {
+    cleaned = cleaned.replace(':5432', ':6543');
+  }
+  return cleaned;
 }
 
 @Injectable()
@@ -35,21 +41,35 @@ export class DbService implements OnModuleDestroy {
     const env = loadEnv();
     const needsSsl = env.DATABASE_SSL || env.DATABASE_URL.includes('sslmode=require') || env.DATABASE_URL.includes('supabase.co') || env.SERVICE_DATABASE_URL.includes('sslmode=require') || env.SERVICE_DATABASE_URL.includes('supabase.co');
     const ssl = needsSsl ? { rejectUnauthorized: false } : undefined;
-    const common = { max: env.DATABASE_POOL_MAX, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl };
-    this.app = new Pool({ connectionString: cleanDbUrl(env.DATABASE_URL), ...common });
-    this.service = new Pool({ connectionString: cleanDbUrl(env.SERVICE_DATABASE_URL), ...common });
-    for (const [name, pool] of [['app', this.app], ['service', this.service]] as const) {
-      pool.on('error', (e: Error) => this.log.error(`${name} pool: ${e.message}`));
+    const poolMax = process.env.VERCEL ? Math.min(env.DATABASE_POOL_MAX, 3) : env.DATABASE_POOL_MAX;
+    const idleTimeout = process.env.VERCEL ? 2000 : 30_000;
+    const common = { max: poolMax, idleTimeoutMillis: idleTimeout, connectionTimeoutMillis: 10_000, ssl };
+
+    const appUrl = cleanDbUrl(env.DATABASE_URL);
+    const serviceUrl = cleanDbUrl(env.SERVICE_DATABASE_URL);
+
+    this.app = new Pool({ connectionString: appUrl, ...common });
+    if (appUrl === serviceUrl) {
+      this.service = this.app;
+    } else {
+      this.service = new Pool({ connectionString: serviceUrl, ...common });
+      this.service.on('error', (e: Error) => this.log.error(`service pool: ${e.message}`));
     }
+    this.app.on('error', (e: Error) => this.log.error(`app pool: ${e.message}`));
   }
 
   async onModuleDestroy() {
-    await Promise.allSettled([this.app.end(), this.service.end()]);
+    const pools = this.service === this.app ? [this.app] : [this.app, this.service];
+    await Promise.allSettled(pools.map((p) => p.end()));
   }
 
-  /** True when both pools answer — used by /health and at start-up. */
+  /** True when pools answer — used by /health and at start-up. */
   async ping(): Promise<void> {
-    await Promise.all([this.app.query('select 1'), this.service.query('select 1')]);
+    if (this.service === this.app) {
+      await this.app.query('select 1');
+    } else {
+      await Promise.all([this.app.query('select 1'), this.service.query('select 1')]);
+    }
   }
 
   // ---------------------------------------------------------------- service (no policies)

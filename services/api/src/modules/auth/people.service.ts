@@ -54,10 +54,7 @@ export interface CompanyDto {
 export const PERSON_COLUMNS = `
   p.id, p.company_id, p.email, p.name, p.phone, p.role::text as role,
   coalesce(p.plan, 'free') as plan,
-  case
-    when p.role = 'individual' then coalesce((select count(*)::int from leads l where l.captured_by = p.id and l.deleted_at is null), p.monthly_scans, 0)
-    else coalesce(p.monthly_scans, 0)
-  end as monthly_scans,
+  coalesce(p.monthly_scans, 0) as monthly_scans,
   p.referral_code, p.organizer_id, coalesce(p.max_logins, 5) as max_logins,
   to_char(p.event_ends_on, 'YYYY-MM-DD') as event_ends_on,
   p.default_event_id, to_char(p.access_ends_on, 'YYYY-MM-DD') as access_ends_on,

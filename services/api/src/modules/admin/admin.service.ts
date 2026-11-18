@@ -315,6 +315,22 @@ export class AdminService {
           set plan_id = excluded.plan_id, billing_cycle = excluded.billing_cycle,
               renews_on = excluded.renews_on, auto_renew = excluded.auto_renew`,
       [companyId, input.plan_id, input.billing_cycle, input.renews_on, input.auto_renew]);
+
+    // Keep the company's active licence in sync with the plan's quotas
+    if (input.plan_id) {
+      const plan = await this.db.one<any>(`select * from plans where id = $1`, [input.plan_id]);
+      if (plan) {
+        await this.db.query(
+          `update licences
+              set seats = $2, scans_per_month = $3, connectors_allowed = $4, ends_on = $5,
+                  type = $6::licence_type, updated_at = now()
+            where company_id = $1`,
+          [companyId, plan.seats, plan.scans_per_month, plan.connectors_allowed, input.renews_on,
+            input.billing_cycle === 'annual' ? 'annual' : 'monthly'],
+        );
+      }
+    }
+
     await this.audit.write(me, { action: 'subscription.update', entity: 'subscriptions', entityId: companyId, companyId });
   }
 
@@ -410,10 +426,14 @@ export class AdminService {
 
   async toggleIndividualStatus(me: Caller, id: string, active: boolean) {
     await this.db.query(`update people set active = $2 where id = $1`, [id, active]);
+    if (!active) {
+      await this.db.query(`update device_sessions set revoked_at = now() where person_id = $1 and revoked_at is null`, [id]);
+    }
     await this.audit.write(me, { action: 'individual.status', entity: 'people', entityId: id, details: { active } });
   }
 
   async deleteIndividual(me: Caller, id: string) {
+    await this.db.query(`update device_sessions set revoked_at = now() where person_id = $1`, [id]);
     await this.db.query(`delete from people where id = $1`, [id]);
     await this.audit.write(me, { action: 'individual.delete', entity: 'people', entityId: id });
   }
