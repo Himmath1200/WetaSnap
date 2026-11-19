@@ -222,12 +222,6 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
                     {lead.consent ? <><CheckCircle2 class="size-3.5" />{t('Consent given')}</> : t('No consent')}
                   </span>
                 </div>
-                {lead.notes && (
-                  <div>
-                    <h4 class="text-xs font-bold uppercase tracking-wider text-muted mb-1">{t('Detected card text')}</h4>
-                    <p class="rounded-xl bg-subtle px-3 py-2 text-xs font-mono whitespace-pre-wrap text-ink border border-line">{lead.notes}</p>
-                  </div>
-                )}
 
                 <div class="grid grid-cols-2 gap-2">
                   <button class="btn-secondary" onClick={() => saveToPhone(lead, defs, event?.name)}><UserPlus class="size-4" />{t('Save to device')}</button>

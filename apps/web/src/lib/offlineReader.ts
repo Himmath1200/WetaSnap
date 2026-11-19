@@ -66,12 +66,6 @@ export function mergeReads(reads: ReadResult[]): ReadResult {
   return out;
 }
 
-const filledCount = (r: ReadResult) => Object.values(r).filter((v) => v?.value).length;
-const meanConf = (r: ReadResult) => {
-  const vs = Object.values(r);
-  return vs.length ? vs.reduce((s, v) => s + (v.confidence ?? 0), 0) / vs.length : 0;
-};
-
 /** Multi-pass offline read: grey block, then B&W block, then sparse — vote per field. All on-device. */
 export async function readOffline(photo: Blob, language = 'en', opts?: { silent?: boolean }): Promise<ReadResult> {
   const w = await getWorker(language);
@@ -86,19 +80,10 @@ export async function readOffline(photo: Blob, language = 'en', opts?: { silent?
     return { parsed: parseCardText(rebuildText(data as unknown as TesseractData) || raw), raw };
   };
   const p1 = await pass(6, false);
-  if (meanConf(p1.parsed) >= 0.7 && filledCount(p1.parsed) >= 4) {
-    if (!opts?.silent) pushOcrText(p1.raw, 'device Tesseract');
-    return p1.parsed;
-  }
-  const p2 = await pass(6, true).catch(() => null);
-  const merged2 = mergeReads([p1.parsed, ...(p2 ? [p2.parsed] : [])]);
-  if (!p2 || meanConf(merged2) >= 0.7 || filledCount(merged2) >= 4) {
-    if (!opts?.silent) pushOcrText([p1.raw, p2?.raw].filter(Boolean).join('\n---\n'), 'device Tesseract (2 passes)');
-    return merged2;
-  }
-  const p3 = await pass(11, false).catch(() => null);
-  const merged = mergeReads([p1.parsed, p2.parsed, ...(p3 ? [p3.parsed] : [])]);
-  if (!opts?.silent) pushOcrText([p1.raw, p2.raw, p3?.raw].filter(Boolean).join('\n---\n'), 'device Tesseract (3 passes)');
+  const p2 = await pass(3, false).catch(() => null);
+  const p3 = await pass(6, true).catch(() => null);
+  const merged = mergeReads([p1.parsed, ...(p2 ? [p2.parsed] : []), ...(p3 ? [p3.parsed] : [])]);
+  if (!opts?.silent) pushOcrText([p1.raw, p2?.raw, p3?.raw].filter(Boolean).join('\n---\n'), 'device Tesseract (multi-pass)');
   return merged;
 }
 
@@ -121,16 +106,18 @@ async function preprocessForOcr(photo: Blob, opts?: { bw?: boolean }): Promise<B
     if (!ctx) { bmp.close(); return photo; }
     ctx.drawImage(bmp, 0, 0, W, H);
     bmp.close();
-    // Greyscale + autocontrast: stretch the sampled min/max to 0..255 so an off-white
-    // card becomes white and grey small print becomes black.
+    // Greyscale + adaptive stretch: stretch the sampled min/max to 0..255 with contrast boost
     const img = ctx.getImageData(0, 0, W, H);
     const d = img.data;
     let lo = 255, hi = 0;
-    for (let i = 0; i < d.length; i += 64) {
+    for (let i = 0; i < d.length; i += 32) {
       const g = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
       if (g < lo) lo = g;
       if (g > hi) hi = g;
     }
+    // Prevent over-stretching pure black/white
+    lo = Math.max(0, lo - 5);
+    hi = Math.min(255, hi + 5);
     const span = Math.max(1, hi - lo);
     for (let i = 0; i < d.length; i += 4) {
       const g = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;

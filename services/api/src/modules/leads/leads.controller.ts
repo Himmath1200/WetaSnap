@@ -70,7 +70,9 @@ export class LeadsController {
 
   @Get('exists')
   async exists(@Me() me: Caller, @Query('event_id') eventId: string, @Query('email') email = '', @Query('phone') phone = '') {
-    const at = await this.leads.exists(me, parse(uuid, eventId), String(email).slice(0, 200), String(phone).slice(0, 40));
+    const validUuid = uuid.safeParse(eventId);
+    const parsedEventId = validUuid.success ? validUuid.data : '';
+    const at = await this.leads.exists(me, parsedEventId, String(email).slice(0, 200), String(phone).slice(0, 40));
     return { at };
   }
 

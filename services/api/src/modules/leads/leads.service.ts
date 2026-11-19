@@ -81,17 +81,21 @@ export class LeadsService {
     return row ?? { in_event: 0, today: 0, waiting: 0, failed: 0 };
   }
 
-  /** LEAD-05: has this address or number already been captured at this event, by anyone? */
+  /** LEAD-05: has this address or number already been captured, by anyone in this company / event? */
   async exists(me: Caller, eventId: string, email: string, phone: string): Promise<string | null> {
     if (!email && !phone) return null;
+    const isSolo = !eventId || eventId === 'solo' || me.role === 'individual';
     const row = await this.db.asOne<{ created_at: string }>(me,
       `select created_at from leads
-        where event_id = $1 and deleted_at is null
+        where deleted_at is null
+          and ($1 = '' or event_id::text = $1)
           and (($2 <> '' and fields->'email'->>'value' ilike $2)
-            or ($3 <> '' and regexp_replace(coalesce(fields->'phone'->>'value', ''), '\\D', '', 'g')
-                             = regexp_replace($3, '\\D', '', 'g')))
+            or ($3 <> '' and (
+              regexp_replace(coalesce(fields->'phone'->>'value', ''), '\\D', '', 'g') = regexp_replace($3, '\\D', '', 'g')
+              or regexp_replace(coalesce(fields->'mobile'->>'value', ''), '\\D', '', 'g') = regexp_replace($3, '\\D', '', 'g')
+            )))
         order by created_at limit 1`,
-      [eventId, email.trim(), phone.trim()]);
+      [isSolo ? '' : eventId, email.trim(), phone.trim()]);
     return row?.created_at ?? null;
   }
 

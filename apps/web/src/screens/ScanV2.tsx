@@ -20,7 +20,6 @@ import { readOffline } from '../lib/offlineReader';
 import { localOcrAvailable, readWithLocalOcr } from '../lib/ocr';
 import { geminiAvailable, hasLowConfidenceField, verifyLowConfidenceWithGemini } from '../lib/gemini';
 import type { DocShot } from '../components/DocCamera';
-import { lastOcrEntry } from '../lib/ocrLog';
 import { ClipboardFallback, saveToPhone, shareContact } from '../lib/contact';
 import { getFollowUpConfig, formatFollowUpMessage, sendViaWhatsApp, sendViaEmail } from '../lib/followup';
 import { FollowUpModal } from '../components/FollowUpModal';
@@ -106,20 +105,42 @@ export default function ScanV2() {
   useEffect(() => () => { if (backThumb) URL.revokeObjectURL(backThumb); }, [backThumb]);
   useEffect(() => { void backend().then((b) => b.tags()).then(setTags).catch(() => {}); }, []);
 
-  // LEAD-05: warn (never block) when this email/phone was already captured at this event.
+  // LEAD-05: warn when this email or phone was already captured
   useEffect(() => {
     const email = draft.fields.email?.value?.trim().toLowerCase();
-    const phone = draft.fields.phone?.value?.replace(/\D/g, '');
+    const phone = draft.fields.phone?.value?.replace(/\D/g, '') || draft.fields.mobile?.value?.replace(/\D/g, '');
     if (!email && !phone) { setDup(null); return; }
+    const targetEvent = s.event_id || 'solo';
     const h = setTimeout(async () => {
-      const local = await db.leads.where('event_id').equals(s.event_id ?? '').filter((l) =>
-        (!!email && l.fields.email?.value?.trim().toLowerCase() === email) || (!!phone && phone.length > 6 && l.fields.phone?.value?.replace(/\D/g, '') === phone)).first();
+      // 1. Check local IndexedDB across all leads for duplicate email or phone
+      const local = await db.leads.filter((l) =>
+        !l.deleted_at && (
+          (!!email && l.fields.email?.value?.trim().toLowerCase() === email) ||
+          (!!phone && phone.length > 6 && (l.fields.phone?.value?.replace(/\D/g, '') === phone || l.fields.mobile?.value?.replace(/\D/g, '') === phone))
+        )
+      ).first();
+
       let at = local?.created_at ?? null;
-      if (!at && isOnline() && s.event_id) at = await (await backend()).leadExists(s.event_id, email ?? '', phone ?? '').catch(() => null);
-      setDup(at ? t('This visitor was already captured at this event ({time}). You can still save.', { time: new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }) : null);
-    }, 300);
+      let matchedBy = local?.fields.email?.value?.trim().toLowerCase() === email ? 'email' : 'phone';
+
+      // 2. Check server if online
+      if (!at && isOnline()) {
+        at = await (await backend()).leadExists(targetEvent, email ?? '', phone ?? '').catch(() => null);
+      }
+
+      if (at) {
+        const timeStr = new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const warnMsg = matchedBy === 'email' && email
+          ? t('You already have an existing lead with this email address ({email}) from {time}. You can still save.', { email, time: timeStr })
+          : t('You already have an existing lead with this contact ({time}). You can still save.', { time: timeStr });
+        setDup(warnMsg);
+        toast(warnMsg, 'info', 5000);
+      } else {
+        setDup(null);
+      }
+    }, 250);
     return () => clearTimeout(h);
-  }, [draft.fields.email?.value, draft.fields.phone?.value, s.event_id]);
+  }, [draft.fields.email?.value, draft.fields.phone?.value, draft.fields.mobile?.value, s.event_id]);
 
   /** Same reading chain as the classic scanner: local OCR → cloud → on-device. */
   async function startReview(blob: Blob | null, src: LeadSource) {
@@ -288,10 +309,9 @@ export default function ScanV2() {
 
   function newLead(d: Draft, src: LeadSource, hasFrontPhoto = !!photo): Lead {
     const now = nowIso();
-    const detectedRaw = lastOcrEntry()?.text || '';
     const otherNote = d.interest === 'other' && d.otherInterestText?.trim()
-      ? `[Interest: ${d.otherInterestText.trim()}]\n\n${detectedRaw}`
-      : detectedRaw;
+      ? `[Interest: ${d.otherInterestText.trim()}]`
+      : '';
     const finalInterest = d.interest || d.leadRating || null;
     return {
       id: uuid(), company_id: s.person.company_id || s.person.id, event_id: s.event_id || 'solo', captured_by: s.person.id, captured_by_name: s.person.name,
@@ -479,7 +499,19 @@ export default function ScanV2() {
             </div>
           )}
           <div class="relative min-h-0 flex-1">
-            <DocCamera active={mode === 'camera'} handle={(h) => { cam.current = h; }} onShot={(shot) => void handleShot(shot)} />
+            {eventBlocked ? (
+              <div class="flex size-full flex-col items-center justify-center gap-3 bg-subtle p-6 text-center">
+                <span class="flex size-16 items-center justify-center rounded-full bg-red-100 text-red-600">
+                  <Lock class="size-8" />
+                </span>
+                <p class="text-sm font-bold text-ink">{t('Event Scanning Closed')}</p>
+                <p class="max-w-xs text-xs text-muted leading-relaxed">
+                  {t('This event has ended. You can view existing scans but no new cards can be scanned.')}
+                </p>
+              </div>
+            ) : (
+              <DocCamera active={mode === 'camera' && !eventBlocked} handle={(h) => { cam.current = h; }} onShot={(shot) => void handleShot(shot)} />
+            )}
           </div>
           <div class="flex items-center justify-around gap-4 bg-surface px-6 py-4 lg:bg-subtle">
             <button class="flex w-16 flex-col items-center gap-1 text-xs font-semibold text-muted hover:text-ocean-600 disabled:opacity-40 disabled:pointer-events-none" disabled={!!eventBlocked} onClick={() => fileInput.current?.click()}>

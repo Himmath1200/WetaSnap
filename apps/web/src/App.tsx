@@ -3,7 +3,6 @@ import type { ComponentType } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { LocationProvider, Router, Route, useLocation, ErrorBoundary } from 'preact-iso';
 import { AppShell } from './components/AppShell';
-import { OcrPopup } from './components/OcrPopup';
 import { Spinner, Toaster } from './components/ui';
 import { useStore } from './lib/store';
 import { session } from './lib/session';
@@ -113,7 +112,6 @@ export function App() {
         <Guarded />
       </ErrorBoundary>
       <Toaster />
-      <OcrPopup />
     </LocationProvider>
   );
 }
