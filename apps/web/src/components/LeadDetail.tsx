@@ -57,9 +57,23 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
       // On a phone the photo is usually still on the device; admins get a signed link.
       const local = await db.photos.get([lead.id, 'front']);
       const localBack = await db.photos.get([lead.id, 'back']);
-      if (local) { const u = URL.createObjectURL(local.blob); urls.push(u); setPhoto(u); setPhotoBlob(local.blob); }
-      else if (lead.has_photo) setPhoto(await (await backend()).photoUrl(lead.id).catch(() => null));
-      if (localBack) { const u = URL.createObjectURL(localBack.blob); urls.push(u); setBack(u); }
+      if (local) {
+        const u = URL.createObjectURL(local.blob);
+        urls.push(u);
+        setPhoto(u);
+        setPhotoBlob(local.blob);
+      } else {
+        const remote = await (await backend()).photoUrl(lead.id).catch(() => null);
+        if (remote) {
+          urls.push(remote);
+          setPhoto(remote);
+        }
+      }
+      if (localBack) {
+        const u = URL.createObjectURL(localBack.blob);
+        urls.push(u);
+        setBack(u);
+      }
     })();
     return () => urls.forEach((u) => URL.revokeObjectURL(u));
   }, [lead?.id]);

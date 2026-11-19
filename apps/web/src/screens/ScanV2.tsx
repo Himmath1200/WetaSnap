@@ -279,14 +279,14 @@ export default function ScanV2() {
       } catch {
         blob = await compressCard(f);
       }
-      await saveLocal(newLead(emptyDraft(), 'upload'), blob);
+      await saveLocal(newLead(emptyDraft(), 'upload', true), blob);
       setBatch({ done: i + 1, total: list.length });
     }
     toast(tn(list.length, '{n} lead saved. It will be read after sync.', '{n} leads saved. They will be read after sync.'), 'success');
     setBatch(null);
   }
 
-  function newLead(d: Draft, src: LeadSource): Lead {
+  function newLead(d: Draft, src: LeadSource, hasFrontPhoto = !!photo): Lead {
     const now = nowIso();
     const detectedRaw = lastOcrEntry()?.text || '';
     const otherNote = d.interest === 'other' && d.otherInterestText?.trim()
@@ -297,7 +297,7 @@ export default function ScanV2() {
       id: uuid(), company_id: s.person.company_id || s.person.id, event_id: s.event_id || 'solo', captured_by: s.person.id, captured_by_name: s.person.name,
       device: deviceLabel(), source: src, fields: d.fields, interest: finalInterest, notes: otherNote,
       consent: d.consent, consent_version: s.company?.consent_version ?? 1, consent_at: d.consent ? now : null,
-      status: 'waiting', crm_error: null, crm_record_id: null, crm_history: [], has_photo: false, has_back_photo: !!backPhoto,
+      status: 'waiting', crm_error: null, crm_record_id: null, crm_history: [], has_photo: hasFrontPhoto, has_back_photo: !!backPhoto,
       tag_ids: tagIds,
       created_at: now, updated_at: now, synced_at: null, deleted_at: null,
     };

@@ -115,9 +115,10 @@ export class LeadsService {
       const saved = await c.one<LeadDto>(
         `insert into leads (id, company_id, event_id, captured_by, captured_by_name, device, source, fields,
                             interest, notes, consent, consent_version, consent_at, status, tag_ids,
-                            import_batch_id, created_at, updated_at, synced_at)
+                            import_batch_id, created_at, updated_at, synced_at, has_photo, has_back_photo)
          values ($1, $2, $3, $4, $5, $6, $7::lead_source, $8, $9::lead_interest, $10, $11, $12, $13,
-                 $14::lead_status, $15, $16, coalesce($17, now()), coalesce($18, now()), now())
+                 $14::lead_status, $15, $16, coalesce($17, now()), coalesce($18, now()), now(),
+                 coalesce($19, false), coalesce($20, false))
          on conflict (id) do update set
             fields = case when excluded.updated_at >= leads.updated_at then excluded.fields else leads.fields end,
             interest = case when excluded.updated_at >= leads.updated_at then excluded.interest else leads.interest end,
@@ -126,6 +127,8 @@ export class LeadsService {
             consent_at = coalesce(leads.consent_at, excluded.consent_at),
             tag_ids = case when excluded.updated_at >= leads.updated_at then excluded.tag_ids else leads.tag_ids end,
             status = case when leads.status = 'in_crm' then leads.status else excluded.status end,
+            has_photo = leads.has_photo or excluded.has_photo,
+            has_back_photo = leads.has_back_photo or excluded.has_back_photo,
             updated_at = greatest(leads.updated_at, excluded.updated_at),
             synced_at = now()
          returning ${LEAD_COLUMNS}`,
@@ -133,7 +136,8 @@ export class LeadsService {
           (lead.device ?? '').slice(0, 200), lead.source ?? 'manual', lead.fields ?? {}, lead.interest ?? null,
           (lead.notes ?? '').slice(0, 5000), lead.consent ?? false, lead.consent_version ?? 1, lead.consent_at ?? null,
           lead.status === 'waiting' ? 'synced' : (lead.status ?? 'synced'), lead.tag_ids ?? [],
-          lead.import_batch_id ?? null, lead.created_at ?? null, lead.updated_at ?? null],
+          lead.import_batch_id ?? null, lead.created_at ?? null, lead.updated_at ?? null,
+          lead.has_photo ?? false, lead.has_back_photo ?? false],
       );
       return saved!;
     });

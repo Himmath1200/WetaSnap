@@ -70,12 +70,17 @@ export class FilesController {
     // A card photo is a visitor's details: a session, always — no signed links for these.
     const me = await this.who(req, '', undefined, undefined);
     if (!me) throw unauthorized();
-    const row = await this.db.asOne<{ storage_key: string; mime: string }>(me,
-      `select bc.storage_key, bc.mime from business_cards bc
+    const row = await this.db.asOne<{ storage_key: string; mime: string; image_data?: string | null }>(me,
+      `select bc.storage_key, bc.mime, bc.image_data from business_cards bc
          join leads l on l.id = bc.lead_id
         where bc.lead_id = $1 and bc.side = $2::photo_side`,
       [id, which]);
     if (!row) throw notFound('That photo');
+    if (row.image_data) {
+      res.setHeader('Content-Type', row.mime || 'image/jpeg');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.end(Buffer.from(row.image_data, 'base64'));
+    }
     return this.send(res, row.storage_key, row.mime);
   }
 

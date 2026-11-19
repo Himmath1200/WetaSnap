@@ -139,14 +139,14 @@ export class PipelineService {
     await this.db.as(me, async (c) => {
       await c.query(
         `insert into business_cards (company_id, lead_id, side, storage_key, mime, size_bytes, width, height,
-                                     stage, quality, crop)
-         values ($1, $2, $3::photo_side, $4, 'image/jpeg', $5, $6, $7, 'cropped', $8, $9)
+                                     stage, quality, crop, image_data)
+         values ($1, $2, $3::photo_side, $4, 'image/jpeg', $5, $6, $7, 'cropped', $8, $9, $10)
          on conflict (lead_id, side) where lead_id is not null do update
             set storage_key = excluded.storage_key, size_bytes = excluded.size_bytes,
                 width = excluded.width, height = excluded.height, quality = excluded.quality,
-                crop = excluded.crop, stage = 'cropped', created_at = now()`,
+                crop = excluded.crop, stage = 'cropped', image_data = excluded.image_data, created_at = now()`,
         [me.companyId ?? null, input.leadId, input.side, key, prepared.image.length, prepared.width, prepared.height,
-          JSON.stringify(quality), JSON.stringify(prepared.applied ?? {})]);
+          JSON.stringify(quality), JSON.stringify(prepared.applied ?? {}), prepared.image.toString('base64')]);
       await c.query(
         `update leads set has_photo = (has_photo or $2 = 'front'), has_back_photo = (has_back_photo or $2 = 'back')
           where id = $1`, [input.leadId, input.side]);

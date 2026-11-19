@@ -40,6 +40,8 @@ const leadBody = z.object({
   consent_version: z.number().int().min(1).max(10_000).default(1),
   consent_at: z.string().datetime().nullable().default(null),
   status: z.enum(['waiting', 'synced', 'in_crm', 'check']).default('synced'),
+  has_photo: z.boolean().default(false),
+  has_back_photo: z.boolean().default(false),
   tag_ids: idList(50),
   import_batch_id: uuid.nullable().optional(),
   created_at: z.string().datetime().optional(),

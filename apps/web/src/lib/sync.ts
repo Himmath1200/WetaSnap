@@ -52,7 +52,16 @@ function requestBackgroundSync() {
 
 /** Save always writes to the device first (LEAD-02), then nudges the outbox. */
 export async function saveLocal(lead: Lead, photo?: Blob | null, back?: Blob | null) {
-  const local: LocalLead = { ...lead, status: 'waiting', dirty: 1, photo_pending: photo ? 1 : 0, photo_uploaded_at: null, updated_at: nowIso() };
+  const local: LocalLead = {
+    ...lead,
+    has_photo: lead.has_photo || !!photo,
+    has_back_photo: lead.has_back_photo || !!back,
+    status: 'waiting',
+    dirty: 1,
+    photo_pending: photo ? 1 : 0,
+    photo_uploaded_at: null,
+    updated_at: nowIso(),
+  };
   await db.transaction('rw', db.leads, db.photos, async () => {
     await db.leads.put(local);
     if (photo) await db.photos.put({ lead_id: lead.id, side: 'front', blob: photo });
@@ -166,6 +175,8 @@ async function run() {
               await db.leads.update(sl.id, {
                 status: sl.status, crm_error: sl.crm_error, crm_record_id: sl.crm_record_id,
                 crm_history: sl.crm_history, fields: mergeFields(cur, sl), deleted_at: sl.deleted_at,
+                has_photo: sl.has_photo || cur.has_photo,
+                has_back_photo: sl.has_back_photo || cur.has_back_photo,
               });
             }
           }
