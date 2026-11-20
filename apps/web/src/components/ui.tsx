@@ -59,7 +59,7 @@ export function Sheet(props: { open: boolean; onClose: () => void; title: Compon
   );
 }
 
-export function Dialog(props: { open: boolean; onClose: () => void; title: string; children: ComponentChildren; footer: ComponentChildren }) {
+export function Dialog(props: { open: boolean; onClose: () => void; title: ComponentChildren; children: ComponentChildren; footer: ComponentChildren }) {
   useEscape(props.open, props.onClose);
   if (!props.open) return null;
   return (

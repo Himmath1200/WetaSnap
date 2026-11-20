@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
-import { AlertCircle, Building2, Calendar, Camera, ScanLine, ChevronDown, ChevronRight, CloudOff, CreditCard, Crown, Download, Gauge, Globe, Home, LifeBuoy, List, LogOut, MapPin, Monitor, Moon, Plus, RefreshCw, ScrollText, Settings, ShieldCheck, Sparkles, Store, Sun, UserCircle2, Users, Wifi, WifiOff } from 'lucide-preact';
+import { AlertCircle, Building2, Calendar, Camera, ScanLine, ChevronDown, ChevronRight, CloudOff, CreditCard, Crown, Download, Gauge, Globe, HelpCircle, Home, LifeBuoy, List, LogOut, MapPin, Monitor, Moon, Plus, RefreshCw, ScrollText, Settings, ShieldCheck, Sparkles, Store, Sun, UserCircle2, Users, Wifi, WifiOff } from 'lucide-preact';
 import { doorForRole, linkFor, readPath, signInPath } from '../lib/portal';
 import { useStore, toast } from '../lib/store';
 import { config, endSession, session, setEvent } from '../lib/session';
@@ -18,6 +18,7 @@ import { NotificationBell } from './NotificationBell';
 import { applyTheme, theme, type ThemePref } from '../lib/theme';
 import { startNotifications, stopNotifications } from '../lib/notifications';
 import { startIdleWatch, stopIdleWatch } from '../lib/idle';
+import { OnboardingTour } from './OnboardingTour';
 import type { Role } from '../lib/types';
 
 interface NavItem { href: string; label: string; icon: typeof Camera }
@@ -169,6 +170,7 @@ export function AppShell({ children }: { children: ComponentChildren }) {
   const { path, route } = useLocation();
   const [menu, setMenu] = useState(false);
   const [eventSheet, setEventSheet] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const role = s.person.role;
   const nav = NAV[role].map((n) => ({ ...n, href: linkFor(role, n.href) }));
   const event = cfg.events.find((e) => e.id === s.event_id);
@@ -318,6 +320,15 @@ export function AppShell({ children }: { children: ComponentChildren }) {
                 </a>
               )}
               {role !== 'super_admin' && <ConnectionPill />}
+              <button
+                type="button"
+                class="flex size-9 sm:size-10 items-center justify-center rounded-full border border-line bg-surface text-muted hover:text-brand-600 hover:border-brand-300 transition-colors shrink-0"
+                onClick={() => setTourOpen(true)}
+                title={t('App Guide & Feature Tour')}
+                aria-label={t('App Guide')}
+              >
+                <HelpCircle class="size-4" />
+              </button>
               <NotificationBell />
               <button class={`flex size-10 sm:size-11 items-center justify-center rounded-full shrink-0 ${role !== 'staff' ? 'md:hidden' : ''}`} onClick={() => setMenu(true)} aria-label={t('Menu')}>
                 <Avatar name={s.person.name} src={s.person.avatar_url} size="size-8" />
@@ -370,7 +381,8 @@ export function AppShell({ children }: { children: ComponentChildren }) {
       </div>
 
       <EventSheet open={eventSheet} onClose={() => setEventSheet(false)} />
-      <MenuSheet open={menu} onClose={() => setMenu(false)} onSignedOut={() => route(signInPath(doorForRole(role)))} />
+      <MenuSheet open={menu} onClose={() => setMenu(false)} onSignedOut={() => route(signInPath(doorForRole(role)))} onOpenTour={() => setTourOpen(true)} />
+      <OnboardingTour role={s.person.role} isOpen={tourOpen} onClose={() => setTourOpen(false)} />
     </div>
   );
 }
@@ -578,7 +590,7 @@ function OrganizerDisclaimerBanner() {
   );
 }
 
-function MenuSheet({ open, onClose, onSignedOut }: { open: boolean; onClose: () => void; onSignedOut: () => void }) {
+function MenuSheet({ open, onClose, onSignedOut, onOpenTour }: { open: boolean; onClose: () => void; onSignedOut: () => void; onOpenTour: () => void }) {
   const s = useStore(session)!;
   const sync = useStore(syncState);
   const n = useStore(net);
@@ -621,7 +633,15 @@ function MenuSheet({ open, onClose, onSignedOut }: { open: boolean; onClose: () 
             </section>
           )}
 
-          <section>
+          <section class="space-y-2">
+            <button
+              type="button"
+              class="flex w-full min-h-11 items-center gap-2 rounded-xl border border-line px-3 py-2.5 text-sm font-semibold text-ink hover:bg-subtle transition-colors text-left"
+              onClick={() => { onClose(); onOpenTour(); }}
+            >
+              <HelpCircle class="size-4 text-brand-600" />
+              <span>{t('App Guide & Feature Tour')}</span>
+            </button>
             <a href={linkFor(s.person.role, '/profile')} onClick={onClose} class="flex min-h-11 items-center gap-2 rounded-xl border border-line px-3 py-2.5 text-sm font-semibold text-ink hover:bg-subtle transition-colors">
               <UserCircle2 class="size-4 text-ocean-700" />{t('My profile')}
             </a>
