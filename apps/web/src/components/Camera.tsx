@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CameraOff, SwitchCamera, Zap, ZapOff } from 'lucide-preact';
-import { analyseFrame, frameRect, isGlare, motion, placement, sharpness, snapVideo } from '../lib/image';
+import { analyseFrame, burstCrop, frameRect, isGlare, motion, placement, sharpness } from '../lib/image';
 import { t } from '../lib/i18n';
 
 export interface CameraHandle { capture: () => void }
@@ -46,14 +46,14 @@ export function Camera({ active, onCapture, handle, autoCapture = true }: Props)
   const onCap = useRef(onCapture);
   onCap.current = onCapture; // the auto-capture interval must always call the latest handler
 
-  const capture = () => {
+  const capture = async () => {
     const v = video.current;
     if (!v || !v.videoWidth) return;
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
     navigator.vibrate?.(30);
-    // Instant frame grab from live video
-    const shot = snapVideo(v, frameRect(v.videoWidth, v.videoHeight));
+    // Grab the sharpest frame from live video
+    const shot = await burstCrop(v, frameRect(v.videoWidth, v.videoHeight), 3, 140);
     onCap.current(shot);
   };
   useEffect(() => handle?.({ capture }));

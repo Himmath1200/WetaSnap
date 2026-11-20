@@ -70,10 +70,14 @@ export class FilesController {
     // A card photo is a visitor's details: a session, always — no signed links for these.
     const me = await this.who(req, '', undefined, undefined);
     if (!me) throw unauthorized();
-    const row = await this.db.asOne<{ storage_key: string; mime: string; image_data?: string | null }>(me,
-      `select bc.storage_key, bc.mime, bc.image_data from business_cards bc
-         join leads l on l.id = bc.lead_id
-        where bc.lead_id = $1 and bc.side = $2::photo_side`,
+    // Verify caller has permission to view this lead (uses may_see_lead policy)
+    const lead = await this.db.asOne<{ id: string }>(me,
+      'select id from leads where id = $1 and deleted_at is null', [id]);
+    if (!lead && me.role !== 'super_admin') throw notFound('That photo');
+
+    const row = await this.db.one<{ storage_key: string; mime: string; image_data?: string | null }>(
+      `select storage_key, mime, image_data from business_cards
+        where lead_id = $1 and side = $2::photo_side`,
       [id, which]);
     if (!row) throw notFound('That photo');
     if (row.image_data) {

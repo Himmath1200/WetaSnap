@@ -1,7 +1,6 @@
 import type { FieldDefinition } from './types';
 import type { ReadResult } from './backend';
 import { isOnline } from './net';
-import { lastOcrEntry, pushOcrText } from './ocrLog';
 
 export const GEMINI_MODELS = [
   { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite' },
@@ -9,6 +8,8 @@ export const GEMINI_MODELS = [
   { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
   { id: 'gemini-3-flash', label: 'Gemini 3 Flash' },
   { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
 ] as const;
 
 export type GeminiModelId = typeof GEMINI_MODELS[number]['id'];
@@ -101,7 +102,7 @@ export async function verifyLowConfidenceWithGemini(
 
   const apiKey = geminiApiKey();
   const modelId = geminiModel();
-  const rawText = customOcrText || lastOcrEntry()?.text || '';
+  const rawText = customOcrText || '';
 
   try {
     const parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [];
@@ -238,17 +239,6 @@ Instructions:
         };
         verifiedCount++;
       }
-    }
-
-    if (verifiedCount > 0) {
-      pushOcrText(
-        `Gemini AI (${usedModel}) verified ${verifiedCount} field(s):\n` +
-        Object.entries(merged)
-          .filter(([, v]) => (v.reason ?? '').startsWith('Verified by'))
-          .map(([k, v]) => `${k}: ${v.value}`)
-          .join('\n'),
-        'Gemini AI Verification',
-      );
     }
 
     return merged;

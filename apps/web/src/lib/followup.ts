@@ -6,6 +6,8 @@ export interface FollowUpConfig {
   sendEmail: boolean;
   message: string;
   senderCompanyName?: string;
+  attachmentUrl?: string;
+  websiteUrl?: string;
 }
 
 export const DEFAULT_FOLLOWUP_MESSAGE = `Hi {name}, it was great meeting you at {event}! Thank you for connecting with {sender} from {company}. Looking forward to staying in touch.`;
@@ -17,6 +19,8 @@ export function getFollowUpConfig(personId: string, company?: Company | null, is
     sendEmail: true,
     message: DEFAULT_FOLLOWUP_MESSAGE,
     senderCompanyName: '',
+    attachmentUrl: '',
+    websiteUrl: '',
   };
 
   // If this user belongs to a company, read company-level message template first
@@ -29,6 +33,8 @@ export function getFollowUpConfig(personId: string, company?: Company | null, is
         if (coParsed.message) cfg.message = coParsed.message;
         if (typeof coParsed.autoSend === 'boolean') cfg.autoSend = coParsed.autoSend;
         if (coParsed.senderCompanyName) cfg.senderCompanyName = coParsed.senderCompanyName;
+        if (coParsed.attachmentUrl) cfg.attachmentUrl = coParsed.attachmentUrl;
+        if (coParsed.websiteUrl) cfg.websiteUrl = coParsed.websiteUrl;
       }
     } catch {}
 
@@ -75,18 +81,29 @@ export function formatFollowUpMessage(
   senderName: string,
   eventName?: string,
   companyName?: string,
+  attachmentUrl?: string,
+  websiteUrl?: string,
 ): string {
   const name = lead.fields.full_name?.value || lead.fields.first_name?.value || 'there';
   const leadComp = lead.fields.company?.value || lead.fields.company_name?.value || '';
   const event = eventName || 'the event';
   const myCompany = companyName || 'our team';
 
-  return (template || DEFAULT_FOLLOWUP_MESSAGE)
+  let text = (template || DEFAULT_FOLLOWUP_MESSAGE)
     .replace(/\{name\}/gi, name)
     .replace(/\{company\}/gi, myCompany)
     .replace(/\{lead_company\}/gi, leadComp)
     .replace(/\{event\}/gi, event)
     .replace(/\{sender\}/gi, senderName);
+
+  if (websiteUrl && !text.includes(websiteUrl)) {
+    text += `\n\nWebsite: ${websiteUrl}`;
+  }
+  if (attachmentUrl && !text.includes(attachmentUrl)) {
+    text += `\n\nView attachment: ${attachmentUrl}`;
+  }
+
+  return text;
 }
 
 export function sendViaWhatsApp(phone: string, text: string): boolean {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CameraOff, SwitchCamera, Zap, ZapOff } from 'lucide-preact';
-import { motion, sharpness, snapVideo } from '../lib/image';
+import { burstCrop, motion, sharpness } from '../lib/image';
 import { detectCard, engineState, onEngineState, quadsClose, quadArea, warmEngine, type Quad } from '../lib/scanEngine';
 import { t } from '../lib/i18n';
 
@@ -46,14 +46,13 @@ export function DocCamera({ active, autoCapture = true, onShot, handle }: Props)
   useEffect(() => onEngineState(setEngine), []);
   useEffect(() => handle?.({ capture }), []);
 
-  const capture = () => {
+  const capture = async () => {
     const v = video.current;
     if (!v || !v.videoWidth) return;
     setFlash(true);
     setTimeout(() => setFlash(false), 120);
     navigator.vibrate?.(30);
-    // Instant frame grab from live video — no multi-frame burst lag
-    const best = snapVideo(v);
+    const best = await burstCrop(v, undefined, 3, 140);
     shot.current({ canvas: best, quad: quadRef.current });
   };
 

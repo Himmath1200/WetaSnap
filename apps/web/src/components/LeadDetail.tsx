@@ -52,30 +52,43 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
     setTagIds(lead.tag_ids);
     setShowErrors(lead.status === 'check');
     setPhoto(null); setBack(null); setPhotoBlob(null);
+    let active = true;
     const urls: string[] = [];
+
     void (async () => {
-      // On a phone the photo is usually still on the device; admins get a signed link.
-      const local = await db.photos.get([lead.id, 'front']);
-      const localBack = await db.photos.get([lead.id, 'back']);
-      if (local) {
-        const u = URL.createObjectURL(local.blob);
+      // 1. Check local IndexedDB on this device
+      const localFront = (await db.photos.get([lead.id, 'front'])) ||
+        (await db.photos.where('lead_id').equals(lead.id).filter((p) => p.side === 'front').first());
+      const localBack = (await db.photos.get([lead.id, 'back'])) ||
+        (await db.photos.where('lead_id').equals(lead.id).filter((p) => p.side === 'back').first());
+
+      if (!active) return;
+
+      if (localFront?.blob) {
+        const u = URL.createObjectURL(localFront.blob);
         urls.push(u);
         setPhoto(u);
-        setPhotoBlob(local.blob);
+        setPhotoBlob(localFront.blob);
       } else {
+        // 2. Fetch from cloud serverless storage
         const remote = await (await backend()).photoUrl(lead.id).catch(() => null);
-        if (remote) {
+        if (active && remote) {
           urls.push(remote);
           setPhoto(remote);
         }
       }
-      if (localBack) {
+
+      if (localBack?.blob) {
         const u = URL.createObjectURL(localBack.blob);
         urls.push(u);
         setBack(u);
       }
     })();
-    return () => urls.forEach((u) => URL.revokeObjectURL(u));
+
+    return () => {
+      active = false;
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
   }, [lead?.id]);
 
   const event = lead ? cfg.events.find((e) => e.id === lead.event_id) : null;
@@ -235,7 +248,7 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
                       onClick={() => {
                         const fu = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
                         const coName = s.company?.name || fu.senderCompanyName;
-                        const msg = formatFollowUpMessage(fu.message, lead, s.person.name, event?.name, coName);
+                        const msg = formatFollowUpMessage(fu.message, lead, s.person.name, event?.name, coName, fu.attachmentUrl, fu.websiteUrl);
                         sendViaWhatsApp(lead.fields.phone!.value, msg);
                       }}
                     >
@@ -249,7 +262,7 @@ export function LeadDetail({ lead, tags, mode, onClose, onChanged }: Props) {
                       onClick={() => {
                         const fu = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
                         const coName = s.company?.name || fu.senderCompanyName;
-                        const msg = formatFollowUpMessage(fu.message, lead, s.person.name, event?.name, coName);
+                        const msg = formatFollowUpMessage(fu.message, lead, s.person.name, event?.name, coName, fu.attachmentUrl, fu.websiteUrl);
                         const subj = event?.name ? `${event.name} — Great connecting with you!` : t('Great connecting with you!');
                         sendViaEmail(lead.fields.email!.value, subj, msg);
                       }}

@@ -552,6 +552,36 @@ export default function Profile() {
                         </p>
                       </div>
                     )}
+
+                    {/* Default website & media attachment links */}
+                    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div class="space-y-1">
+                        <label class="label mb-0 text-xs font-bold text-ink" for="fu-website-url">
+                          {t('Default Website / Company URL:')}
+                        </label>
+                        <input
+                          id="fu-website-url"
+                          type="url"
+                          class="input text-xs"
+                          placeholder="https://yourcompany.com"
+                          value={fuConfig.websiteUrl ?? ''}
+                          onInput={(e) => setFuConfig({ ...fuConfig, websiteUrl: e.currentTarget.value })}
+                        />
+                      </div>
+                      <div class="space-y-1">
+                        <label class="label mb-0 text-xs font-bold text-ink" for="fu-attachment-url">
+                          {t('Default Media / Video / Brochure URL:')}
+                        </label>
+                        <input
+                          id="fu-attachment-url"
+                          type="url"
+                          class="input text-xs"
+                          placeholder="https://youtube.com/watch?v=... or brochure link"
+                          value={fuConfig.attachmentUrl ?? ''}
+                          onInput={(e) => setFuConfig({ ...fuConfig, attachmentUrl: e.currentTarget.value })}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -573,6 +603,8 @@ export default function Profile() {
                       s.person.name,
                       'Expo 2026',
                       s.company?.name || fuConfig.senderCompanyName || 'WeTa Snap',
+                      fuConfig.attachmentUrl,
+                      fuConfig.websiteUrl,
                     )}
                   </p>
                 </div>

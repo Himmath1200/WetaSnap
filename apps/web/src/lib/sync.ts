@@ -10,7 +10,6 @@ import { emptyFilters, type Lead } from './types';
 /** Outbox sync (SYNC-01..06). Runs on reconnect, every 30 s while the app is open, and on "Sync now". */
 export const syncState = createStore({ running: false, waiting: 0, lastSync: null as string | null, oldestWaiting: null as string | null });
 
-const PHOTO_KEEP_MS = 24 * 3600_000; // SYNC-05
 let timer: ReturnType<typeof setInterval> | undefined;
 let inFlight: Promise<void> | null = null;
 
@@ -186,10 +185,7 @@ async function run() {
         }
       }
     } catch { /* transient or offline */ }
-    // 4. Free space: photos 24 h after confirmed upload (SYNC-05). Unsynced data is never deleted.
-    const old = await db.leads.filter((l) => !!l.photo_uploaded_at && Date.now() - new Date(l.photo_uploaded_at).getTime() > PHOTO_KEEP_MS).toArray();
-    for (const l of old) await db.photos.where('lead_id').equals(l.id).delete();
-
+    // Photos remain permanently saved in offline storage and synchronized to the cloud
     await refreshCount();
     const st = syncState.get();
     await b.reportOutbox(deviceLabel(), st.waiting, st.oldestWaiting).catch(() => {});

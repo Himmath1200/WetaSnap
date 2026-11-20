@@ -170,21 +170,7 @@ export default function ScanV2() {
         } catch { /* fall through */ }
       }
 
-      // 2. Try server cloud reader if local had nothing
-      if (!Object.values(extracted).some((v) => v?.value) && isOnline() && aiAllowed) {
-        setRead('reading');
-        try {
-          const r = await (await backend()).readCard(blob);
-          if (Object.values(r).some((v) => v?.value)) {
-            extracted = r;
-            readBy = 'ai';
-          }
-        } catch (err) {
-          if ((err as { code?: string }).code === 'scan_limit') throw err;
-        }
-      }
-
-      // 3. Fallback to on-device Tesseract OCR if server/local returned empty
+      // 2. On-device Tesseract OCR (standard non-AI OCR)
       if (!Object.values(extracted).some((v) => v?.value)) {
         setRead('reading');
         try {
@@ -195,6 +181,20 @@ export default function ScanV2() {
           }
         } catch (err) {
           console.warn('[ScanV2] on-device OCR error:', err);
+        }
+      }
+
+      // 3. Fallback to server reader if on-device was empty
+      if (!Object.values(extracted).some((v) => v?.value) && isOnline() && aiAllowed) {
+        setRead('reading');
+        try {
+          const r = await (await backend()).readCard(blob);
+          if (Object.values(r).some((v) => v?.value)) {
+            extracted = r;
+            readBy = 'ai';
+          }
+        } catch (err) {
+          if ((err as { code?: string }).code === 'scan_limit') throw err;
         }
       }
 
@@ -342,7 +342,7 @@ export default function ScanV2() {
       const fuConfig = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
 
       if (fuConfig.autoSend && (leadPhone || leadEmail)) {
-        const msg = formatFollowUpMessage(fuConfig.message, lead, s.person.name, event?.name, s.company?.name);
+        const msg = formatFollowUpMessage(fuConfig.message, lead, s.person.name, event?.name, s.company?.name, fuConfig.attachmentUrl, fuConfig.websiteUrl);
         let sentAny = false;
         if (fuConfig.sendWhatsApp && leadPhone) {
           sendViaWhatsApp(leadPhone, msg);
