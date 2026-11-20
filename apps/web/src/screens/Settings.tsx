@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { Download, Plus, GripVertical, ChevronUp, ChevronDown, Trash2, Link2, Send, CheckCircle2, CalendarDays, LifeBuoy, MapPin, Plug, Unplug, Paperclip, FileText, Copy, Star, Tag as TagIcon, ScanLine, Sparkles, X } from 'lucide-preact';
+import { Download, Plus, GripVertical, ChevronUp, ChevronDown, Trash2, Link2, Send, CheckCircle2, CalendarDays, LifeBuoy, MapPin, Plug, Unplug, Paperclip, FileText, Copy, Star, Tag as TagIcon, ScanLine, Sparkles, X, Globe, Video, Image } from 'lucide-preact';
 import { Dialog, Field, Spinner, Tabs } from '../components/ui';
 import { backend } from '../lib/backend';
 import { useStore, toast } from '../lib/store';
@@ -937,7 +937,63 @@ function CompanyTab() {
             </label>
           </div>
 
-          <Field label={t('Message Template')} for="co-fu-msg" hint={t('Placeholders: {name}, {company}, {lead_company}, {event}, {sender}')}>
+          <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+            <label class="label mb-0" for="co-fu-msg">{t('Message Template')}</label>
+            <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const url = prompt(t('Enter company website URL:'), 'https://');
+                  if (url && url.trim()) {
+                    const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+                    insertCoTagAtCursor(`\nWebsite: ${clean}`);
+                  }
+                }}
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
+                title={t('Add Website Link')}
+              >
+                <Plus class="size-3 text-ocean-600" />
+                <Globe class="size-3 text-ocean-600" />
+                <span>{t('Website')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const url = prompt(t('Enter video demo URL:'), 'https://');
+                  if (url && url.trim()) {
+                    const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+                    insertCoTagAtCursor(`\nVideo: ${clean}`);
+                  }
+                }}
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
+                title={t('Add Video Link')}
+              >
+                <Plus class="size-3 text-purple-600" />
+                <Video class="size-3 text-purple-600" />
+                <span>{t('Video')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const url = prompt(t('Enter company PDF brochure or photo link:'), 'https://');
+                  if (url && url.trim()) {
+                    const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+                    insertCoTagAtCursor(`\nBrochure: ${clean}`);
+                  }
+                }}
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
+                title={t('Add Brochure or Photo Link')}
+              >
+                <Plus class="size-3 text-emerald-600" />
+                <Image class="size-3 text-emerald-600" />
+                <span>{t('Photo/PDF')}</span>
+              </button>
+            </div>
+          </div>
+
+          <Field label="" for="co-fu-msg" hint={t('Placeholders: {name}, {company}, {lead_company}, {event}, {sender}')}>
             <textarea
               ref={coFuTextareaRef}
               id="co-fu-msg"

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import {
-  Bell, BellOff, Calendar, Camera, Check, ChevronRight, CloudOff, Globe, Lock, LogOut,
-  Mail, MapPin, MessageSquare, Monitor, Moon, Phone, RotateCcw, ShieldCheck, Smartphone, Sparkles, Store, Sun,
-  Trash, Trash2, Upload, User,
+  Bell, BellOff, Calendar, Camera, Check, ChevronRight, CloudOff, Globe, Image, Lock, LogOut,
+  Mail, MapPin, MessageSquare, Monitor, Moon, Phone, Plus, RotateCcw, ShieldCheck, Smartphone, Sparkles, Store, Sun,
+  Trash, Trash2, Upload, User, Video,
 } from 'lucide-preact';
 import { Dialog, Field, Spinner } from '../components/ui';
 import { backend } from '../lib/backend';
@@ -497,9 +497,60 @@ export default function Profile() {
                   </div>
                 ) : (
                   <div>
-                    <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
                       <label class="label mb-0" for="fu-template">{t('Follow-up message text')}</label>
-                      <span class="text-[10px] text-muted">{t('Pushed from your own WhatsApp / Email')}</span>
+                      <div class="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = prompt(t('Enter website URL:'), 'https://');
+                            if (url && url.trim()) {
+                              const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+                              insertTagAtCursor(`\nWebsite: ${clean}`);
+                            }
+                          }}
+                          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
+                          title={t('Add Website Link')}
+                        >
+                          <Plus class="size-3 text-ocean-600" />
+                          <Globe class="size-3 text-ocean-600" />
+                          <span>{t('Website')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = prompt(t('Enter video URL (YouTube, Vimeo, Cloud Drive):'), 'https://');
+                            if (url && url.trim()) {
+                              const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+                              insertTagAtCursor(`\nVideo: ${clean}`);
+                            }
+                          }}
+                          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
+                          title={t('Add Video Link')}
+                        >
+                          <Plus class="size-3 text-purple-600" />
+                          <Video class="size-3 text-purple-600" />
+                          <span>{t('Video')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = prompt(t('Enter brochure, PDF or photo link:'), 'https://');
+                            if (url && url.trim()) {
+                              const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+                              insertTagAtCursor(`\nBrochure: ${clean}`);
+                            }
+                          }}
+                          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
+                          title={t('Add PDF or Photo Link')}
+                        >
+                          <Plus class="size-3 text-emerald-600" />
+                          <Image class="size-3 text-emerald-600" />
+                          <span>{t('Photo/PDF')}</span>
+                        </button>
+                      </div>
                     </div>
                     <textarea
                       ref={fuTextareaRef}
