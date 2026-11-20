@@ -556,23 +556,6 @@ export default function Profile() {
                           <FileText class="size-3.5 text-rose-600" />
                           <span>{t('PDF')}</span>
                         </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const url = prompt(t('Enter website URL:'), 'https://');
-                            if (url && url.trim()) {
-                              const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
-                              insertTagAtCursor(`\nWebsite: ${clean}`);
-                            }
-                          }}
-                          class="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition active:scale-95 cursor-pointer"
-                          title={t('Add Website or Product Link')}
-                        >
-                          <Plus class="size-3 text-ocean-600" />
-                          <Globe class="size-3.5 text-ocean-600" />
-                          <span>{t('Link')}</span>
-                        </button>
                       </div>
                     </div>
 

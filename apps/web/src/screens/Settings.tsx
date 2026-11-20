@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { Download, Plus, GripVertical, ChevronUp, ChevronDown, Trash2, Link2, Send, CheckCircle2, CalendarDays, LifeBuoy, MapPin, Plug, Unplug, Paperclip, FileText, Copy, Star, Tag as TagIcon, ScanLine, Sparkles, X, Globe, Video, Image } from 'lucide-preact';
+import { Download, Plus, GripVertical, ChevronUp, ChevronDown, Trash2, Link2, Send, CheckCircle2, CalendarDays, LifeBuoy, MapPin, Plug, Unplug, Paperclip, FileText, Copy, Star, Tag as TagIcon, ScanLine, Sparkles, X, Video, Image } from 'lucide-preact';
 import { Dialog, Field, Spinner, Tabs } from '../components/ui';
 import { backend } from '../lib/backend';
 import { useStore, toast } from '../lib/store';
@@ -995,23 +995,6 @@ function CompanyTab() {
                 <Plus class="size-3 text-rose-600" />
                 <FileText class="size-3.5 text-rose-600" />
                 <span>{t('PDF')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const url = prompt(t('Enter company website URL:'), 'https://');
-                  if (url && url.trim()) {
-                    const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
-                    insertCoTagAtCursor(`\nWebsite: ${clean}`);
-                  }
-                }}
-                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition active:scale-95 cursor-pointer"
-                title={t('Add Website Link')}
-              >
-                <Plus class="size-3 text-ocean-600" />
-                <Globe class="size-3.5 text-ocean-600" />
-                <span>{t('Link')}</span>
               </button>
             </div>
           </div>
