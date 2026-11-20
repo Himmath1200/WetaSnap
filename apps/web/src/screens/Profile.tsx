@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation } from 'preact-iso';
 import {
-  Bell, BellOff, Calendar, Camera, Check, ChevronRight, CloudOff, Globe, Image, Lock, LogOut,
+  Bell, BellOff, Calendar, Camera, Check, ChevronRight, CloudOff, FileText, Globe, Image, Lock, LogOut,
   Mail, MapPin, MessageSquare, Monitor, Moon, Phone, Plus, RotateCcw, ShieldCheck, Smartphone, Sparkles, Store, Sun,
   Trash, Trash2, Upload, User, Video,
 } from 'lucide-preact';
@@ -89,6 +89,8 @@ export default function Profile() {
   const file = useRef<HTMLInputElement>(null);
   const fuTextareaRef = useRef<HTMLTextAreaElement>(null);
   const fuSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+  const fuFileInputRef = useRef<HTMLInputElement>(null);
+  const [fileAccept, setFileAccept] = useState('image/*,video/*,application/pdf');
 
   const recordSelection = (el: HTMLTextAreaElement) => {
     fuSelectionRef.current = {
@@ -126,6 +128,28 @@ export default function Profile() {
         el.setSelectionRange(nextPos, nextPos);
       }
     }, 0);
+  };
+
+  const openFilePickerForTemplate = (accept: string) => {
+    setFileAccept(accept);
+    setTimeout(() => {
+      fuFileInputRef.current?.click();
+    }, 10);
+  };
+
+  const handleTemplateFileChosen = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const isVideo = file.type.startsWith('video');
+    const isImage = file.type.startsWith('image');
+    const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
+    const prefix = isVideo ? t('Video') : isImage ? t('Photo') : isPdf ? t('Brochure/PDF') : t('Attachment');
+
+    insertTagAtCursor(`\n[${prefix}: ${file.name}]`);
+    toast(t('Added "{name}" to message template.', { name: file.name }), 'success');
+    input.value = '';
   };
 
   useEffect(() => {
@@ -502,6 +526,39 @@ export default function Profile() {
                       <div class="flex items-center gap-1.5">
                         <button
                           type="button"
+                          onClick={() => openFilePickerForTemplate('image/*')}
+                          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-semibold text-emerald-700 hover:border-emerald-300 transition active:scale-95 cursor-pointer shadow-xs"
+                          title={t('Choose Photo from your device')}
+                        >
+                          <Plus class="size-3 text-emerald-600" />
+                          <Image class="size-3.5 text-emerald-600" />
+                          <span>{t('Photo')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openFilePickerForTemplate('video/*')}
+                          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-semibold text-purple-700 hover:border-purple-300 transition active:scale-95 cursor-pointer shadow-xs"
+                          title={t('Choose Video from your device')}
+                        >
+                          <Plus class="size-3 text-purple-600" />
+                          <Video class="size-3.5 text-purple-600" />
+                          <span>{t('Video')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openFilePickerForTemplate('application/pdf,.pdf')}
+                          class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-semibold text-rose-700 hover:border-rose-300 transition active:scale-95 cursor-pointer shadow-xs"
+                          title={t('Choose PDF Brochure from your device')}
+                        >
+                          <Plus class="size-3 text-rose-600" />
+                          <FileText class="size-3.5 text-rose-600" />
+                          <span>{t('PDF')}</span>
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => {
                             const url = prompt(t('Enter website URL:'), 'https://');
                             if (url && url.trim()) {
@@ -509,49 +566,23 @@ export default function Profile() {
                               insertTagAtCursor(`\nWebsite: ${clean}`);
                             }
                           }}
-                          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
-                          title={t('Add Website Link')}
+                          class="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition active:scale-95 cursor-pointer"
+                          title={t('Add Website or Product Link')}
                         >
                           <Plus class="size-3 text-ocean-600" />
-                          <Globe class="size-3 text-ocean-600" />
-                          <span>{t('Website')}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const url = prompt(t('Enter video URL (YouTube, Vimeo, Cloud Drive):'), 'https://');
-                            if (url && url.trim()) {
-                              const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
-                              insertTagAtCursor(`\nVideo: ${clean}`);
-                            }
-                          }}
-                          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
-                          title={t('Add Video Link')}
-                        >
-                          <Plus class="size-3 text-purple-600" />
-                          <Video class="size-3 text-purple-600" />
-                          <span>{t('Video')}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const url = prompt(t('Enter brochure, PDF or photo link:'), 'https://');
-                            if (url && url.trim()) {
-                              const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
-                              insertTagAtCursor(`\nBrochure: ${clean}`);
-                            }
-                          }}
-                          class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
-                          title={t('Add PDF or Photo Link')}
-                        >
-                          <Plus class="size-3 text-emerald-600" />
-                          <Image class="size-3 text-emerald-600" />
-                          <span>{t('Photo/PDF')}</span>
+                          <Globe class="size-3.5 text-ocean-600" />
+                          <span>{t('Link')}</span>
                         </button>
                       </div>
                     </div>
+
+                    <input
+                      ref={fuFileInputRef}
+                      type="file"
+                      accept={fileAccept}
+                      class="hidden"
+                      onChange={handleTemplateFileChosen}
+                    />
                     <textarea
                       ref={fuTextareaRef}
                       id="fu-template"

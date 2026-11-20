@@ -801,6 +801,30 @@ function CompanyTab() {
   const [busy, setBusy] = useState(false);
   const coFuTextareaRef = useRef<HTMLTextAreaElement>(null);
   const coFuSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+  const coFuFileInputRef = useRef<HTMLInputElement>(null);
+  const [coFileAccept, setCoFileAccept] = useState('image/*,video/*,application/pdf');
+
+  const openCoFilePicker = (accept: string) => {
+    setCoFileAccept(accept);
+    setTimeout(() => {
+      coFuFileInputRef.current?.click();
+    }, 10);
+  };
+
+  const handleCoFileChosen = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const isVideo = file.type.startsWith('video');
+    const isImage = file.type.startsWith('image');
+    const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
+    const prefix = isVideo ? t('Video') : isImage ? t('Photo') : isPdf ? t('Brochure/PDF') : t('Attachment');
+
+    insertCoTagAtCursor(`\n[${prefix}: ${file.name}]`);
+    toast(t('Added "{name}" to message template.', { name: file.name }), 'success');
+    input.value = '';
+  };
 
   const recordCoSelection = (el: HTMLTextAreaElement) => {
     coFuSelectionRef.current = {
@@ -942,6 +966,39 @@ function CompanyTab() {
             <div class="flex items-center gap-1.5">
               <button
                 type="button"
+                onClick={() => openCoFilePicker('image/*')}
+                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-semibold text-emerald-700 hover:border-emerald-300 transition active:scale-95 cursor-pointer shadow-xs"
+                title={t('Choose Photo from your device')}
+              >
+                <Plus class="size-3 text-emerald-600" />
+                <Image class="size-3.5 text-emerald-600" />
+                <span>{t('Photo')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openCoFilePicker('video/*')}
+                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-semibold text-purple-700 hover:border-purple-300 transition active:scale-95 cursor-pointer shadow-xs"
+                title={t('Choose Video from your device')}
+              >
+                <Plus class="size-3 text-purple-600" />
+                <Video class="size-3.5 text-purple-600" />
+                <span>{t('Video')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openCoFilePicker('application/pdf,.pdf')}
+                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-semibold text-rose-700 hover:border-rose-300 transition active:scale-95 cursor-pointer shadow-xs"
+                title={t('Choose PDF Brochure from your device')}
+              >
+                <Plus class="size-3 text-rose-600" />
+                <FileText class="size-3.5 text-rose-600" />
+                <span>{t('PDF')}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   const url = prompt(t('Enter company website URL:'), 'https://');
                   if (url && url.trim()) {
@@ -949,49 +1006,23 @@ function CompanyTab() {
                     insertCoTagAtCursor(`\nWebsite: ${clean}`);
                   }
                 }}
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition active:scale-95 cursor-pointer"
                 title={t('Add Website Link')}
               >
                 <Plus class="size-3 text-ocean-600" />
-                <Globe class="size-3 text-ocean-600" />
-                <span>{t('Website')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const url = prompt(t('Enter video demo URL:'), 'https://');
-                  if (url && url.trim()) {
-                    const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
-                    insertCoTagAtCursor(`\nVideo: ${clean}`);
-                  }
-                }}
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
-                title={t('Add Video Link')}
-              >
-                <Plus class="size-3 text-purple-600" />
-                <Video class="size-3 text-purple-600" />
-                <span>{t('Video')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const url = prompt(t('Enter company PDF brochure or photo link:'), 'https://');
-                  if (url && url.trim()) {
-                    const clean = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
-                    insertCoTagAtCursor(`\nBrochure: ${clean}`);
-                  }
-                }}
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition cursor-pointer"
-                title={t('Add Brochure or Photo Link')}
-              >
-                <Plus class="size-3 text-emerald-600" />
-                <Image class="size-3 text-emerald-600" />
-                <span>{t('Photo/PDF')}</span>
+                <Globe class="size-3.5 text-ocean-600" />
+                <span>{t('Link')}</span>
               </button>
             </div>
           </div>
+
+          <input
+            ref={coFuFileInputRef}
+            type="file"
+            accept={coFileAccept}
+            class="hidden"
+            onChange={handleCoFileChosen}
+          />
 
           <Field label="" for="co-fu-msg" hint={t('Placeholders: {name}, {company}, {lead_company}, {event}, {sender}')}>
             <textarea
