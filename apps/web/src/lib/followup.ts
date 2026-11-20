@@ -106,6 +106,29 @@ export function formatFollowUpMessage(
   return text;
 }
 
+export async function shareViaNativeSheet(
+  title: string,
+  text: string,
+  files?: File[],
+): Promise<boolean> {
+  if (typeof navigator === 'undefined') return false;
+  try {
+    if (files && files.length > 0 && navigator.canShare?.({ files })) {
+      await navigator.share({ title, text, files });
+      return true;
+    }
+    if (navigator.share) {
+      await navigator.share({ title, text });
+      return true;
+    }
+  } catch (err) {
+    if ((err as Error).name !== 'AbortError') {
+      console.warn('[Share] Share sheet failed, falling back:', err);
+    }
+  }
+  return false;
+}
+
 export function sendViaWhatsApp(phone: string, text: string): boolean {
   const digits = phone.replace(/\D/g, '');
   if (!digits || digits.length < 7) return false;
