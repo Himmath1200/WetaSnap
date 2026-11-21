@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { MessageSquare, Mail, Check, ArrowRight, Link, Image, FileText, Globe, Share2, X } from 'lucide-preact';
+import { MessageSquare, Mail, Check, ArrowRight, Link, Image, FileText, Share2, X } from 'lucide-preact';
 import { Dialog } from './ui';
 import { t } from '../lib/i18n';
 import {
@@ -8,7 +8,12 @@ import {
   sendViaWhatsApp,
   sendViaEmail,
   shareViaNativeSheet,
+  getStoredFollowUpAttachments,
+  storedToFiles,
+  stripFileTagsFromText,
+  downloadFile,
 } from '../lib/followup';
+import { toast } from '../lib/store';
 import type { Lead } from '../lib/types';
 
 interface Props {
@@ -29,7 +34,9 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
   const leadName = lead.fields.full_name?.value || lead.fields.first_name?.value || t('Contact');
   const company = lead.fields.company?.value || lead.fields.company_name?.value || '';
 
-  const initialText = formatFollowUpMessage(config.message, lead, senderName, eventName, companyName, config.attachmentUrl, config.websiteUrl);
+  const initialText = stripFileTagsFromText(
+    formatFollowUpMessage(config.message, lead, senderName, eventName, companyName, config.attachmentUrl, config.websiteUrl)
+  );
   const [customText, setCustomText] = useState(initialText);
   const [sentWa, setSentWa] = useState(false);
   const [sentMail, setSentMail] = useState(false);
@@ -40,28 +47,47 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
   const [previews, setPreviews] = useState<{ name: string; url: string; type: string; size: string }[]>([]);
 
   const [inputUrl, setInputUrl] = useState('');
-  const [urlType, setUrlType] = useState<'website' | 'media'>('website');
   const [showAddUrl, setShowAddUrl] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (lead) {
-      setCustomText(formatFollowUpMessage(config.message, lead, senderName, eventName, companyName, config.attachmentUrl, config.websiteUrl));
+      setCustomText(
+        stripFileTagsFromText(
+          formatFollowUpMessage(config.message, lead, senderName, eventName, companyName, config.attachmentUrl, config.websiteUrl)
+        )
+      );
       setSentWa(false);
       setSentMail(false);
       setSentShare(false);
       setInputUrl('');
       setShowAddUrl(false);
-      setAttachedFiles([]);
-      setPreviews([]);
+
+      // Load default real attachments from storage
+      void getStoredFollowUpAttachments().then((defaults) => {
+        if (defaults.length > 0) {
+          const files = storedToFiles(defaults);
+          setAttachedFiles(files);
+          const newPreviews = files.map((file) => {
+            const url = URL.createObjectURL(file);
+            const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+            const sizeStr = file.size > 1024 * 1024 ? `${sizeMb} MB` : `${Math.round(file.size / 1024)} KB`;
+            return { name: file.name, url, type: file.type, size: sizeStr };
+          });
+          setPreviews(newPreviews);
+        } else {
+          setAttachedFiles([]);
+          setPreviews([]);
+        }
+      });
     }
   }, [lead?.id, config.message, config.attachmentUrl, config.websiteUrl, senderName, eventName, companyName]);
 
-  const handleAppendUrl = (url: string, prefix = '') => {
+  const handleAppendUrl = (url: string) => {
     const trimmed = url.trim();
     if (!trimmed) return;
     const formatted = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-    const toAppend = prefix ? `\n\n${prefix}: ${formatted}` : `\n\n${formatted}`;
+    const toAppend = `\n\nLink: ${formatted}`;
     if (!customText.includes(formatted)) {
       setCustomText((prev) => prev.trim() + toAppend);
     }
@@ -90,6 +116,7 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
 
     setPreviews((prev) => [...prev, ...newPreviews]);
     (e.target as HTMLInputElement).value = '';
+    toast(t('Added {count} file(s) to send.', { count: newFiles.length }), 'success');
   };
 
   const removeFile = (index: number) => {
@@ -104,36 +131,73 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
 
   const handleNativeShare = async () => {
     const title = eventName ? `${eventName} — Follow-up` : t('Follow-up');
-    const ok = await shareViaNativeSheet(title, customText, attachedFiles.length > 0 ? attachedFiles : undefined);
+    const cleanMsg = stripFileTagsFromText(customText);
+    const ok = await shareViaNativeSheet(title, cleanMsg, attachedFiles.length > 0 ? attachedFiles : undefined);
     if (ok) setSentShare(true);
   };
 
   const handleWhatsApp = async () => {
-    if (attachedFiles.length > 0 && canNativeShare) {
-      // Direct file attachment support via device share sheet
-      const ok = await shareViaNativeSheet(leadName, customText, attachedFiles);
-      if (ok) {
-        setSentWa(true);
-        return;
+    const cleanMsg = stripFileTagsFromText(customText);
+
+    if (attachedFiles.length > 0) {
+      // 1. On mobile / supported devices, Web Share API sends real binary files directly into WhatsApp
+      if (canNativeShare && navigator.canShare?.({ files: attachedFiles })) {
+        try {
+          const ok = await shareViaNativeSheet(leadName, cleanMsg, attachedFiles);
+          if (ok) {
+            setSentWa(true);
+            return;
+          }
+        } catch {}
       }
+
+      // 2. Desktop fallback (WhatsApp Web)
+      // Copy image to clipboard for instant Ctrl+V paste into chat
+      const imgFile = attachedFiles.find((f) => f.type.startsWith('image/'));
+      if (imgFile && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ [imgFile.type]: imgFile })]);
+          toast(t('Photo copied to clipboard! In WhatsApp, press Ctrl+V to send directly.'), 'info', 5000);
+        } catch {}
+      }
+
+      // Auto-download files so user can drag & drop directly into WhatsApp Web chat
+      attachedFiles.forEach((f) => downloadFile(f, f.name));
+      toast(t('File ready! Drag & drop or paste into WhatsApp to send directly.'), 'success', 5000);
     }
-    // Direct WhatsApp Web/App deep link
-    if (!phone) return;
-    sendViaWhatsApp(phone, customText);
+
+    if (!phone) {
+      if (attachedFiles.length > 0 && canNativeShare) {
+        await shareViaNativeSheet(leadName, cleanMsg, attachedFiles);
+        setSentWa(true);
+      }
+      return;
+    }
+
+    sendViaWhatsApp(phone, cleanMsg);
     setSentWa(true);
   };
 
   const handleEmail = async () => {
     const subject = eventName ? `${eventName} — Great connecting with you!` : t('Great connecting with you!');
-    if (attachedFiles.length > 0 && canNativeShare) {
-      const ok = await shareViaNativeSheet(subject, customText, attachedFiles);
-      if (ok) {
-        setSentMail(true);
-        return;
+    const cleanMsg = stripFileTagsFromText(customText);
+
+    if (attachedFiles.length > 0) {
+      if (canNativeShare && navigator.canShare?.({ files: attachedFiles })) {
+        try {
+          const ok = await shareViaNativeSheet(subject, cleanMsg, attachedFiles);
+          if (ok) {
+            setSentMail(true);
+            return;
+          }
+        } catch {}
       }
+      attachedFiles.forEach((f) => downloadFile(f, f.name));
+      toast(t('Attachment downloaded to add to email.'), 'info', 5000);
     }
+
     if (!email) return;
-    sendViaEmail(email, subject, customText);
+    sendViaEmail(email, subject, cleanMsg);
     setSentMail(true);
   };
 
@@ -174,36 +238,26 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
         <div>
           <div class="flex items-center justify-between mb-1.5 flex-wrap gap-1">
             <label class="label mb-0" for="fu-preview">{t('Message to send')}</label>
-            {/* Media & URL Direct Attachment Buttons */}
+            {/* Direct File Attachment Buttons */}
             <div class="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
-                onClick={() => { setUrlType('website'); setShowAddUrl((v) => !v); }}
+                onClick={() => setShowAddUrl((v) => !v)}
                 class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition active:scale-95 cursor-pointer"
                 title={t('Add Website or Link')}
               >
-                <Globe class="size-3 text-ocean-600" />
-                <span>{t('Website URL')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setUrlType('media'); setShowAddUrl((v) => !v); }}
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line bg-subtle hover:bg-surface text-[11px] font-medium text-ink transition active:scale-95 cursor-pointer"
-                title={t('Add Link to Photo, Video, or Cloud Folder')}
-              >
-                <Link class="size-3 text-brand-600" />
-                <span>{t('Web Link')}</span>
+                <Link class="size-3 text-ocean-600" />
+                <span>{t('+ Link')}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg border border-brand-500/40 bg-brand-50 hover:bg-brand-100 text-[11px] font-semibold text-brand-700 transition active:scale-95 cursor-pointer"
-                title={t('Attach Image, Video or PDF')}
+                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-brand-500/40 bg-brand-50 hover:bg-brand-100 text-[11px] font-semibold text-brand-700 transition active:scale-95 cursor-pointer shadow-xs"
+                title={t('Attach Image, Video or PDF file')}
               >
-                <Image class="size-3 text-brand-600" />
-                <span>{t('+ Attach File')}</span>
+                <Image class="size-3.5 text-brand-600" />
+                <span>{t('+ Attach File (Photo/Video/PDF)')}</span>
               </button>
 
               <input
@@ -223,13 +277,13 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
               <input
                 type="url"
                 class="input text-xs flex-1 py-1 px-2.5 h-8"
-                placeholder={urlType === 'website' ? t('https://yourwebsite.com or product link') : t('https://example.com/video.mp4 or brochure link')}
+                placeholder={t('https://yourwebsite.com or product link')}
                 value={inputUrl}
                 onInput={(e) => setInputUrl(e.currentTarget.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    handleAppendUrl(inputUrl, urlType === 'website' ? 'Website' : 'Link');
+                    handleAppendUrl(inputUrl);
                   }
                 }}
                 autoFocus
@@ -237,7 +291,7 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
               <button
                 type="button"
                 class="btn-primary text-xs py-1 px-3 h-8 shrink-0 font-semibold cursor-pointer"
-                onClick={() => handleAppendUrl(inputUrl, urlType === 'website' ? 'Website' : 'Link')}
+                onClick={() => handleAppendUrl(inputUrl)}
               >
                 {t('Add to message')}
               </button>
@@ -258,37 +312,37 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
               <div class="flex items-center justify-between">
                 <span class="text-[11px] font-bold text-ink uppercase tracking-wider flex items-center gap-1.5">
                   <Image class="size-3.5 text-brand-600" />
-                  {t('Attached Files ({count})', { count: previews.length })}
+                  {t('Direct Files Attached ({count})', { count: previews.length })}
                 </span>
-                <span class="text-[10px] text-muted">
-                  {t('Direct file sharing supported via device share')}
+                <span class="text-[10px] text-emerald-600 font-semibold">
+                  {t('Sent as real files, not text links')}
                 </span>
               </div>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {previews.map((item, idx) => (
-                  <div key={idx} class="group relative rounded-lg border border-line bg-surface p-1.5 flex items-center gap-2 min-w-0">
+                  <div key={idx} class="group relative rounded-lg border border-line bg-surface p-2 flex items-center gap-2.5 min-w-0">
                     {item.type.startsWith('image') ? (
-                      <img src={item.url} alt={item.name} class="size-10 rounded object-cover shrink-0 border border-line/40" />
+                      <img src={item.url} alt={item.name} class="size-9 rounded-md object-cover shrink-0 border border-line/40" />
                     ) : item.type.startsWith('video') ? (
-                      <div class="size-10 rounded bg-slate-900 text-white flex items-center justify-center shrink-0">
+                      <div class="size-9 rounded-md bg-slate-900 text-white flex items-center justify-center shrink-0">
                         <span class="text-[9px] font-bold">VIDEO</span>
                       </div>
                     ) : (
-                      <div class="size-10 rounded bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
-                        <FileText class="size-5" />
+                      <div class="size-9 rounded-md bg-rose-50 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                        <FileText class="size-4" />
                       </div>
                     )}
                     <div class="min-w-0 flex-1">
-                      <p class="text-[11px] font-medium text-ink truncate leading-tight">{item.name}</p>
-                      <p class="text-[9px] text-muted">{item.size}</p>
+                      <p class="text-xs font-semibold text-ink truncate leading-tight">{item.name}</p>
+                      <p class="text-[10px] text-muted">{item.size}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => removeFile(idx)}
-                      class="absolute -top-1.5 -right-1.5 size-4 rounded-full bg-slate-700 text-white flex items-center justify-center text-[10px] shadow hover:bg-rose-600 transition"
+                      class="size-5 rounded-full bg-slate-200 hover:bg-rose-600 hover:text-white text-muted flex items-center justify-center text-[10px] transition cursor-pointer"
                       title={t('Remove')}
                     >
-                      <X class="size-2.5" />
+                      <X class="size-3" />
                     </button>
                   </div>
                 ))}
@@ -320,7 +374,9 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
                   <MessageSquare class="size-4" />
                 </span>
                 <div class="min-w-0">
-                  <p class="text-xs font-bold truncate">{t('WhatsApp')}</p>
+                  <p class="text-xs font-bold truncate">
+                    {attachedFiles.length > 0 ? t('WhatsApp + Files') : t('WhatsApp')}
+                  </p>
                   <p class="text-[10px] text-muted truncate">{phone || t('No phone number')}</p>
                 </div>
               </div>
@@ -351,7 +407,9 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
                   <Mail class="size-4" />
                 </span>
                 <div class="min-w-0">
-                  <p class="text-xs font-bold truncate">{t('Email')}</p>
+                  <p class="text-xs font-bold truncate">
+                    {attachedFiles.length > 0 ? t('Email + Files') : t('Email')}
+                  </p>
                   <p class="text-[10px] text-muted truncate">{email || t('No email address')}</p>
                 </div>
               </div>
@@ -381,11 +439,11 @@ export function FollowUpModal({ open, onClose, lead, senderName, eventName, comp
                   <Share2 class="size-3.5" />
                 </span>
                 <div class="min-w-0">
-                  <p class="text-xs font-bold truncate">{t('Share via App / More Options')}</p>
+                  <p class="text-xs font-bold truncate">{t('Share via App / Share Sheet')}</p>
                   <p class="text-[10px] text-muted truncate">
                     {attachedFiles.length > 0
-                      ? t('Shares text message with all {count} attached files', { count: attachedFiles.length })
-                      : t('Open phone share sheet (AirDrop, WhatsApp, Messages, etc.)')}
+                      ? t('Directly dispatches message and all {count} files', { count: attachedFiles.length })
+                      : t('Open phone share sheet')}
                   </p>
                 </div>
               </div>

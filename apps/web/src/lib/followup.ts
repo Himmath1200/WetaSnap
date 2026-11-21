@@ -1,4 +1,5 @@
 import type { Company, Lead } from './types';
+import { db } from './db';
 
 export interface FollowUpConfig {
   autoSend: boolean;
@@ -8,6 +9,59 @@ export interface FollowUpConfig {
   senderCompanyName?: string;
   attachmentUrl?: string;
   websiteUrl?: string;
+}
+
+export interface StoredFollowUpAttachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  blob: Blob;
+}
+
+export function stripFileTagsFromText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\[(Photo|Video|Brochure|PDF|Brochure\/PDF|Attachment):[^\]]+\]/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export async function getStoredFollowUpAttachments(): Promise<StoredFollowUpAttachment[]> {
+  try {
+    const entry = await db.cache.get('followup_default_attachments');
+    return (entry?.value as StoredFollowUpAttachment[]) || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveStoredFollowUpAttachments(files: StoredFollowUpAttachment[]): Promise<void> {
+  try {
+    await db.cache.put({ key: 'followup_default_attachments', value: files });
+  } catch (err) {
+    console.error('Failed to save follow-up attachments:', err);
+  }
+}
+
+export function storedToFile(att: StoredFollowUpAttachment): File {
+  return new File([att.blob], att.name, { type: att.type, lastModified: Date.now() });
+}
+
+export function storedToFiles(atts: StoredFollowUpAttachment[]): File[] {
+  return atts.map(storedToFile);
+}
+
+export function downloadFile(file: File | Blob, name: string) {
+  if (typeof document === 'undefined') return;
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 export const DEFAULT_FOLLOWUP_MESSAGE = `Hi {name}, it was great meeting you at {event}! Thank you for connecting with {sender} from {company}. Looking forward to staying in touch.`;
@@ -95,6 +149,9 @@ export function formatFollowUpMessage(
     .replace(/\{lead_company\}/gi, leadComp)
     .replace(/\{event\}/gi, event)
     .replace(/\{sender\}/gi, senderName);
+
+  // Strip any accidental file address placeholders like [Photo: ...] or [Video: ...]
+  text = stripFileTagsFromText(text);
 
   if (websiteUrl && !text.includes(websiteUrl)) {
     text += `\n\nWebsite: ${websiteUrl}`;

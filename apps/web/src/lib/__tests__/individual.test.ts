@@ -125,7 +125,7 @@ describe('Individual registration and quota management', () => {
     const created = await b.createOrganizer({
       event_name: 'Summer Expo 2026',
       starts_on: '2026-11-15',
-      ends_on: '2026-11-20',
+      ends_on: '2026-11-25',
       venue: 'Main Hall',
       organizer_name: 'John Organizer',
       organizer_email: 'john.org@example.com',
@@ -144,7 +144,7 @@ describe('Individual registration and quota management', () => {
       referral_code: created.referral_code,
     });
     expect(p1.person.role).toBe('staff');
-    expect(p1.person.event_ends_on).toBe('2026-11-20');
+    expect(p1.person.event_ends_on).toBe('2026-11-25');
 
     // Register 2nd participant
     await b.registerReferral({

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie';
-import type { Company, EventItem, FieldDefinition, Lead, Person } from './types';
+import type { Company, Lead, Person } from './types';
 
 /** A lead as stored on this device, plus outbox bookkeeping (SYNC-01..04). */
 export interface LocalLead extends Lead {
@@ -31,8 +31,8 @@ export interface Session {
 }
 
 export interface Cache {
-  key: 'events' | 'fields';
-  value: EventItem[] | FieldDefinition[];
+  key: string;
+  value: any;
 }
 
 class DeviceDb extends Dexie {

@@ -3,7 +3,7 @@ import { useLocation } from 'preact-iso';
 import {
   Bell, BellOff, Calendar, Camera, Check, ChevronRight, CloudOff, FileText, Globe, Image, Lock, LogOut,
   Mail, MapPin, MessageSquare, Monitor, Moon, Phone, Plus, RotateCcw, ShieldCheck, Smartphone, Sparkles, Store, Sun,
-  Trash, Trash2, Upload, User, Video,
+  Trash, Trash2, Upload, User, Video, X,
 } from 'lucide-preact';
 import { Dialog, Field, Spinner } from '../components/ui';
 import { backend } from '../lib/backend';
@@ -17,7 +17,11 @@ import { enablePush, disablePush, pushState, supportsPush } from '../lib/notific
 import { LANGUAGES } from '../lib/locale';
 import { APP_VERSION, BUILD_DATE } from '../lib/version';
 import { doorForRole, linkFor, signInPath } from '../lib/portal';
-import { getFollowUpConfig, saveFollowUpConfig, formatFollowUpMessage, DEFAULT_FOLLOWUP_MESSAGE, type FollowUpConfig } from '../lib/followup';
+import {
+  getFollowUpConfig, saveFollowUpConfig, formatFollowUpMessage, DEFAULT_FOLLOWUP_MESSAGE,
+  type FollowUpConfig, type StoredFollowUpAttachment, getStoredFollowUpAttachments,
+  saveStoredFollowUpAttachments, stripFileTagsFromText,
+} from '../lib/followup';
 import { t } from '../lib/i18n';
 
 function roleLabel(role: string, plan?: string) {
@@ -86,6 +90,7 @@ export default function Profile() {
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [activeScans, setActiveScans] = useState(s.person.monthly_scans ?? 0);
   const [fuConfig, setFuConfig] = useState<FollowUpConfig>(() => getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff'));
+  const [defaultAttachments, setDefaultAttachments] = useState<StoredFollowUpAttachment[]>([]);
   const file = useRef<HTMLInputElement>(null);
   const fuTextareaRef = useRef<HTMLTextAreaElement>(null);
   const fuSelectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
@@ -137,23 +142,47 @@ export default function Profile() {
     }, 10);
   };
 
-  const handleTemplateFileChosen = (e: Event) => {
+  const handleTemplateFileChosen = async (e: Event) => {
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
 
-    const isVideo = file.type.startsWith('video');
-    const isImage = file.type.startsWith('image');
-    const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
-    const prefix = isVideo ? t('Video') : isImage ? t('Photo') : isPdf ? t('Brochure/PDF') : t('Attachment');
+    const att: StoredFollowUpAttachment = {
+      id: Math.random().toString(36).slice(2),
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      size: file.size,
+      blob: file,
+    };
 
-    insertTagAtCursor(`\n[${prefix}: ${file.name}]`);
-    toast(t('Added "{name}" to message template.', { name: file.name }), 'success');
+    const next = [...defaultAttachments, att];
+    setDefaultAttachments(next);
+    await saveStoredFollowUpAttachments(next);
+
+    // Strip any accidental bracketed tags if user previously had them in message
+    setFuConfig((prev) => ({
+      ...prev,
+      message: stripFileTagsFromText(prev.message),
+    }));
+
+    toast(t('Attached "{name}" directly. This file will be sent with follow-up messages.', { name: file.name }), 'success');
     input.value = '';
   };
 
+  const removeDefaultAttachment = async (id: string) => {
+    const next = defaultAttachments.filter((a) => a.id !== id);
+    setDefaultAttachments(next);
+    await saveStoredFollowUpAttachments(next);
+    toast(t('Attachment removed.'), 'info');
+  };
+
   useEffect(() => {
-    setFuConfig(getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff'));
+    void getStoredFollowUpAttachments().then(setDefaultAttachments);
+    const cfg = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
+    setFuConfig({
+      ...cfg,
+      message: stripFileTagsFromText(cfg.message),
+    });
     if (s.company?.id) {
       void backend().then((b) => b.company()).then((freshCo) => {
         if (freshCo) {
@@ -596,6 +625,48 @@ export default function Profile() {
                         </button>
                       ))}
                     </div>
+
+                    {/* Direct Attached Files list */}
+                    {defaultAttachments.length > 0 && (
+                      <div class="mt-3 p-3 rounded-xl border border-line bg-subtle space-y-2">
+                        <div class="flex items-center justify-between">
+                          <span class="text-[11px] font-bold text-ink uppercase tracking-wider flex items-center gap-1.5">
+                            <Image class="size-3.5 text-brand-600" />
+                            {t('Attached Files ({count})', { count: defaultAttachments.length })}
+                          </span>
+                          <span class="text-[10px] text-emerald-600 font-semibold">
+                            {t('Direct files attached to message')}
+                          </span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {defaultAttachments.map((item) => {
+                            const sizeMb = (item.size / (1024 * 1024)).toFixed(1);
+                            const sizeStr = item.size > 1024 * 1024 ? `${sizeMb} MB` : `${Math.round(item.size / 1024)} KB`;
+                            const isImg = item.type.startsWith('image/');
+                            const isVid = item.type.startsWith('video/');
+                            return (
+                              <div key={item.id} class="relative flex items-center gap-2.5 p-2 rounded-lg border border-line bg-surface">
+                                <span class="size-8 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center shrink-0">
+                                  {isImg ? <Image class="size-4 text-emerald-600" /> : isVid ? <Video class="size-4 text-purple-600" /> : <FileText class="size-4 text-rose-600" />}
+                                </span>
+                                <div class="min-w-0 flex-1">
+                                  <p class="text-xs font-semibold text-ink truncate">{item.name}</p>
+                                  <p class="text-[10px] text-muted">{sizeStr}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeDefaultAttachment(item.id)}
+                                  class="size-6 rounded-full hover:bg-red-50 text-muted hover:text-red-600 flex items-center justify-center transition cursor-pointer"
+                                  title={t('Remove')}
+                                >
+                                  <X class="size-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Company name input: only comes when the user has {company} in the message template */}
                     {/\{company\}/i.test(fuConfig.message) && !s.company && (
