@@ -21,7 +21,7 @@ import { localOcrAvailable, readWithLocalOcr } from '../lib/ocr';
 import { geminiAvailable, hasLowConfidenceField, verifyLowConfidenceWithGemini } from '../lib/gemini';
 import type { DocShot } from '../components/DocCamera';
 import { ClipboardFallback, saveToPhone, shareContact } from '../lib/contact';
-import { getFollowUpConfig, formatFollowUpMessage, sendViaWhatsApp, sendViaEmail } from '../lib/followup';
+import { getFollowUpConfig } from '../lib/followup';
 import { FollowUpModal } from '../components/FollowUpModal';
 import { linkFor } from '../lib/portal';
 import { t, tn } from '../lib/i18n';
@@ -339,26 +339,7 @@ export default function ScanV2() {
       // Follow-up messaging feature
       const leadPhone = lead.fields.phone?.value?.trim() || lead.fields.mobile?.value?.trim() || '';
       const leadEmail = lead.fields.email?.value?.trim() || '';
-      const fuConfig = getFollowUpConfig(s.person.id, s.company, s.person.role === 'staff');
-
-      if (fuConfig.autoSend && (leadPhone || leadEmail)) {
-        const msg = formatFollowUpMessage(fuConfig.message, lead, s.person.name, event?.name, s.company?.name, fuConfig.attachmentUrl, fuConfig.websiteUrl);
-        let sentAny = false;
-        if (fuConfig.sendWhatsApp && leadPhone) {
-          sendViaWhatsApp(leadPhone, msg);
-          sentAny = true;
-        }
-        if (fuConfig.sendEmail && leadEmail) {
-          const subj = event?.name ? `${event.name} — Great connecting with you!` : t('Great connecting with you!');
-          sendViaEmail(leadEmail, subj, msg);
-          sentAny = true;
-        }
-        if (sentAny) {
-          toast(t('Follow-up message dispatched!'), 'success', 3000);
-        }
-        setMode('camera');
-      } else if (!fuConfig.autoSend && (leadPhone || leadEmail)) {
-        // Toggle is OFF: give the user options where they want to push the message
+      if (leadPhone || leadEmail) {
         setFollowUpLead(lead);
         setFuModalOpen(true);
         setMode('camera');

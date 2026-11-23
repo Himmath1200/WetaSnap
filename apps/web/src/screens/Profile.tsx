@@ -603,7 +603,8 @@ export default function Profile() {
                       placeholder={t('Type the message you want to send to your leads...')}
                       value={fuConfig.message}
                       onInput={(e) => {
-                        setFuConfig({ ...fuConfig, message: e.currentTarget.value });
+                        const clean = stripFileTagsFromText(e.currentTarget.value);
+                        setFuConfig({ ...fuConfig, message: clean });
                         recordSelection(e.currentTarget);
                       }}
                       onSelect={(e) => recordSelection(e.currentTarget)}

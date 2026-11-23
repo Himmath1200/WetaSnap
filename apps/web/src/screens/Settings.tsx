@@ -1050,7 +1050,8 @@ function CompanyTab() {
               placeholder={DEFAULT_FOLLOWUP_MESSAGE}
               value={c.follow_up_message ?? ''}
               onInput={(e) => {
-                setC({ ...c, follow_up_message: e.currentTarget.value });
+                const clean = stripFileTagsFromText(e.currentTarget.value);
+                setC({ ...c, follow_up_message: clean });
                 recordCoSelection(e.currentTarget);
               }}
               onSelect={(e) => recordCoSelection(e.currentTarget)}

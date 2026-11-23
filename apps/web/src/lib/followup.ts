@@ -22,7 +22,8 @@ export interface StoredFollowUpAttachment {
 export function stripFileTagsFromText(text: string): string {
   if (!text) return '';
   return text
-    .replace(/\[(Photo|Video|Brochure|PDF|Brochure\/PDF|Attachment):[^\]]+\]/gi, '')
+    .replace(/\[\s*(Photo|Video|Brochure|PDF|Brochure\/PDF|Attachment)\s*:\s*[^\]]+\]/gi, '')
+    .replace(/\[[^\]]+\.(png|jpg|jpeg|webp|gif|mp4|mov|avi|pdf|doc|docx)\]/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -116,6 +117,8 @@ export function getFollowUpConfig(personId: string, company?: Company | null, is
       }
     }
   } catch {}
+
+  cfg.message = stripFileTagsFromText(cfg.message);
 
   return cfg;
 }
