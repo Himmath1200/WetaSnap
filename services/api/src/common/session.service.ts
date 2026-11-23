@@ -120,8 +120,11 @@ export class SessionService {
       }
     }
     if (!session.active) throw unauthorized('This account can no longer sign in.');
-    if (session.access_ends_on && session.access_ends_on < new Date().toISOString().slice(0, 10)) {
-      throw unauthorized('This account’s access has ended.');
+    if (session.access_ends_on) {
+      const deadline = new Date(session.access_ends_on).getTime() + 24 * 3600_000;
+      if (Date.now() > deadline) {
+        throw unauthorized('This account’s access and 24-hour export grace period have ended.');
+      }
     }
     if (session.suspended) {
       throw unauthorized(`This account is suspended. ${session.suspended_reason || 'Please contact WeTano.'}`);

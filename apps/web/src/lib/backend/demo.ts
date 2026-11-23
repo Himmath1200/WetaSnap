@@ -469,9 +469,12 @@ export function createDemoBackend(): Backend {
       blocked ??= 'This account has been deactivated. Ask your admin if you need access again.';
       cutoffs.push(await lastAudit(p.company_id, 'person.deactivate', p.email));
     }
-    if (p.access_ends_on && p.access_ends_on < today()) {
-      blocked ??= 'Your access ended. Ask your admin if you need access again.';
-      cutoffs.push(`${p.access_ends_on}T23:59:59.999Z`);
+    if (p.access_ends_on) {
+      const graceDeadline = new Date(p.access_ends_on).getTime() + 24 * 3600_000;
+      if (Date.now() > graceDeadline) {
+        blocked ??= 'Your access and the 24-hour export grace period have ended.';
+        cutoffs.push(`${p.access_ends_on}T23:59:59.999Z`);
+      }
     }
     // The earliest cut-off wins; an unknown one (null) means nothing new is accepted.
     const cutoff = !blocked ? null : cutoffs.some((c) => c === null) ? null : (cutoffs as string[]).sort()[0] ?? null;
@@ -532,7 +535,12 @@ export function createDemoBackend(): Backend {
     return { token: p.id, person: p, company, session_id: await openSession(p) };
   }
   function canSignIn(p: Person | undefined): p is Person {
-    return Boolean(p && p.active && (!p.access_ends_on || p.access_ends_on >= today()));
+    if (!p || !p.active) return false;
+    if (p.access_ends_on) {
+      const graceDeadline = new Date(p.access_ends_on).getTime() + 24 * 3600_000;
+      return Date.now() <= graceDeadline;
+    }
+    return true;
   }
 
   /** D-17: what one person may see. WeTano sees its own console notes; staff only notes meant for them. */

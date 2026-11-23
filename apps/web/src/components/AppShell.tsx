@@ -569,7 +569,10 @@ function OrganizerDisclaimerBanner() {
   const s = useStore(session)!;
   const cfg = useStore(config);
   const event = cfg.events.find((e) => e.id === s.event_id) ?? cfg.events[0];
-  const endsOn = s.person.event_ends_on ?? event?.ends_on;
+  // If an attendee has an earlier custom access end date set by organizer, prioritize it
+  const endsOn = (s.person.role === 'staff' && s.person.access_ends_on)
+    ? s.person.access_ends_on
+    : (s.person.event_ends_on ?? event?.ends_on);
   const endsDateStr = endsOn ? new Date(endsOn).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : null;
   const leadsLink = linkFor(s.person.role, '/leads');
 
@@ -578,8 +581,8 @@ function OrganizerDisclaimerBanner() {
       <div class="flex items-center gap-2">
         <AlertCircle class="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <span class="font-semibold">
-          {t('Important Notice: Lead scans are temporary. All data will be permanently cleared 24 hours after the event completes{date}. Please export all scans before the deadline.', {
-            date: endsDateStr ? ` (${endsDateStr})` : '',
+          {t('Important Notice: Lead scans are temporary. Access concludes on {date}. You can export your leads until 24 hours after access ends, after which data will be permanently cleared.', {
+            date: endsDateStr || t('the scheduled date'),
           })}
         </span>
       </div>

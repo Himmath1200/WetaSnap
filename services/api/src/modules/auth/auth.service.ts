@@ -91,14 +91,16 @@ export class AuthService {
     }
 
     if (!person.active) throw unauthorized('This account can no longer sign in. Ask your admin.');
-    if (person.access_ends_on && person.access_ends_on < new Date().toISOString().slice(0, 10)) {
-      throw unauthorized('This account’s access has ended. Ask your admin to extend it.');
-    }
-    if (person.event_ends_on) {
-      const deadline = new Date(person.event_ends_on).getTime() + 24 * 3600_000;
+
+    // 24-hour grace period enforcement:
+    // If attendee has access_ends_on, their access concludes on that date and they have 24 hours to export data.
+    // If person has event_ends_on, the overall event cutoff applies with 24 hours grace.
+    const effectiveCutoff = person.access_ends_on || person.event_ends_on;
+    if (effectiveCutoff) {
+      const deadline = new Date(effectiveCutoff).getTime() + 24 * 3600_000;
       if (Date.now() > deadline) {
         await this.db.query('update people set active = false where id = $1', [person.id]);
-        throw unauthorized('This event concluded and the 24-hour retention grace period has ended. Account access is now deactivated.');
+        throw unauthorized('Your access period and the 24-hour export grace period have ended. Account access is now deactivated.');
       }
     }
     if (person.suspended) {

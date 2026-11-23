@@ -80,9 +80,18 @@ export default function Scan() {
 
   function eventBlockReason() {
     if (!event || isIndividual) return null;
+    const now = Date.now();
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const start = new Date(event.starts_on); start.setHours(0, 0, 0, 0);
     const end = new Date(event.ends_on); end.setHours(23, 59, 59, 999);
+
+    // If attendee has custom access_ends_on earlier than event end date
+    if (s.person.access_ends_on) {
+      const accessEnd = new Date(s.person.access_ends_on);
+      accessEnd.setHours(23, 59, 59, 999);
+      if (now > accessEnd.getTime()) return t('ended');
+    }
+
     if (today < start) return t('upcoming');
     if (today > end || event.status === 'closed') return t('ended');
     return null;
