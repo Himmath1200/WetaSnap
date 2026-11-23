@@ -189,20 +189,31 @@ export class TeamService {
 
       // Validate access date within event window if organizer set access_ends_on
       if (input.access_ends_on) {
+        const org = await this.db.one<any>(
+          `select to_char(event_ends_on, 'YYYY-MM-DD') as event_ends_on, default_event_id from people where id = $1`,
+          [me.personId],
+        );
         const ev = await this.db.one<any>(
           `select to_char(e.starts_on, 'YYYY-MM-DD') as starts_on, to_char(e.ends_on, 'YYYY-MM-DD') as ends_on
              from events e
-            where e.organizer_id = $1 or e.id in (select default_event_id from people where id = $1)
+            where e.id = $2 or e.organizer_id = $1
             order by e.starts_on desc limit 1`,
-          [me.personId],
+          [me.personId, org?.default_event_id ?? null],
         );
-        if (ev) {
-          if (input.access_ends_on < ev.starts_on || input.access_ends_on > ev.ends_on) {
-            throw new DomainError(
-              `The event dates are between ${ev.starts_on} and ${ev.ends_on}. Access date must be within this period.`,
-              400,
-            );
-          }
+        const maxEnd = ev?.ends_on || org?.event_ends_on;
+        const minStart = ev?.starts_on;
+
+        if (maxEnd && input.access_ends_on > maxEnd) {
+          throw new DomainError(
+            `The event concludes on ${maxEnd}. Attendee access date cannot exceed ${maxEnd}.`,
+            400,
+          );
+        }
+        if (minStart && input.access_ends_on < minStart) {
+          throw new DomainError(
+            `The event starts on ${minStart}. Attendee access date cannot precede ${minStart}.`,
+            400,
+          );
         }
       }
 

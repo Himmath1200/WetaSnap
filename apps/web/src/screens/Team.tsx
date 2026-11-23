@@ -478,16 +478,20 @@ function PersonDialog({ value, onClose, onSaved, isOrganizer = false, currentPer
     // Organizer attendee validation: access date must be within event dates set by Super Admin
     if (isOrganizer && temp && endsOn) {
       const activeEvent = cfg.events.find((e) => e.id === (eventIds[0] || currentPerson?.default_event_id)) || cfg.events[0];
-      if (activeEvent?.starts_on && activeEvent?.ends_on) {
-        if (endsOn < activeEvent.starts_on || endsOn > activeEvent.ends_on) {
-          const msg = t('The event dates are between {start} and {end}. Access date must be within this period.', {
-            start: new Date(activeEvent.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
-            end: new Date(activeEvent.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
-          });
-          setErr(msg);
-          toast(msg, 'error');
-          return;
-        }
+      const evStart = activeEvent?.starts_on || currentPerson?.event_ends_on; // fallback
+      const evEnd = activeEvent?.ends_on || currentPerson?.event_ends_on;
+      if (evEnd && (endsOn > evEnd || (evStart && endsOn < evStart))) {
+        const msg = evStart
+          ? t('The event dates are between {start} and {end}. Access date must be within this period.', {
+              start: new Date(evStart).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+              end: new Date(evEnd).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+            })
+          : t('The event ends on {end}. Access date cannot exceed this date.', {
+              end: new Date(evEnd).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+            });
+        setErr(msg);
+        toast(msg, 'error', 6000);
+        return;
       }
     }
     setBusy(true);
@@ -590,15 +594,19 @@ function PersonDialog({ value, onClose, onSaved, isOrganizer = false, currentPer
             </label>
             {temp && (() => {
               const activeEvent = cfg.events.find((e) => e.id === (eventIds[0] || currentPerson?.default_event_id)) || cfg.events[0];
+              const evStart = activeEvent?.starts_on;
+              const evEnd = activeEvent?.ends_on || currentPerson?.event_ends_on;
               return (
                 <Field
                   label={t('Attendee access end date')}
                   for="p-end"
-                  hint={activeEvent?.starts_on && activeEvent?.ends_on
+                  hint={evStart && evEnd
                     ? t('Event dates: {start} to {end}', {
-                        start: new Date(activeEvent.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-                        end: new Date(activeEvent.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+                        start: new Date(evStart).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+                        end: new Date(evEnd).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
                       })
+                    : evEnd
+                    ? t('Event ends on: {end}', { end: new Date(evEnd).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) })
                     : t('Must be within event duration set by Super Admin.')}
                 >
                   <input
@@ -606,8 +614,8 @@ function PersonDialog({ value, onClose, onSaved, isOrganizer = false, currentPer
                     type="date"
                     class="input"
                     value={endsOn}
-                    min={activeEvent?.starts_on ?? new Date().toISOString().slice(0, 10)}
-                    max={activeEvent?.ends_on ?? undefined}
+                    min={evStart ?? new Date().toISOString().slice(0, 10)}
+                    max={evEnd ?? undefined}
                     onChange={(e) => setEndsOn(e.currentTarget.value)}
                   />
                 </Field>
