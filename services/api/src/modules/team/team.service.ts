@@ -186,13 +186,34 @@ export class TeamService {
     if (me.role === 'organizer') {
       const target = await this.db.one<any>(`select id, role from people where id = $1 and organizer_id = $2`, [input.id, me.personId]);
       if (!target) throw notFound('That team member');
+
+      // Validate access date within event window if organizer set access_ends_on
+      if (input.access_ends_on) {
+        const ev = await this.db.one<any>(
+          `select to_char(e.starts_on, 'YYYY-MM-DD') as starts_on, to_char(e.ends_on, 'YYYY-MM-DD') as ends_on
+             from events e
+            where e.organizer_id = $1 or e.id in (select default_event_id from people where id = $1)
+            order by e.starts_on desc limit 1`,
+          [me.personId],
+        );
+        if (ev) {
+          if (input.access_ends_on < ev.starts_on || input.access_ends_on > ev.ends_on) {
+            throw new DomainError(
+              `The event dates are between ${ev.starts_on} and ${ev.ends_on}. Access date must be within this period.`,
+              400,
+            );
+          }
+        }
+      }
+
       await this.db.query(
         `update people set name = $2, phone = $3, active = $4,
+                access_ends_on = $5,
                 deactivated_at = case when $4 then null else coalesce(deactivated_at, now()) end
            where id = $1`,
-        [input.id, input.name, input.phone, input.active],
+        [input.id, input.name, input.phone, input.active, input.access_ends_on ?? null],
       );
-      await this.audit.write(me, { action: 'team.update', entity: 'people', entityId: input.id, details: { active: input.active } });
+      await this.audit.write(me, { action: 'team.update', entity: 'people', entityId: input.id, details: { active: input.active, access_ends_on: input.access_ends_on } });
       return;
     }
 

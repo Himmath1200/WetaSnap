@@ -9,7 +9,7 @@ import { config, session } from '../lib/session';
 import { LICENCE_META } from '../lib/licence';
 import { isEmail } from '../lib/validate';
 import { t, tn } from '../lib/i18n';
-import type { Role, Sort } from '../lib/types';
+import type { Person, Role, Sort } from '../lib/types';
 
 const STATUS = {
   active: 'bg-brand-100 text-brand-800',
@@ -314,7 +314,7 @@ export default function Team() {
         )}
       </div>
 
-      <PersonDialog value={edit} onClose={() => setEdit(null)} onSaved={(close = true) => { if (close) setEdit(null); void load(); }} isOrganizer={isOrganizer} />
+      <PersonDialog value={edit} onClose={() => setEdit(null)} onSaved={(close = true) => { if (close) setEdit(null); void load(); }} isOrganizer={isOrganizer} currentPerson={currentPerson} />
     </div>
   );
 }
@@ -447,7 +447,7 @@ function FilterChips({ value, onChange, eventName }: { value: TeamFilters; onCha
   );
 }
 
-function PersonDialog({ value, onClose, onSaved, isOrganizer = false }: { value: PersonRow | 'new' | null; onClose: () => void; onSaved: (close?: boolean) => void; isOrganizer?: boolean }) {
+function PersonDialog({ value, onClose, onSaved, isOrganizer = false, currentPerson }: { value: PersonRow | 'new' | null; onClose: () => void; onSaved: (close?: boolean) => void; isOrganizer?: boolean; currentPerson?: Person }) {
   const cfg = useStore(config);
   const isNew = value === 'new';
   const [email, setEmail] = useState('');
@@ -474,6 +474,22 @@ function PersonDialog({ value, onClose, onSaved, isOrganizer = false }: { value:
     setErr('');
     if (isNew && !isEmail(email)) { setErr(t('Please enter a valid email address.')); return; }
     if (temp && !endsOn) { setErr(t('Choose the date their access ends.')); return; }
+
+    // Organizer attendee validation: access date must be within event dates set by Super Admin
+    if (isOrganizer && temp && endsOn) {
+      const activeEvent = cfg.events.find((e) => e.id === (eventIds[0] || currentPerson?.default_event_id)) || cfg.events[0];
+      if (activeEvent?.starts_on && activeEvent?.ends_on) {
+        if (endsOn < activeEvent.starts_on || endsOn > activeEvent.ends_on) {
+          const msg = t('The event dates are between {start} and {end}. Access date must be within this period.', {
+            start: new Date(activeEvent.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+            end: new Date(activeEvent.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+          });
+          setErr(msg);
+          toast(msg, 'error');
+          return;
+        }
+      }
+    }
     setBusy(true);
     try {
       const b = await backend();
@@ -567,9 +583,36 @@ function PersonDialog({ value, onClose, onSaved, isOrganizer = false }: { value:
           </div>
         </div>
         {isOrganizer ? (
-          <div class="rounded-xl border border-line bg-subtle p-3 text-xs text-muted leading-relaxed">
-            <span class="font-bold text-ink block mb-0.5">{t('Event Access')}</span>
-            {t('Access period is automatically governed by your event schedule. Only Super Admin can modify event conclusion dates.')}
+          <div class="space-y-3 pt-1 border-t border-line">
+            <label class="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" class="size-4 accent-purple-700" checked={temp} onChange={(e) => setTemp(e.currentTarget.checked)} />
+              {t('Custom attendee access end date')}
+            </label>
+            {temp && (() => {
+              const activeEvent = cfg.events.find((e) => e.id === (eventIds[0] || currentPerson?.default_event_id)) || cfg.events[0];
+              return (
+                <Field
+                  label={t('Attendee access end date')}
+                  for="p-end"
+                  hint={activeEvent?.starts_on && activeEvent?.ends_on
+                    ? t('Event dates: {start} to {end}', {
+                        start: new Date(activeEvent.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+                        end: new Date(activeEvent.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+                      })
+                    : t('Must be within event duration set by Super Admin.')}
+                >
+                  <input
+                    id="p-end"
+                    type="date"
+                    class="input"
+                    value={endsOn}
+                    min={activeEvent?.starts_on ?? new Date().toISOString().slice(0, 10)}
+                    max={activeEvent?.ends_on ?? undefined}
+                    onChange={(e) => setEndsOn(e.currentTarget.value)}
+                  />
+                </Field>
+              );
+            })()}
           </div>
         ) : (
           <>
