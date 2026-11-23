@@ -314,7 +314,7 @@ export default function Team() {
         )}
       </div>
 
-      <PersonDialog value={edit} onClose={() => setEdit(null)} onSaved={(close = true) => { if (close) setEdit(null); void load(); }} />
+      <PersonDialog value={edit} onClose={() => setEdit(null)} onSaved={(close = true) => { if (close) setEdit(null); void load(); }} isOrganizer={isOrganizer} />
     </div>
   );
 }
@@ -447,7 +447,7 @@ function FilterChips({ value, onChange, eventName }: { value: TeamFilters; onCha
   );
 }
 
-function PersonDialog({ value, onClose, onSaved }: { value: PersonRow | 'new' | null; onClose: () => void; onSaved: (close?: boolean) => void }) {
+function PersonDialog({ value, onClose, onSaved, isOrganizer = false }: { value: PersonRow | 'new' | null; onClose: () => void; onSaved: (close?: boolean) => void; isOrganizer?: boolean }) {
   const cfg = useStore(config);
   const isNew = value === 'new';
   const [email, setEmail] = useState('');
@@ -566,14 +566,23 @@ function PersonDialog({ value, onClose, onSaved }: { value: PersonRow | 'new' | 
             {cfg.events.filter((e) => e.status === 'open').length === 0 && <p class="px-3 py-3 text-sm text-muted">{t('No open events yet — add one in Settings.')}</p>}
           </div>
         </div>
-        <label class="flex items-center gap-2 text-sm font-medium">
-          <input type="checkbox" class="size-4 accent-brand-700" checked={temp} onChange={(e) => setTemp(e.currentTarget.checked)} />
-          {t('Temporary staff — access ends on a date')}
-        </label>
-        {temp && (
-          <Field label={t('Access end date')} for="p-end" hint={t('After this date they cannot sign in; leads already on their phone are still accepted.')}>
-            <input id="p-end" type="date" class="input" value={endsOn} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setEndsOn(e.currentTarget.value)} />
-          </Field>
+        {isOrganizer ? (
+          <div class="rounded-xl border border-line bg-subtle p-3 text-xs text-muted leading-relaxed">
+            <span class="font-bold text-ink block mb-0.5">{t('Event Access')}</span>
+            {t('Access period is automatically governed by your event schedule. Only Super Admin can modify event conclusion dates.')}
+          </div>
+        ) : (
+          <>
+            <label class="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" class="size-4 accent-brand-700" checked={temp} onChange={(e) => setTemp(e.currentTarget.checked)} />
+              {t('Temporary staff — access ends on a date')}
+            </label>
+            {temp && (
+              <Field label={t('Access end date')} for="p-end" hint={t('After this date they cannot sign in; leads already on their phone are still accepted.')}>
+                <input id="p-end" type="date" class="input" value={endsOn} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setEndsOn(e.currentTarget.value)} />
+              </Field>
+            )}
+          </>
         )}
         {err && <p class="text-sm font-medium text-red-700">{err}</p>}
       </div>
