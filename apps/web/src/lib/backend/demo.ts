@@ -2293,7 +2293,9 @@ export function createDemoBackend(): Backend {
     async updateOrganizerEvent(organizerId: string, input: { event_name: string; starts_on: string; ends_on: string; venue?: string; max_logins?: number }) {
       netGuard(); await ready;
       await superAdmin();
-      const ev = (await S.events.toArray()).find((e) => e.organizer_id === organizerId);
+      const allEvents = await S.events.toArray();
+      const orgPerson = await S.people.get(organizerId);
+      const ev = allEvents.find((e) => e.organizer_id === organizerId || e.id === orgPerson?.default_event_id);
       if (ev) {
         await S.events.update(ev.id, {
           name: input.event_name.trim(),
@@ -2308,6 +2310,15 @@ export function createDemoBackend(): Backend {
         access_ends_on: input.ends_on,
         max_logins: input.max_logins ?? undefined,
       });
+
+      // Update all attendees/members linked to this organizer or event
+      const members = (await S.people.toArray()).filter((p) => p.organizer_id === organizerId || (ev && p.default_event_id === ev.id));
+      for (const m of members) {
+        await S.people.update(m.id, {
+          event_ends_on: input.ends_on,
+          access_ends_on: input.ends_on,
+        });
+      }
     },
 
     async registerReferral(input) {

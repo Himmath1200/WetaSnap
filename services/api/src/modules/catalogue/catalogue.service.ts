@@ -97,6 +97,16 @@ export class CatalogueService {
         [company, input.name, input.starts_on, input.ends_on, input.venue ?? '', input.booth ?? '',
           input.status ?? 'open', input.description ?? '', input.time_zone ?? 'UTC', templateId]);
     if (!row) throw notFound('That event');
+
+    // Keep organizers and attendees synced if an existing event's dates were updated
+    if (input.id && input.ends_on) {
+      await this.db.query(
+        `update people set event_ends_on = $2, access_ends_on = $2
+          where (default_event_id = $1 or organizer_id in (select organizer_id from events where id = $1))
+            and role in ('organizer', 'staff')`,
+        [input.id, input.ends_on],
+      );
+    }
     await this.audit.write(me, { action: input.id ? 'event.update' : 'event.create', entity: 'events', entityId: row.id, details: { name: row.name } });
     return row;
   }

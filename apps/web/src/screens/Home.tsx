@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { QrCode, UserPlus, List, ArrowRight, Store, CheckCheck, ChevronRight, TrendingUp, Users, Zap, Calendar, Sparkles, Trash } from 'lucide-preact';
 import { useStore } from '../lib/store';
-import { config, session } from '../lib/session';
+import { config, session, pullConfig } from '../lib/session';
 import { db, type LocalLead } from '../lib/db';
 import { useLive } from '../lib/useLive';
 import { leadName, leadCompany } from '../lib/leads';
@@ -115,7 +115,10 @@ export default function Home() {
   }, [role, online]);
 
   useEffect(() => {
-    if (online) void syncNow();
+    if (online) {
+      void syncNow();
+      void pullConfig();
+    }
   }, [online]);
 
   const scanLimit = (seats?.licence as any)?.scans_per_month ?? 0;

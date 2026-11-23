@@ -624,16 +624,52 @@ export class AdminService {
   }
 
   async updateOrganizerEvent(me: Caller, organizerId: string, input: { event_name: string; starts_on: string; ends_on: string; venue?: string; max_logins?: number }) {
-    await this.db.query(
-      `update events set name = $2, starts_on = $3, ends_on = $4, venue = $5, max_logins = coalesce($6, max_logins)
-        where organizer_id = $1`,
-      [organizerId, input.event_name.trim(), input.starts_on, input.ends_on, input.venue?.trim() || '', input.max_logins ?? null],
+    // 1. Find the organizer and their associated event
+    const org = await this.db.one<any>(
+      `select id, default_event_id from people where id = $1 and role = 'organizer'`,
+      [organizerId],
     );
+    if (!org) throw notFound('That organizer');
+
+    const eventId = org.default_event_id;
+
+    // 2. Update the event table (matches by event id or organizer_id)
+    if (eventId) {
+      await this.db.query(
+        `update events set name = $2, starts_on = $3, ends_on = $4, venue = $5, max_logins = coalesce($6, max_logins)
+          where id = $1 or organizer_id = $7`,
+        [eventId, input.event_name.trim(), input.starts_on, input.ends_on, input.venue?.trim() || '', input.max_logins ?? null, organizerId],
+      );
+    } else {
+      await this.db.query(
+        `update events set name = $2, starts_on = $3, ends_on = $4, venue = $5, max_logins = coalesce($6, max_logins)
+          where organizer_id = $1`,
+        [organizerId, input.event_name.trim(), input.starts_on, input.ends_on, input.venue?.trim() || '', input.max_logins ?? null],
+      );
+    }
+
+    // 3. Update the organizer's own profile dates and limits
     await this.db.query(
       `update people set event_ends_on = $2, access_ends_on = $2, max_logins = coalesce($3, max_logins)
         where id = $1`,
       [organizerId, input.ends_on, input.max_logins ?? null],
     );
+
+    // 4. CRITICAL: Cascade new dates and event limits to ALL attendees / members registered under this organizer or event
+    if (eventId) {
+      await this.db.query(
+        `update people set event_ends_on = $2, access_ends_on = $2
+          where (organizer_id = $1 or default_event_id = $3) and role = 'staff'`,
+        [organizerId, input.ends_on, eventId],
+      );
+    } else {
+      await this.db.query(
+        `update people set event_ends_on = $2, access_ends_on = $2
+          where organizer_id = $1 and role = 'staff'`,
+        [organizerId, input.ends_on],
+      );
+    }
+
     await this.audit.write(me, { action: 'organizer.event_update', entity: 'events', details: input });
   }
 }
