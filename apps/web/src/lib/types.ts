@@ -112,6 +112,7 @@ export interface OrganizerDetail extends Person {
   members_count: number;
   total_scans?: number;
   is_expired?: boolean;
+  events?: EventItem[];
 }
 
 export interface Attachment {

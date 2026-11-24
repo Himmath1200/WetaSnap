@@ -456,6 +456,8 @@ export function createApiBackend(): Backend {
     async updateOrganizerMember(organizerId, memberId, input) { await send(`/v1/admin/organizers/${organizerId}/members/${memberId}`, { method: 'PUT', body: input }); },
     async deleteOrganizerMember(organizerId, memberId) { await send(`/v1/admin/organizers/${organizerId}/members/${memberId}`, { method: 'DELETE' }); },
     async updateOrganizerEvent(organizerId, input) { await send(`/v1/admin/organizers/${organizerId}/event`, { method: 'PUT', body: input }); },
+    async assignOrganizerEvent(organizerId, input) { return send<{ event_id: string }>(`/v1/admin/organizers/${organizerId}/events`, { body: input }); },
+    async unassignOrganizerEvent(organizerId, eventId) { await send(`/v1/admin/organizers/${organizerId}/events/${eventId}`, { method: 'DELETE' }); },
     async registerReferral(input) { return send<SignedIn>('/v1/auth/register-referral', { body: input }); },
   };
 }

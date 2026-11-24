@@ -187,18 +187,21 @@ export class TeamService {
       const target = await this.db.one<any>(`select id, role from people where id = $1 and organizer_id = $2`, [input.id, me.personId]);
       if (!target) throw notFound('That team member');
 
+      const targetEventId = input.default_event_id || input.event_ids?.[0];
+
       // Validate access date within event window if organizer set access_ends_on
       if (input.access_ends_on) {
         const org = await this.db.one<any>(
           `select to_char(event_ends_on, 'YYYY-MM-DD') as event_ends_on, default_event_id from people where id = $1`,
           [me.personId],
         );
+        const checkEventId = targetEventId || org?.default_event_id;
         const ev = await this.db.one<any>(
           `select to_char(e.starts_on, 'YYYY-MM-DD') as starts_on, to_char(e.ends_on, 'YYYY-MM-DD') as ends_on
              from events e
-            where e.id = $2 or e.organizer_id = $1
+            where e.id = $1
             order by e.starts_on desc limit 1`,
-          [me.personId, org?.default_event_id ?? null],
+          [checkEventId],
         );
         const maxEnd = ev?.ends_on || org?.event_ends_on;
         const minStart = ev?.starts_on;
@@ -220,11 +223,18 @@ export class TeamService {
       await this.db.query(
         `update people set name = $2, phone = $3, active = $4,
                 access_ends_on = $5,
+                default_event_id = coalesce($6, default_event_id),
                 deactivated_at = case when $4 then null else coalesce(deactivated_at, now()) end
            where id = $1`,
-        [input.id, input.name, input.phone, input.active, input.access_ends_on ?? null],
+        [input.id, input.name, input.phone, input.active, input.access_ends_on ?? null, targetEventId ?? null],
       );
-      await this.audit.write(me, { action: 'team.update', entity: 'people', entityId: input.id, details: { active: input.active, access_ends_on: input.access_ends_on } });
+      if (targetEventId) {
+        await this.db.query(
+          `insert into person_events (person_id, event_id) values ($1, $2) on conflict do nothing`,
+          [input.id, targetEventId],
+        );
+      }
+      await this.audit.write(me, { action: 'team.update', entity: 'people', entityId: input.id, details: { active: input.active, access_ends_on: input.access_ends_on, default_event_id: targetEventId } });
       return;
     }
 

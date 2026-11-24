@@ -121,9 +121,12 @@ export class SessionService {
     }
     if (!session.active) throw unauthorized('This account can no longer sign in.');
     if (session.access_ends_on) {
-      const deadline = new Date(session.access_ends_on).getTime() + 24 * 3600_000;
-      if (Date.now() > deadline) {
-        throw unauthorized('This account’s access and 24-hour export grace period have ended.');
+      const today = new Date().toISOString().slice(0, 10);
+      const d = new Date(session.access_ends_on + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + 1);
+      const graceDate = d.toISOString().slice(0, 10);
+      if (today > graceDate) {
+        throw unauthorized(`This account's access and 24-hour export grace period ended on ${graceDate}.`);
       }
     }
     if (session.suspended) {

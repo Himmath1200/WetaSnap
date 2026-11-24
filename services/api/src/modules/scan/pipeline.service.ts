@@ -60,6 +60,25 @@ export class PipelineService {
   async read(me: Caller, request: ReadRequest): Promise<ReadOutcome> {
     const started = Date.now();
 
+    // Verify scanning access has not concluded
+    const person = await this.db.one<any>(
+      `select to_char(access_ends_on, 'YYYY-MM-DD') as access_ends_on,
+              to_char(event_ends_on, 'YYYY-MM-DD') as event_ends_on
+         from people where id = $1`,
+      [me.personId],
+    );
+    const cutoff = person?.access_ends_on || person?.event_ends_on;
+    if (cutoff) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (today > cutoff) {
+        throw new DomainError(
+          `Your scanning access completed on ${cutoff}. Your account is currently open for exporting leads only.`,
+          403,
+          'scanning_ended',
+        );
+      }
+    }
+
     // 2 · quality. A poor image is refused here rather than read badly.
     const quality = await measure(request.image);
     if (quality.verdict === 'poor' && !request.crop) {

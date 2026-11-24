@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { DomainError } from '../../common/errors';
 import { CurrentSession, Public, RateLimit, Stage, bearer, clientIp } from '../../common/guards';
 import type { Session } from '../../common/session.service';
-import { code6, email as emailSchema, parse } from '../../common/validation';
+import { code6, email as emailSchema, parse, uuid } from '../../common/validation';
 import { AuthService, type Where } from './auth.service';
 import { PasswordService, SETUP_MINUTES } from './password.service';
 import { PeopleService } from './people.service';
@@ -36,6 +36,7 @@ const referralBody = z.object({
   phone: z.string().min(6, 'Please enter a valid mobile number.').max(30),
   password: z.string().min(6, 'Password must be at least 6 characters.').max(200),
   referral_code: z.string().min(3).max(30),
+  event_id: uuid.optional(),
 });
 const forgotBody = z.object({ email: emailSchema });
 const resetBody = z.object({ email: emailSchema, code: code6, password: z.string().min(1).max(200) });

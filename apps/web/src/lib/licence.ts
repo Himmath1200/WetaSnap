@@ -30,3 +30,32 @@ export function holdsSeat(p: { active: boolean; access_ends_on: string | null; r
   if (!p.active || p.role === 'super_admin') return false;
   return !p.access_ends_on || new Date(p.access_ends_on + 'T23:59:59').getTime() >= now.getTime();
 }
+
+/**
+ * Access + 24-hour export grace period status:
+ * - If today <= accessEndsOn: active scanning & lead capture allowed.
+ * - If today > accessEndsOn && today <= graceEndsOn (access date + 1 day):
+ *   account is OPEN for viewing and exporting leads, but scanning is disabled.
+ * - If today > graceEndsOn: account access expired.
+ */
+export function getAccessGraceStatus(effectiveCutoff?: string | null, now = new Date()) {
+  if (!effectiveCutoff) {
+    return { isExpired: false, isExportOnly: false, canScan: true, accessEndsOn: null, graceEndsOn: null };
+  }
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const today = `${y}-${m}-${d}`;
+
+  const graceDateObj = new Date(effectiveCutoff + 'T00:00:00Z');
+  graceDateObj.setUTCDate(graceDateObj.getUTCDate() + 1);
+  const graceEndsOn = graceDateObj.toISOString().slice(0, 10);
+
+  if (today <= effectiveCutoff) {
+    return { isExpired: false, isExportOnly: false, canScan: true, accessEndsOn: effectiveCutoff, graceEndsOn };
+  } else if (today <= graceEndsOn) {
+    return { isExpired: false, isExportOnly: true, canScan: false, accessEndsOn: effectiveCutoff, graceEndsOn };
+  } else {
+    return { isExpired: true, isExportOnly: false, canScan: false, accessEndsOn: effectiveCutoff, graceEndsOn };
+  }
+}

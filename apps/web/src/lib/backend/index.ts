@@ -288,7 +288,16 @@ export interface Backend {
   updateOrganizerMember(organizerId: string, memberId: string, input: { active?: boolean; name?: string; phone?: string }): Promise<void>;
   deleteOrganizerMember(organizerId: string, memberId: string): Promise<void>;
   updateOrganizerEvent(organizerId: string, input: { event_name: string; starts_on: string; ends_on: string; venue?: string; max_logins?: number }): Promise<void>;
-  registerReferral(input: { name: string; email: string; phone?: string; password?: string; referral_code: string }): Promise<SignedIn>;
+  assignOrganizerEvent(organizerId: string, input: {
+    event_id?: string;
+    event_name?: string;
+    starts_on?: string;
+    ends_on?: string;
+    venue?: string;
+    max_logins?: number;
+  }): Promise<{ event_id: string }>;
+  unassignOrganizerEvent(organizerId: string, eventId: string): Promise<void>;
+  registerReferral(input: { name: string; email: string; phone?: string; password?: string; referral_code: string; event_id?: string }): Promise<SignedIn>;
 }
 
 /**

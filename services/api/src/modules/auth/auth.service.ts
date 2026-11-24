@@ -93,14 +93,17 @@ export class AuthService {
     if (!person.active) throw unauthorized('This account can no longer sign in. Ask your admin.');
 
     // 24-hour grace period enforcement:
-    // If attendee has access_ends_on, their access concludes on that date and they have 24 hours to export data.
-    // If person has event_ends_on, the overall event cutoff applies with 24 hours grace.
+    // If attendee has access_ends_on or event_ends_on, their scanning access concludes on that date.
+    // The account remains open through the next full day (grace date) for lead export.
     const effectiveCutoff = person.access_ends_on || person.event_ends_on;
     if (effectiveCutoff) {
-      const deadline = new Date(effectiveCutoff).getTime() + 24 * 3600_000;
-      if (Date.now() > deadline) {
+      const today = new Date().toISOString().slice(0, 10);
+      const d = new Date(effectiveCutoff + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + 1);
+      const graceDate = d.toISOString().slice(0, 10);
+      if (today > graceDate) {
         await this.db.query('update people set active = false where id = $1', [person.id]);
-        throw unauthorized('Your access period and the 24-hour export grace period have ended. Account access is now deactivated.');
+        throw unauthorized(`Your access period and 24-hour export grace period ended on ${graceDate}. Account is now deactivated.`);
       }
     }
     if (person.suspended) {
@@ -358,7 +361,7 @@ export class AuthService {
     return this.finish(session.token, session.id, id, where);
   }
 
-  async registerReferral(input: { name: string; email: string; phone?: string; password?: string; referral_code: string }, where: Where): Promise<SignedIn> {
+  async registerReferral(input: { name: string; email: string; phone?: string; password?: string; referral_code: string; event_id?: string }, where: Where): Promise<SignedIn> {
     const address = input.email.trim().toLowerCase();
     const existing = await this.db.one<{ id: string }>(`select id from people where lower(email) = lower($1)`, [address]);
     if (existing) {
@@ -388,6 +391,21 @@ export class AuthService {
       throw new DomainError('Invalid or expired referral code. Check the code provided by your organizer.', 404, 'invalid_referral');
     }
 
+    let targetEventId = org.default_event_id;
+    let targetEventEndsOn = org.event_ends_on;
+
+    if (input.event_id) {
+      const ev = await this.db.one<any>(
+        `select id, to_char(ends_on, 'YYYY-MM-DD') as ends_on from events
+          where id = $1 and (organizer_id = $2 or id in (select event_id from person_events where person_id = $2))`,
+        [input.event_id, org.id],
+      );
+      if (ev) {
+        targetEventId = ev.id;
+        targetEventEndsOn = ev.ends_on || org.event_ends_on;
+      }
+    }
+
     // Check login count limit
     const memberCount = await this.db.one<{ n: number }>(
       `select count(*)::int as n from people where organizer_id = $1 and active`,
@@ -398,8 +416,8 @@ export class AuthService {
     }
 
     // Check 24-hour post-event expiry
-    if (org.event_ends_on) {
-      const deadline = new Date(org.event_ends_on).getTime() + 24 * 3600_000;
+    if (targetEventEndsOn) {
+      const deadline = new Date(targetEventEndsOn).getTime() + 24 * 3600_000;
       if (Date.now() > deadline) {
         throw new DomainError('This event concluded more than 24 hours ago. Registrations for this event are closed.', 403, 'event_expired');
       }
@@ -413,17 +431,17 @@ export class AuthService {
       await c.query(
         `insert into people (id, company_id, organizer_id, email, name, phone, role, default_event_id, event_ends_on, access_ends_on, active, invited, has_password, mfa_enabled)
          values ($1, null, $2, $3, $4, '', 'staff', $5, $6, $7, true, false, true, false)`,
-        [id, org.id, address, input.name.trim() || 'Event Member', org.default_event_id, org.event_ends_on, org.event_ends_on],
+        [id, org.id, address, input.name.trim() || 'Event Member', targetEventId, targetEventEndsOn, targetEventEndsOn],
       );
       await c.query(
         `insert into person_credentials (person_id, password_hash, history, changed_at, failed, locked_until)
          values ($1, $2, '{}', now(), 0, null)`,
         [id, hash],
       );
-      if (org.default_event_id) {
+      if (targetEventId) {
         await c.query(
           `insert into person_events (person_id, event_id) values ($1, $2) on conflict do nothing`,
-          [id, org.default_event_id],
+          [id, targetEventId],
         );
       }
     });

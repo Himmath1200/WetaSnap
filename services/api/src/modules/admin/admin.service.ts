@@ -555,19 +555,36 @@ export class AdminService {
       `select p.id, p.email, p.name, p.phone, p.role::text as role,
               p.referral_code, coalesce(p.max_logins, 10) as max_logins,
               to_char(p.event_ends_on, 'YYYY-MM-DD') as event_ends_on,
+              to_char(p.access_ends_on, 'YYYY-MM-DD') as access_ends_on,
               p.active, p.invited, p.avatar_url,
               e.id as event_id, e.name as event_name, to_char(e.starts_on, 'YYYY-MM-DD') as starts_on,
               to_char(e.ends_on, 'YYYY-MM-DD') as ends_on, e.venue,
               case when e.ends_on is not null and now() > (e.ends_on + interval '24 hours') then true else false end as is_expired
          from people p
     left join events e on e.organizer_id = p.id or e.id = p.default_event_id
-        where p.id = $1 and p.role = 'organizer'`,
+        where p.id = $1 and p.role = 'organizer'
+        order by e.starts_on desc limit 1`,
       [id],
     );
     if (!org) throw notFound('That organizer');
 
+    const events = await this.db.query<any>(
+      `select distinct e.id, e.name, to_char(e.starts_on, 'YYYY-MM-DD') as starts_on,
+              to_char(e.ends_on, 'YYYY-MM-DD') as ends_on, e.venue, e.status::text as status,
+              (select count(*)::int from people m where (m.default_event_id = e.id or e.id in (select pe.event_id from person_events pe where pe.person_id = m.id)) and (m.organizer_id = $1 or m.id = $1)) as event_members_count
+         from events e
+        where e.organizer_id = $1
+           or e.id in (select event_id from person_events where person_id = $1)
+           or e.id = $2
+        order by starts_on desc`,
+      [id, org.default_event_id ?? null],
+    );
+
     const members = await this.db.query<any>(
       `select m.id, m.email, m.name, m.phone, m.role::text as role, m.active,
+              m.default_event_id,
+              (select e.name from events e where e.id = m.default_event_id) as event_name,
+              to_char(m.access_ends_on, 'YYYY-MM-DD') as access_ends_on,
               to_char(m.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
               (select count(*)::int from leads l where l.captured_by = m.id and l.deleted_at is null) as lead_count
          from people m
@@ -585,9 +602,77 @@ export class AdminService {
 
     return {
       organizer: org,
+      events,
       members,
       total_scans: totalScansRow?.count ?? 0,
     };
+  }
+
+  async assignOrganizerEvent(me: Caller, organizerId: string, input: {
+    event_id?: string;
+    event_name?: string;
+    starts_on?: string;
+    ends_on?: string;
+    venue?: string;
+    max_logins?: number;
+  }) {
+    const org = await this.db.one<any>(`select id, default_event_id from people where id = $1 and role = 'organizer'`, [organizerId]);
+    if (!org) throw notFound('That organizer');
+
+    let eventId = input.event_id;
+
+    if (!eventId) {
+      if (!input.event_name || !input.starts_on || !input.ends_on) {
+        throw new DomainError('Event name, start date and end date are required to create a new event.', 400);
+      }
+      const newEv = await this.db.one<any>(
+        `insert into events (company_id, name, starts_on, ends_on, venue, booth, status, description, organizer_id, max_logins)
+         values (null, $1, $2, $3, $4, '', 'open', 'Organizer event', $5, $6)
+         returning id`,
+        [input.event_name.trim(), input.starts_on, input.ends_on, input.venue?.trim() || '', organizerId, input.max_logins ?? 10],
+      );
+      eventId = newEv.id;
+    } else {
+      await this.db.query(
+        `update events set organizer_id = coalesce(organizer_id, $1) where id = $2`,
+        [organizerId, eventId],
+      );
+    }
+
+    await this.db.query(
+      `insert into person_events (person_id, event_id) values ($1, $2) on conflict do nothing`,
+      [organizerId, eventId],
+    );
+
+    if (!org.default_event_id) {
+      await this.db.query(`update people set default_event_id = $2 where id = $1`, [organizerId, eventId]);
+    }
+
+    await this.audit.write(me, { action: 'organizer.assign_event', entity: 'events', entityId: eventId, details: { organizerId } });
+    return { event_id: eventId };
+  }
+
+  async unassignOrganizerEvent(me: Caller, organizerId: string, eventId: string) {
+    await this.db.query(
+      `delete from person_events where person_id = $1 and event_id = $2`,
+      [organizerId, eventId],
+    );
+    await this.db.query(
+      `update events set organizer_id = null where id = $2 and organizer_id = $1`,
+      [organizerId, eventId],
+    );
+
+    const other = await this.db.one<any>(
+      `select event_id from person_events where person_id = $1 and event_id <> $2 limit 1`,
+      [organizerId, eventId],
+    );
+    await this.db.query(
+      `update people set default_event_id = $2 where id = $1 and default_event_id = $3`,
+      [organizerId, other?.event_id ?? null, eventId],
+    );
+
+    await this.audit.write(me, { action: 'organizer.unassign_event', entity: 'events', entityId: eventId, details: { organizerId } });
+    return { ok: true };
   }
 
   async updateOrganizerMember(me: Caller, organizerId: string, memberId: string, input: { active?: boolean; name?: string; phone?: string }) {

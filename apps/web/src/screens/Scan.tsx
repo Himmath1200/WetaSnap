@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { Camera as CameraIcon, Keyboard, Upload, Images, ArrowLeft, RotateCcw, Share2, UserPlus, X, Lock, CalendarClock } from 'lucide-preact';
+import { Camera as CameraIcon, Keyboard, Upload, Images, ArrowLeft, ArrowRight, RotateCcw, Share2, UserPlus, X, Lock, CalendarClock } from 'lucide-preact';
 import { Camera, type CameraHandle } from '../components/Camera';
 import { LeadForm, ReadBadge, draftErrors, type Draft, type ReadState } from '../components/LeadForm';
 import { TagPicker } from '../components/TagPicker';
@@ -17,6 +17,8 @@ import { readOffline } from '../lib/offlineReader';
 import { localOcrAvailable, readWithLocalOcr } from '../lib/ocr';
 import { geminiAvailable, hasLowConfidenceField, verifyLowConfidenceWithGemini } from '../lib/gemini';
 import { ClipboardFallback, saveToPhone, shareContact } from '../lib/contact';
+import { getAccessGraceStatus } from '../lib/licence';
+import { linkFor } from '../lib/portal';
 import { getFollowUpConfig } from '../lib/followup';
 import { FollowUpModal } from '../components/FollowUpModal';
 import { t, tn } from '../lib/i18n';
@@ -78,20 +80,17 @@ export default function Scan() {
   }, [s.company?.id]);
   const isFreeOverLimit = isIndividual && s.person.plan !== 'pro' && activeScans >= 5;
 
+  const cutoff = (s.person.role === 'staff' && s.person.access_ends_on)
+    ? s.person.access_ends_on
+    : (s.person.event_ends_on ?? event?.ends_on);
+  const graceStatus = getAccessGraceStatus(cutoff);
+
   function eventBlockReason() {
+    if (!graceStatus.canScan) return t('ended');
     if (!event || isIndividual) return null;
-    const now = Date.now();
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const start = new Date(event.starts_on); start.setHours(0, 0, 0, 0);
     const end = new Date(event.ends_on); end.setHours(23, 59, 59, 999);
-
-    // If attendee has custom access_ends_on earlier than event end date
-    if (s.person.access_ends_on) {
-      const accessEnd = new Date(s.person.access_ends_on);
-      accessEnd.setHours(23, 59, 59, 999);
-      if (now > accessEnd.getTime()) return t('ended');
-    }
-
     if (today < start) return t('upcoming');
     if (today > end || event.status === 'closed') return t('ended');
     return null;
@@ -464,13 +463,22 @@ export default function Scan() {
         <div class="relative min-h-0 flex-1">
           {eventBlocked ? (
             <div class="flex size-full flex-col items-center justify-center gap-3 bg-subtle p-6 text-center">
-              <span class="flex size-16 items-center justify-center rounded-full bg-red-100 text-red-600">
+              <span class="flex size-16 items-center justify-center rounded-full bg-amber-100 text-amber-700">
                 <Lock class="size-8" />
               </span>
-              <p class="text-sm font-bold text-ink">{t('Event Scanning Closed')}</p>
+              <p class="text-base font-bold text-ink">{t('Scanning Access Completed')}</p>
               <p class="max-w-xs text-xs text-muted leading-relaxed">
-                {t('This event has ended. You can view existing scans but no new cards can be scanned.')}
+                {graceStatus.accessEndsOn
+                  ? t('Your scanning access concluded on {date}. New scanning is disabled. Your account is currently open for exporting and viewing your leads until {graceDate}.', {
+                      date: new Date(graceStatus.accessEndsOn).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+                      graceDate: graceStatus.graceEndsOn ? new Date(graceStatus.graceEndsOn).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+                    })
+                  : t('This event has ended. You can view existing scans but no new cards can be scanned.')}
               </p>
+              <a href={linkFor(s.person.role, '/leads')} class="btn-primary mt-2 text-xs font-semibold px-4 py-2 gap-1.5 inline-flex items-center">
+                <span>{t('View & Export Leads')}</span>
+                <ArrowRight class="size-3.5" />
+              </a>
             </div>
           ) : (
             <Camera active={!eventBlocked} handle={(h) => { cam.current = h; }} onCapture={onCapture} />

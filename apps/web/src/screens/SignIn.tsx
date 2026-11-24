@@ -73,6 +73,7 @@ export default function SignIn({ door }: { door: Door }) {
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regCode, setRegCode] = useState('');
+  const [regEventId, setRegEventId] = useState('');
   const [phoneOtpStage, setPhoneOtpStage] = useState(false);
   const [phoneOtpCode, setPhoneOtpCode] = useState('');
   const [expectedPhoneOtp, setExpectedPhoneOtp] = useState('');
@@ -128,6 +129,7 @@ export default function SignIn({ door }: { door: Door }) {
           phone: normalizedPhone,
           password: regPassword,
           referral_code: regCode.trim(),
+          event_id: regEventId || undefined,
         })
         : await (await backend()).registerIndividual({
           name: regName.trim(),
@@ -147,10 +149,14 @@ export default function SignIn({ door }: { door: Door }) {
     if (typeof window !== 'undefined') {
       const p = new URLSearchParams(window.location.search);
       const ref = p.get('ref') || p.get('code');
+      const ev = p.get('event');
       if (ref) {
         setRegCode(ref.trim().toUpperCase());
         setRegType('referral');
         setStep('register');
+      }
+      if (ev) {
+        setRegEventId(ev.trim());
       }
     }
   }, []);

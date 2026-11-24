@@ -1449,11 +1449,13 @@ function OrganizerDetailPanel({
 }) {
   const [data, setData] = useState<{
     organizer: OrganizerDetail;
-    members: (Person & { lead_count?: number })[];
+    events?: EventItem[];
+    members: (Person & { lead_count?: number; event_name?: string })[];
     total_scans: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editEventOpen, setEditEventOpen] = useState(false);
+  const [assignEventOpen, setAssignEventOpen] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
 
@@ -1591,30 +1593,76 @@ function OrganizerDetailPanel({
             </p>
           </div>
 
-          {/* Event Details Card */}
+          {/* Assigned Events Card (Multi-Event Support) */}
           <div class="card p-4 space-y-3">
-            <div class="flex items-center justify-between">
-              <h3 class="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
-                <Store class="size-3.5 text-ocean-600" />
-                <span>{t('Assigned Event Details')}</span>
-              </h3>
-              <button
-                class="btn-secondary h-7 px-2.5 text-xs font-semibold gap-1"
-                onClick={() => setEditEventOpen(true)}
-              >
-                <Edit3 class="size-3" />
-                <span>{t('Edit event')}</span>
-              </button>
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                  <Store class="size-3.5 text-ocean-600" />
+                  <span>{t('Assigned Events ({n})', { n: (data.events?.length || (org.event_name ? 1 : 0)) })}</span>
+                </h3>
+                <p class="text-[11px] text-muted">{t('Organizer can manage attendees and capture leads across these events.')}</p>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button
+                  class="btn-secondary h-7 px-2.5 text-xs font-semibold gap-1 text-brand-700 hover:bg-brand-50"
+                  onClick={() => setAssignEventOpen(true)}
+                >
+                  <Plus class="size-3 text-brand-600" />
+                  <span>{t('Assign event')}</span>
+                </button>
+                <button
+                  class="btn-secondary h-7 px-2.5 text-xs font-semibold gap-1"
+                  onClick={() => setEditEventOpen(true)}
+                >
+                  <Edit3 class="size-3" />
+                  <span>{t('Edit limits')}</span>
+                </button>
+              </div>
             </div>
 
-            <div class="space-y-1.5 text-xs">
-              <p><strong class="text-ink">{t('Event Name:')}</strong> {org.event_name}</p>
-              {org.venue && <p><strong class="text-ink">{t('Venue:')}</strong> {org.venue}</p>}
-              <p>
-                <strong class="text-ink">{t('Dates:')}</strong>{' '}
-                {org.starts_on && org.ends_on ? `${new Date(org.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${new Date(org.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : '—'}
-              </p>
-              <p><strong class="text-ink">{t('Allowed Logins:')}</strong> {org.max_logins ?? 10} {t('participants max')}</p>
+            <div class="divide-y divide-line rounded-xl border border-line bg-subtle/50 overflow-hidden">
+              {(data.events && data.events.length > 0 ? data.events : [
+                { id: org.event_id || 'default', name: org.event_name || t('Assigned Event'), starts_on: org.starts_on || '', ends_on: org.ends_on || '', venue: org.venue || '' } as EventItem
+              ]).map((ev) => (
+                <div key={ev.id} class="p-3 bg-surface flex flex-wrap items-center justify-between gap-2">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                      <span class="font-bold text-ink text-xs truncate">{ev.name}</span>
+                      {ev.id === org.default_event_id && (
+                        <span class="pill bg-brand-50 text-brand-700 text-[10px] font-semibold">{t('Primary')}</span>
+                      )}
+                    </div>
+                    <p class="text-[11px] text-muted mt-0.5">
+                      {ev.starts_on && ev.ends_on
+                        ? `${new Date(ev.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${new Date(ev.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+                        : '—'}
+                      {ev.venue ? ` · ${ev.venue}` : ''}
+                    </p>
+                  </div>
+                  {data.events && data.events.length > 1 && (
+                    <button
+                      type="button"
+                      class="text-xs text-red-600 hover:text-red-700 px-2 py-1 hover:bg-red-50 rounded font-semibold cursor-pointer"
+                      onClick={async () => {
+                        if (!confirm(t('Unassign "{name}" from this organizer?', { name: ev.name }))) return;
+                        try {
+                          await (await backend()).unassignOrganizerEvent(org.id, ev.id);
+                          toast(t('Event unassigned successfully'), 'success');
+                          await load();
+                        } catch (e) {
+                          toast((e as Error).message, 'error');
+                        }
+                      }}
+                    >
+                      {t('Unassign')}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div class="flex items-center justify-between text-xs text-muted pt-1">
+              <span>{t('Allowed Logins: {count} participants max', { count: org.max_logins ?? 10 })}</span>
             </div>
           </div>
 
@@ -1712,7 +1760,144 @@ function OrganizerDetailPanel({
           }}
         />
       )}
+
+      {assignEventOpen && (
+        <AssignOrganizerEventModal
+          organizerId={org.id}
+          onClose={() => setAssignEventOpen(false)}
+          onDone={() => {
+            setAssignEventOpen(false);
+            void load();
+            void onRefresh();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+function AssignOrganizerEventModal({
+  organizerId,
+  onClose,
+  onDone,
+}: {
+  organizerId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [eventsList, setEventsList] = useState<EventItem[]>([]);
+  const [mode, setMode] = useState<'existing' | 'new'>('existing');
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [eventName, setEventName] = useState('');
+  const [startsOn, setStartsOn] = useState(new Date().toISOString().slice(0, 10));
+  const [endsOn, setEndsOn] = useState(new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10));
+  const [venue, setVenue] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    backend().then((b) => b.events()).then((evs) => {
+      setEventsList(evs);
+      if (evs.length > 0 && !selectedEventId) {
+        setSelectedEventId(evs[0].id);
+      }
+    }).catch(() => {});
+  }, []);
+
+  async function save() {
+    if (mode === 'new') {
+      if (!eventName.trim()) { toast(t('Please enter event name.'), 'error'); return; }
+      if (new Date(startsOn).getTime() > new Date(endsOn).getTime()) {
+        toast(t('Event start date must be before or on end date.'), 'error'); return;
+      }
+    } else if (!selectedEventId) {
+      toast(t('Please select an event.'), 'error'); return;
+    }
+
+    setBusy(true);
+    try {
+      await (await backend()).assignOrganizerEvent(organizerId, {
+        event_id: mode === 'existing' ? selectedEventId : undefined,
+        event_name: mode === 'new' ? eventName : undefined,
+        starts_on: mode === 'new' ? startsOn : undefined,
+        ends_on: mode === 'new' ? endsOn : undefined,
+        venue: mode === 'new' ? venue : undefined,
+      });
+      toast(t('Event assigned to organizer successfully!'), 'success');
+      onDone();
+    } catch (e) {
+      toast((e as Error).message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet open onClose={onClose} centered wide title={t('Assign Event to Organizer')}
+      footer={<>
+        <button class="btn-ghost" onClick={onClose}>{t('Cancel')}</button>
+        <button class="btn-primary min-w-32 font-bold" disabled={busy} onClick={() => void save()}>
+          {busy ? <Spinner class="size-4" /> : t('Assign event')}
+        </button>
+      </>}>
+      <div class="space-y-4">
+        <div class="flex rounded-xl bg-subtle p-1 border border-line">
+          <button
+            type="button"
+            class={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${mode === 'existing' ? 'bg-surface shadow-xs text-ink' : 'text-muted hover:text-ink'}`}
+            onClick={() => setMode('existing')}
+          >
+            {t('Assign existing event')}
+          </button>
+          <button
+            type="button"
+            class={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${mode === 'new' ? 'bg-surface shadow-xs text-ink' : 'text-muted hover:text-ink'}`}
+            onClick={() => setMode('new')}
+          >
+            {t('Create & assign new event')}
+          </button>
+        </div>
+
+        {mode === 'existing' ? (
+          <Field label={t('Select platform event')} for="assign-ev-select">
+            {eventsList.length === 0 ? (
+              <p class="text-xs text-muted py-2">{t('No existing events found. Choose "Create new event" above.')}</p>
+            ) : (
+              <select
+                id="assign-ev-select"
+                class="input"
+                value={selectedEventId}
+                onChange={(e) => setSelectedEventId(e.currentTarget.value)}
+              >
+                {eventsList.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} ({new Date(e.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' })} – {new Date(e.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })})
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        ) : (
+          <>
+            <Field label={t('Event name')} for="new-ev-name">
+              <input id="new-ev-name" class="input" value={eventName} onInput={(e) => setEventName(e.currentTarget.value)} placeholder="e.g. Global Tech Expo 2026" />
+            </Field>
+
+            <div class="grid grid-cols-2 gap-3">
+              <Field label={t('Starts on')} for="new-ev-start">
+                <input id="new-ev-start" type="date" class="input" value={startsOn} onChange={(e) => setStartsOn(e.currentTarget.value)} />
+              </Field>
+              <Field label={t('Ends on')} for="new-ev-end">
+                <input id="new-ev-end" type="date" class="input" value={endsOn} onChange={(e) => setEndsOn(e.currentTarget.value)} />
+              </Field>
+            </div>
+
+            <Field label={t('Venue')} for="new-ev-venue">
+              <input id="new-ev-venue" class="input" value={venue} onInput={(e) => setVenue(e.currentTarget.value)} placeholder="Hall 3, Stand B12" />
+            </Field>
+          </>
+        )}
+      </div>
+    </Sheet>
   );
 }
 

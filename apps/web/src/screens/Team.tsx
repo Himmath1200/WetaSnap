@@ -38,6 +38,14 @@ export default function Team() {
   const [filters, setFilters] = useState<TeamFilters>(noFilters);
   const [sort, setSort] = useState<Sort>({ key: 'name', dir: 'asc' });
   const [edit, setEdit] = useState<PersonRow | 'new' | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string>('all');
+  const [referralEventId, setReferralEventId] = useState<string>('');
+
+  useEffect(() => {
+    if (cfg.events.length > 0 && !referralEventId) {
+      setReferralEventId(cfg.events[0].id);
+    }
+  }, [cfg.events]);
 
   const load = async () => {
     const b = await backend();
@@ -65,6 +73,10 @@ export default function Team() {
       .filter((p) => !filters.roles.length || filters.roles.includes(p.role as TeamRole))
       .filter((p) => !filters.statuses.length || filters.statuses.includes(p.status))
       .filter((p) => !filters.event_ids.length || filters.event_ids.some((id) => p.event_ids.includes(id)))
+      .filter((p) => {
+        if (!isOrganizer || selectedEventId === 'all') return true;
+        return p.default_event_id === selectedEventId || p.event_ids.includes(selectedEventId) || p.id === currentPerson?.id;
+      })
       .sort((a, b) => {
         const x = key(a); const y = key(b);
         if (typeof x === 'number' && typeof y === 'number') return (x - y) * dir;
@@ -109,8 +121,8 @@ export default function Team() {
   const orgSlug = (currentPerson?.name || 'organizer').toLowerCase().replace(/[^a-z0-9]/g, '');
   const vanityDomain = `wetano.${orgSlug}.com`;
   const liveReferralUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}/signin?ref=${currentPerson?.referral_code ?? ''}`
-    : `https://app.wetasnap.com/signin?ref=${currentPerson?.referral_code ?? ''}`;
+    ? `${window.location.origin}/signin?ref=${currentPerson?.referral_code ?? ''}${referralEventId ? `&event=${referralEventId}` : ''}`
+    : `https://app.wetasnap.com/signin?ref=${currentPerson?.referral_code ?? ''}${referralEventId ? `&event=${referralEventId}` : ''}`;
 
   return (
     <div class="mx-auto w-full max-w-7xl">
@@ -154,9 +166,60 @@ export default function Team() {
               <span>{t('Copy link')}</span>
             </button>
           </div>
+          {cfg.events.length > 1 && (
+            <div class="flex items-center gap-2 pt-1 border-t border-line/60">
+              <span class="text-xs text-muted font-medium">{t('Generate link for event:')}</span>
+              <select
+                class="input py-1 px-2.5 text-xs h-7 min-w-48 max-w-xs"
+                value={referralEventId}
+                onChange={(e) => setReferralEventId(e.currentTarget.value)}
+              >
+                {cfg.events.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <p class="text-[11px] text-muted">
             {t('Send this link to your team members or attendees. When they register, they automatically join your event as active scanners.')}
           </p>
+        </div>
+      )}
+
+      {/* Event Tabs / Event-wise selector for Organizers */}
+      {isOrganizer && cfg.events.length > 1 && (
+        <div class="mb-4 flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-line">
+          <button
+            type="button"
+            onClick={() => setSelectedEventId('all')}
+            class={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              selectedEventId === 'all'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-subtle text-muted hover:text-ink hover:bg-surface border border-line'
+            }`}
+          >
+            {t('All Events')} ({people?.length ?? 0})
+          </button>
+          {cfg.events.map((ev) => {
+            const count = (people ?? []).filter((p) => p.default_event_id === ev.id || p.event_ids.includes(ev.id)).length;
+            return (
+              <button
+                key={ev.id}
+                type="button"
+                onClick={() => setSelectedEventId(ev.id)}
+                class={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  selectedEventId === ev.id
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-subtle text-muted hover:text-ink hover:bg-surface border border-line'
+                }`}
+              >
+                <span>{ev.name}</span>
+                <span class="rounded-full bg-black/10 dark:bg-white/10 px-1.5 py-0.2 text-[10px]">{count}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -565,27 +628,49 @@ function PersonDialog({ value, onClose, onSaved, isOrganizer = false, currentPer
           </div>
           {isSelf && <p class="mt-1.5 text-xs text-muted">{t('This is your own account — you cannot deactivate it or change its role. Ask another admin.')}</p>}
         </div>
-        <div>
-          <div class="flex items-baseline justify-between">
-            <span class="label">{t('Events')}</span>
-            <span class="mb-1 text-[11px] text-muted">{eventIds.length ? t('First one is their default') : t('None selected')}</span>
+        {isOrganizer && cfg.events.length > 0 ? (
+          <div>
+            <Field label={t('Assigned Event')} for="p-event" hint={t('Assigns this attendee to the selected event')}>
+              <select
+                id="p-event"
+                class="input"
+                value={eventIds[0] || currentPerson?.default_event_id || cfg.events[0]?.id}
+                onChange={(e) => {
+                  const newId = e.currentTarget.value;
+                  setEventIds([newId]);
+                }}
+              >
+                {cfg.events.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} ({new Date(e.starts_on).toLocaleDateString([], { month: 'short', day: 'numeric' })} – {new Date(e.ends_on).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })})
+                  </option>
+                ))}
+              </select>
+            </Field>
           </div>
-          <div class="max-h-40 overflow-y-auto rounded-xl border border-line">
-            {cfg.events.filter((e) => e.status === 'open').map((e) => {
-              const on = eventIds.includes(e.id);
-              return (
-                <button key={e.id} type="button" aria-pressed={on}
-                  class={`flex w-full items-center gap-2 border-b border-line min-h-11 px-3 py-2 text-left text-sm last:border-b-0 ${on ? 'bg-ocean-50' : 'hover:bg-subtle'}`}
-                  onClick={() => setEventIds(on ? eventIds.filter((x) => x !== e.id) : [...eventIds, e.id])}>
-                  <span class={`flex size-4 shrink-0 items-center justify-center rounded border ${on ? 'border-ocean-600 bg-ocean-600 text-white' : 'border-line'}`}>{on && <Check class="size-3" />}</span>
-                  <span class="min-w-0 flex-1 truncate">{e.name}</span>
-                  {on && eventIds[0] === e.id && <span class="pill bg-brand-100 text-brand-800">{t('Default')}</span>}
-                </button>
-              );
-            })}
-            {cfg.events.filter((e) => e.status === 'open').length === 0 && <p class="px-3 py-3 text-sm text-muted">{t('No open events yet — add one in Settings.')}</p>}
+        ) : (
+          <div>
+            <div class="flex items-baseline justify-between">
+              <span class="label">{t('Events')}</span>
+              <span class="mb-1 text-[11px] text-muted">{eventIds.length ? t('First one is their default') : t('None selected')}</span>
+            </div>
+            <div class="max-h-40 overflow-y-auto rounded-xl border border-line">
+              {cfg.events.filter((e) => e.status === 'open').map((e) => {
+                const on = eventIds.includes(e.id);
+                return (
+                  <button key={e.id} type="button" aria-pressed={on}
+                    class={`flex w-full items-center gap-2 border-b border-line min-h-11 px-3 py-2 text-left text-sm last:border-b-0 ${on ? 'bg-ocean-50' : 'hover:bg-subtle'}`}
+                    onClick={() => setEventIds(on ? eventIds.filter((x) => x !== e.id) : [...eventIds, e.id])}>
+                    <span class={`flex size-4 shrink-0 items-center justify-center rounded border ${on ? 'border-ocean-600 bg-ocean-600 text-white' : 'border-line'}`}>{on && <Check class="size-3" />}</span>
+                    <span class="min-w-0 flex-1 truncate">{e.name}</span>
+                    {on && eventIds[0] === e.id && <span class="pill bg-brand-100 text-brand-800">{t('Default')}</span>}
+                  </button>
+                );
+              })}
+              {cfg.events.filter((e) => e.status === 'open').length === 0 && <p class="px-3 py-3 text-sm text-muted">{t('No open events yet — add one in Settings.')}</p>}
+            </div>
           </div>
-        </div>
+        )}
         {isOrganizer ? (
           <div class="space-y-3 pt-1 border-t border-line">
             <label class="flex items-center gap-2 text-sm font-medium">

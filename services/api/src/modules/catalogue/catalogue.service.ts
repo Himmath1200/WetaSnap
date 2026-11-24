@@ -62,21 +62,28 @@ export class CatalogueService {
       );
     }
 
-    // Organizers: only see events assigned to their organizer ID or their default event
+    // Organizers: see all events assigned to their organizer ID or linked in person_events / default event
     if (me.role === 'organizer') {
       return this.db.asQuery<EventDto>(
         me,
-        `select ${EVENT_COLUMNS} from events where organizer_id = $1 or id in (select default_event_id from people where id = $1) order by starts_on desc`,
+        `select ${EVENT_COLUMNS} from events
+          where organizer_id = $1
+             or id in (select event_id from person_events where person_id = $1)
+             or id in (select default_event_id from people where id = $1)
+          order by starts_on desc`,
         [me.personId],
       );
     }
 
-    // Attendee staff under an organizer: only see the organizer's assigned event
+    // Attendee staff under an organizer: see their assigned event or organizer's assigned events
     return this.db.asQuery<EventDto>(
       me,
-      `select ${EVENT_COLUMNS} from events where organizer_id in (select organizer_id from people where id = $1)
-         or id in (select default_event_id from people where id = $1)
-       order by starts_on desc`,
+      `select ${EVENT_COLUMNS} from events
+        where id in (select event_id from person_events where person_id = $1)
+           or id in (select default_event_id from people where id = $1)
+           or organizer_id in (select organizer_id from people where id = $1)
+           or id in (select pe.event_id from person_events pe where pe.person_id in (select organizer_id from people where id = $1))
+        order by starts_on desc`,
       [me.personId],
     );
   }

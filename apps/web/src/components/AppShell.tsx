@@ -9,7 +9,7 @@ import { syncNow, syncState } from '../lib/sync';
 import { isOnline, net } from '../lib/net';
 import { db, unsyncedCount } from '../lib/db';
 import { useLive } from '../lib/useLive';
-import { daysLeft, licenceStatus } from '../lib/licence';
+import { daysLeft, licenceStatus, getAccessGraceStatus } from '../lib/licence';
 import { backend, isDemo, type SeatInfo } from '../lib/backend';
 import { offlinePackReady, preloadOfflinePack } from '../lib/offlineReader';
 import { t, tn } from '../lib/i18n';
@@ -569,20 +569,46 @@ function OrganizerDisclaimerBanner() {
   const s = useStore(session)!;
   const cfg = useStore(config);
   const event = cfg.events.find((e) => e.id === s.event_id) ?? cfg.events[0];
-  // If an attendee has an earlier custom access end date set by organizer, prioritize it
-  const endsOn = (s.person.role === 'staff' && s.person.access_ends_on)
+  const cutoff = (s.person.role === 'staff' && s.person.access_ends_on)
     ? s.person.access_ends_on
     : (s.person.event_ends_on ?? event?.ends_on);
-  const endsDateStr = endsOn ? new Date(endsOn).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+  const status = getAccessGraceStatus(cutoff);
   const leadsLink = linkFor(s.person.role, '/leads');
+
+  const accessDateStr = status.accessEndsOn
+    ? new Date(status.accessEndsOn).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+  const graceDateStr = status.graceEndsOn
+    ? new Date(status.graceEndsOn).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
+  if (status.isExportOnly) {
+    return (
+      <div class="border-b border-amber-500/40 bg-amber-500/20 px-4 py-2.5 text-xs text-amber-950 dark:text-amber-100 md:px-6 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <AlertCircle class="size-4 shrink-0 text-amber-700 dark:text-amber-300" />
+          <span class="font-bold">
+            {t('Scanning Access Concluded: Your scanning access completed on {date}. Your account is open until {grace} for exporting and downloading your leads only. Scanning is disabled.', {
+              date: accessDateStr || '',
+              grace: graceDateStr || '',
+            })}
+          </span>
+        </div>
+        <a href={leadsLink} class="underline font-extrabold text-amber-900 dark:text-amber-200 hover:opacity-80 shrink-0">
+          {t('Export Leads Now')} →
+        </a>
+      </div>
+    );
+  }
 
   return (
     <div class="border-b border-amber-500/30 bg-amber-500/15 px-4 py-2.5 text-xs text-amber-950 dark:text-amber-200 md:px-6 flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-2">
         <AlertCircle class="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
         <span class="font-semibold">
-          {t('Important Notice: Lead scans are temporary. Access concludes on {date}. You can export your leads until 24 hours after access ends, after which data will be permanently cleared.', {
-            date: endsDateStr || t('the scheduled date'),
+          {t('Important Notice: Lead scans are temporary. Scanning access concludes on {date}. You can export your leads until 24 hours after access ends ({grace}), after which data will be permanently cleared.', {
+            date: accessDateStr || t('the scheduled date'),
+            grace: graceDateStr || '',
           })}
         </span>
       </div>

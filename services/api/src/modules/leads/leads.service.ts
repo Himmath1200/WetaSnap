@@ -115,6 +115,25 @@ export class LeadsService {
     // Check if this lead already exists to avoid double-counting on update syncs
     const isNewLead = !(await this.db.asOne<{ id: string }>(me, 'select id from leads where id = $1', [lead.id]));
 
+    // Verify scanning/capture access hasn't concluded for new leads
+    const person = await this.db.one<any>(
+      `select to_char(access_ends_on, 'YYYY-MM-DD') as access_ends_on,
+              to_char(event_ends_on, 'YYYY-MM-DD') as event_ends_on
+         from people where id = $1`,
+      [me.personId],
+    );
+    const cutoff = person?.access_ends_on || person?.event_ends_on;
+    if (cutoff && isNewLead) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (today > cutoff) {
+        throw new DomainError(
+          `Your scanning access completed on ${cutoff}. Your account is in export-only mode. New lead capture is disabled.`,
+          403,
+          'scanning_ended',
+        );
+      }
+    }
+
     const row = await this.db.as(me, async (c) => {
       const saved = await c.one<LeadDto>(
         `insert into leads (id, company_id, event_id, captured_by, captured_by_name, device, source, fields,

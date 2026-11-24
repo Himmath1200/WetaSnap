@@ -282,6 +282,32 @@ export class AdminController {
     return this.admin.getOrganizerDetails(me, parse(uuid, id));
   }
 
+  @Post('organizers/:id/events')
+  assignOrganizerEvent(
+    @Me() me: Caller,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = parse(z.object({
+      event_id: uuid.optional(),
+      event_name: z.string().trim().min(1).max(200).optional(),
+      starts_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      venue: z.string().trim().max(200).optional(),
+      max_logins: z.number().int().min(1).max(10000).optional(),
+    }), body);
+    return this.admin.assignOrganizerEvent(me, parse(uuid, id), input);
+  }
+
+  @Delete('organizers/:id/events/:eventId')
+  unassignOrganizerEvent(
+    @Me() me: Caller,
+    @Param('id') id: string,
+    @Param('eventId') eventId: string,
+  ) {
+    return this.admin.unassignOrganizerEvent(me, parse(uuid, id), parse(uuid, eventId));
+  }
+
   @Put('organizers/:id/event')
   updateOrganizerEvent(@Me() me: Caller, @Param('id') id: string, @Body() body: unknown) {
     const input = parse(z.object({

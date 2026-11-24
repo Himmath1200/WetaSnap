@@ -2256,14 +2256,16 @@ export function createDemoBackend(): Backend {
       const org = allPeople.find((p) => p.id === id && p.role === 'organizer');
       if (!org) throw new Error('Organizer not found');
 
-      const events = await S.events.toArray();
-      const ev = events.find((e) => e.id === org.default_event_id || (org.event_ids ?? []).includes(e.id));
+      const allEvents = await S.events.toArray();
+      const orgEvents = allEvents.filter((e) => e.organizer_id === id || e.id === org.default_event_id || (org.event_ids ?? []).includes(e.id));
+      const ev = orgEvents[0];
       const members = allPeople.filter((p) => p.organizer_id === id);
       const leads = await S.leads.toArray();
 
       const membersWithLeads = members.map((m) => {
         const leadCount = leads.filter((l) => l.captured_by === m.id && !l.deleted_at).length;
-        return { ...m, lead_count: leadCount };
+        const mEvent = allEvents.find((e) => e.id === m.default_event_id);
+        return { ...m, lead_count: leadCount, event_name: mEvent?.name };
       });
 
       const totalScans = leads.filter((l) => (l.captured_by === id || members.some((m) => m.id === l.captured_by)) && !l.deleted_at).length;
@@ -2280,9 +2282,73 @@ export function createDemoBackend(): Backend {
           members_count: members.length,
           is_expired: endsTime > 0 && Date.now() > endsTime,
         },
+        events: orgEvents,
         members: membersWithLeads,
         total_scans: totalScans,
       };
+    },
+
+    async assignOrganizerEvent(organizerId: string, input: {
+      event_id?: string;
+      event_name?: string;
+      starts_on?: string;
+      ends_on?: string;
+      venue?: string;
+      max_logins?: number;
+    }) {
+      netGuard(); await ready;
+      await superAdmin();
+      const org = await S.people.get(organizerId);
+      if (!org) throw new Error('Organizer not found');
+
+      let eventId = input.event_id;
+      if (!eventId) {
+        if (!input.event_name || !input.starts_on || !input.ends_on) {
+          throw new Error('Event details required');
+        }
+        eventId = uuid();
+        await S.events.add({
+          id: eventId,
+          company_id: '',
+          name: input.event_name.trim(),
+          starts_on: input.starts_on,
+          ends_on: input.ends_on,
+          venue: input.venue?.trim() || '',
+          booth: '',
+          status: 'open',
+          description: '',
+          time_zone: 'UTC',
+          template_id: null,
+          attachments: [],
+          organizer_id: organizerId,
+          max_logins: input.max_logins ?? 10,
+        });
+      } else {
+        await S.events.update(eventId, { organizer_id: organizerId });
+      }
+
+      const existingIds = org.event_ids ?? [];
+      if (!existingIds.includes(eventId)) {
+        await S.people.update(organizerId, {
+          event_ids: [...existingIds, eventId],
+          default_event_id: org.default_event_id || eventId,
+        });
+      }
+      return { event_id: eventId };
+    },
+
+    async unassignOrganizerEvent(organizerId: string, eventId: string) {
+      netGuard(); await ready;
+      await superAdmin();
+      const org = await S.people.get(organizerId);
+      if (!org) return;
+
+      await S.events.update(eventId, { organizer_id: null });
+      const nextIds = (org.event_ids ?? []).filter((id) => id !== eventId);
+      await S.people.update(organizerId, {
+        event_ids: nextIds,
+        default_event_id: org.default_event_id === eventId ? nextIds[0] ?? null : org.default_event_id,
+      });
     },
 
     async updateOrganizerMember(_organizerId: string, memberId: string, input: { active?: boolean; name?: string; phone?: string }) {
