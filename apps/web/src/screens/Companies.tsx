@@ -1024,6 +1024,8 @@ function OrganizersSection({
 }) {
   const [q, setQ] = useState('');
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [assignEventOrgId, setAssignEventOrgId] = useState<string | null>(null);
+  const [pickOrgModal, setPickOrgModal] = useState(false);
   const [editLimit, setEditLimit] = useState<{ id: string; name: string; current: number } | null>(null);
   const [newLimitVal, setNewLimitVal] = useState(10);
   const [savingLimit, setSavingLimit] = useState(false);
@@ -1088,9 +1090,27 @@ function OrganizersSection({
         <div class="flex-1 min-w-[260px]">
           <SearchInput value={q} onChange={setQ} placeholder={t('Search organizers, events or referral links...')} label={t('Search')} />
         </div>
-        <button class="btn-primary" onClick={onNew}>
-          <Plus class="size-4" />{t('New event organizer')}
-        </button>
+        <div class="flex items-center gap-2 flex-wrap">
+          {organizers.length > 0 && (
+            <button
+              class="btn-secondary h-10 px-3.5 text-xs font-bold gap-1.5 border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 cursor-pointer shadow-xs"
+              onClick={() => {
+                if (organizers.length === 1) {
+                  setAssignEventOrgId(organizers[0].id);
+                } else {
+                  setPickOrgModal(true);
+                }
+              }}
+              title={t('Assign multiple events to an existing organizer')}
+            >
+              <Plus class="size-4 text-purple-600" />
+              <span>{t('Assign event to organizer')}</span>
+            </button>
+          )}
+          <button class="btn-primary" onClick={onNew}>
+            <Plus class="size-4" />{t('New event organizer')}
+          </button>
+        </div>
       </div>
 
       {/* Directory Table */}
@@ -1189,13 +1209,23 @@ function OrganizersSection({
                       </td>
 
                       <td class="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          class="btn-secondary h-8 px-2.5 text-xs font-semibold gap-1"
-                          onClick={() => setSelectedOrgId(org.id)}
-                        >
-                          <span>{t('Details & team')}</span>
-                          <ChevronRight class="size-3.5 text-muted" />
-                        </button>
+                        <div class="inline-flex items-center gap-1.5 justify-end">
+                          <button
+                            class="btn-secondary h-8 px-2.5 text-xs font-semibold gap-1 text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200 cursor-pointer"
+                            onClick={() => setAssignEventOrgId(org.id)}
+                            title={t('Assign another event to this organizer')}
+                          >
+                            <Plus class="size-3.5 text-purple-600" />
+                            <span>{t('Assign Event')}</span>
+                          </button>
+                          <button
+                            class="btn-secondary h-8 px-2.5 text-xs font-semibold gap-1 cursor-pointer"
+                            onClick={() => setSelectedOrgId(org.id)}
+                          >
+                            <span>{t('Details & team')}</span>
+                            <ChevronRight class="size-3.5 text-muted" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1233,6 +1263,54 @@ function OrganizersSection({
               onInput={(e) => setNewLimitVal(Number(e.currentTarget.value))}
             />
           </Field>
+        </div>
+      </Dialog>
+
+      {/* Assign Event to Organizer Modal */}
+      {assignEventOrgId && (
+        <AssignOrganizerEventModal
+          organizerId={assignEventOrgId}
+          onClose={() => setAssignEventOrgId(null)}
+          onDone={() => {
+            setAssignEventOrgId(null);
+            void reload();
+          }}
+        />
+      )}
+
+      {/* Select Organizer Dialog (from top action bar) */}
+      <Dialog
+        open={pickOrgModal}
+        onClose={() => setPickOrgModal(false)}
+        title={t('Select Organizer to Assign Event')}
+        footer={<button class="btn-ghost" onClick={() => setPickOrgModal(false)}>{t('Cancel')}</button>}
+      >
+        <div class="space-y-2">
+          <p class="text-xs text-muted mb-2">
+            {t('Choose which organizer you want to assign an event to:')}
+          </p>
+          <div class="divide-y divide-line rounded-xl border border-line overflow-hidden max-h-60 overflow-y-auto">
+            {organizers.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                class="flex w-full items-center justify-between p-3 text-left hover:bg-subtle transition-colors cursor-pointer"
+                onClick={() => {
+                  setPickOrgModal(false);
+                  setAssignEventOrgId(o.id);
+                }}
+              >
+                <div>
+                  <p class="font-bold text-xs text-ink">{o.name}</p>
+                  <p class="text-[11px] text-muted">{o.email} · {o.event_name || t('No event')}</p>
+                </div>
+                <span class="text-xs font-semibold text-brand-600 flex items-center gap-1">
+                  <span>{t('Select')}</span>
+                  <ChevronRight class="size-3.5" />
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
       </Dialog>
 
