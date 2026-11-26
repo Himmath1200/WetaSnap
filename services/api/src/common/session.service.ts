@@ -33,6 +33,7 @@ export interface Session {
   suspended_reason: string;
   active: boolean;
   access_ends_on: string | null;
+  event_ends_on: string | null;
 }
 
 @Injectable()

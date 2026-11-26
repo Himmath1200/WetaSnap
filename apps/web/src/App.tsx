@@ -66,12 +66,7 @@ function Guarded() {
     if (isOldAppPath(path)) { route(here + location.search + location.hash, true); return; }
     if (!s) {
       if (here !== '/signin') {
-        // Come back here once they are in, if their role has this screen — but not when they
-        // just signed out on purpose, or were signed out for being idle.
-        const left = sessionStorage.getItem('wetasnap-left') === '1';
-        if (left) sessionStorage.removeItem('wetasnap-left');
-        const next = here === '/' || left ? '' : `?next=${encodeURIComponent(here + location.search)}`;
-        route(`${signInPath(door)}${next}${location.hash}`, true);
+        route(`${signInPath(door)}?next=${encodeURIComponent(here + location.search)}`, true);
       }
       return;
     }
