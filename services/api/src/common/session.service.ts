@@ -80,12 +80,19 @@ export class SessionService {
   async find(token: string): Promise<Session | null> {
     return this.db.one<Session>(
       `select s.id, s.person_id, s.stage::text as stage, s.portal::text as portal, s.device,
-              s.expires_at, s.last_seen_at, p.company_id, p.role::text as role, p.active, p.access_ends_on,
+              s.expires_at, s.last_seen_at, p.company_id, p.role::text as role, p.active,
+              coalesce(to_char(p.access_ends_on, 'YYYY-MM-DD'),
+                       to_char(p.event_ends_on, 'YYYY-MM-DD'),
+                       to_char(e.ends_on, 'YYYY-MM-DD')) as access_ends_on,
+              coalesce(to_char(p.event_ends_on, 'YYYY-MM-DD'),
+                       to_char(e.ends_on, 'YYYY-MM-DD')) as event_ends_on,
               coalesce(c.suspended, false) as suspended, coalesce(c.suspended_reason, '') as suspended_reason
          from device_sessions s
          join people p on p.id = s.person_id
+    left join events e on e.id = p.default_event_id or e.organizer_id = p.id
     left join companies c on c.id = p.company_id
-        where s.token_hash = $1 and s.revoked_at is null`,
+        where s.token_hash = $1 and s.revoked_at is null
+        order by e.ends_on desc limit 1`,
       [sha256(token)],
     );
   }
@@ -120,9 +127,13 @@ export class SessionService {
       }
     }
     if (!session.active) throw unauthorized('This account can no longer sign in.');
-    if (session.access_ends_on) {
+
+    // 24-hour grace period check: supports both attendees (access_ends_on) and organizers (event_ends_on)
+    const cutoff = session.access_ends_on || session.event_ends_on;
+    if (cutoff) {
       const today = new Date().toISOString().slice(0, 10);
-      const d = new Date(session.access_ends_on + 'T00:00:00Z');
+      const cleanCutoff = String(cutoff).slice(0, 10);
+      const d = new Date(cleanCutoff + 'T00:00:00Z');
       d.setUTCDate(d.getUTCDate() + 1);
       const graceDate = d.toISOString().slice(0, 10);
       if (today > graceDate) {

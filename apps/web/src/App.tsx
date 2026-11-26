@@ -5,7 +5,7 @@ import { LocationProvider, Router, Route, useLocation, ErrorBoundary } from 'pre
 import { AppShell } from './components/AppShell';
 import { Spinner, Toaster } from './components/ui';
 import { useStore } from './lib/store';
-import { session } from './lib/session';
+import { session, refreshSession } from './lib/session';
 import { startSync, stopSync } from './lib/sync';
 import { doorForRole, isOldAppPath, linkFor, readPath, signInPath } from './lib/portal';
 import { reportError } from './lib/errors';
@@ -51,6 +51,13 @@ function Guarded() {
     const envUrl = String(import.meta.env.VITE_API_URL ?? '').trim().replace(/\/$/, '');
     const healthUrl = envUrl && !envUrl.includes('localhost') ? `${envUrl}/health` : '/health';
     void fetch(healthUrl, { method: 'GET', cache: 'no-store' }).catch(() => {});
+
+    // Refresh session data (access dates, person details) on window focus so admin changes reflect immediately
+    const onFocus = () => {
+      if (session.get()) void refreshSession();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   useEffect(() => {

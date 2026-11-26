@@ -56,7 +56,8 @@ export const PERSON_COLUMNS = `
   coalesce(p.plan, 'free') as plan,
   coalesce(p.monthly_scans, 0) as monthly_scans,
   p.referral_code, p.organizer_id, coalesce(p.max_logins, 5) as max_logins,
-  to_char(p.event_ends_on, 'YYYY-MM-DD') as event_ends_on,
+  coalesce(to_char(p.event_ends_on, 'YYYY-MM-DD'),
+           (select to_char(e.ends_on, 'YYYY-MM-DD') from events e where e.id = p.default_event_id or e.organizer_id = p.id limit 1)) as event_ends_on,
   p.default_event_id, to_char(p.access_ends_on, 'YYYY-MM-DD') as access_ends_on,
   p.active, p.invited, p.avatar_url, p.has_password, p.mfa_enabled,
   coalesce((select array_agg(pe.event_id order by pe.created_at)

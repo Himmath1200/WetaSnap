@@ -733,25 +733,31 @@ export class AdminService {
       );
     }
 
-    // 3. Update the organizer's own profile dates and limits
+    // 3. Update the organizer's own profile dates and limits (access_ends_on includes the 24-hr grace period)
+    const organizerGraceDate = (() => {
+      const d = new Date(input.ends_on + 'T00:00:00Z');
+      d.setUTCDate(d.getUTCDate() + 1);
+      return d.toISOString().slice(0, 10);
+    })();
     await this.db.query(
-      `update people set event_ends_on = $2, access_ends_on = $2, max_logins = coalesce($3, max_logins)
+      `update people set event_ends_on = $2, access_ends_on = $3, max_logins = coalesce($4, max_logins)
         where id = $1`,
-      [organizerId, input.ends_on, input.max_logins ?? null],
+      [organizerId, input.ends_on, organizerGraceDate, input.max_logins ?? null],
     );
 
     // 4. CRITICAL: Cascade new dates and event limits to ALL attendees / members registered under this organizer or event
+    const staffGraceDate = organizerGraceDate;
     if (eventId) {
       await this.db.query(
-        `update people set event_ends_on = $2, access_ends_on = $2
-          where (organizer_id = $1 or default_event_id = $3) and role = 'staff'`,
-        [organizerId, input.ends_on, eventId],
+        `update people set event_ends_on = $2, access_ends_on = $3
+          where (organizer_id = $1 or default_event_id = $4) and role = 'staff'`,
+        [organizerId, input.ends_on, staffGraceDate, eventId],
       );
     } else {
       await this.db.query(
-        `update people set event_ends_on = $2, access_ends_on = $2
+        `update people set event_ends_on = $2, access_ends_on = $3
           where organizer_id = $1 and role = 'staff'`,
-        [organizerId, input.ends_on],
+        [organizerId, input.ends_on, staffGraceDate],
       );
     }
 

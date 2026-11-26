@@ -115,14 +115,18 @@ export class LeadsService {
     // Check if this lead already exists to avoid double-counting on update syncs
     const isNewLead = !(await this.db.asOne<{ id: string }>(me, 'select id from leads where id = $1', [lead.id]));
 
-    // Verify scanning/capture access hasn't concluded for new leads
+    // Verify scanning/capture access hasn't concluded for new leads (organizers + attendees)
     const person = await this.db.one<any>(
-      `select to_char(access_ends_on, 'YYYY-MM-DD') as access_ends_on,
-              to_char(event_ends_on, 'YYYY-MM-DD') as event_ends_on
-         from people where id = $1`,
+      `select coalesce(to_char(p.access_ends_on, 'YYYY-MM-DD'),
+                      to_char(p.event_ends_on, 'YYYY-MM-DD'),
+                      to_char(e.ends_on, 'YYYY-MM-DD')) as cutoff
+         from people p
+         left join events e on e.id = p.default_event_id or e.organizer_id = p.id
+        where p.id = $1
+        order by e.ends_on desc limit 1`,
       [me.personId],
     );
-    const cutoff = person?.access_ends_on || person?.event_ends_on;
+    const cutoff = person?.cutoff;
     if (cutoff && isNewLead) {
       const today = new Date().toISOString().slice(0, 10);
       if (today > cutoff) {
